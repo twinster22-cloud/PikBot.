@@ -4,7 +4,7 @@ import numpy as np
 from io import StringIO
 from engine import predict,evaluate,backtest,wilson_interval
 from pathlib import Path
-#from sportsdata import test_connection
+from sportsdata import test_connection
 ROOT=Path(__file__).parent
 app=Flask(__name__,static_folder='static',static_url_path='')
 
