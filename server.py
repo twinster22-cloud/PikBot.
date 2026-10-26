@@ -68,7 +68,7 @@ def analyze(h,o,run_backtest,is_demo):
 
 @app.get('/health')
 def health():return jsonify(status='ok')
-#@app.get('/api/sportsdata-test')
-#def sportsdata_test():
-    #return jsonify(test_connection())
+@app.get('/api/sportsdata-test')
+def sportsdata_test():
+return jsonify(test_connection())
 if __name__=='__main__':app.run(host='127.0.0.1',port=5000,debug=False)
