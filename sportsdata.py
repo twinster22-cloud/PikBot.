@@ -2,14 +2,14 @@ import os
 import requests
 
 BASE_URLS = {
-    "NBA": "https://api.sportsdata.io/v3/nba",
-    "WNBA": "https://api.sportsdata.io/v3/wnba",
-    "NFL": "https://api.sportsdata.io/v3/nfl",
-    "MLB": "https://api.sportsdata.io/v3/mlb",
-    "NHL": "https://api.sportsdata.io/v3/nhl",
-    "SOCCER": "https://api.sportsdata.io/v3/soccer",
-    "NCAAF": "https://api.sportsdata.io/v3/cfb",
-    "NCAAB": "https://api.sportsdata.io/v3/cbb",
+   "NBA": "https://api.sportsdata.io/v3/nba",
+   "WNBA": "https://api.sportsdata.io/v3/wnba",
+   "NFL": "https://api.sportsdata.io/v3/nfl",
+   "MLB": "https://api.sportsdata.io/v3/mlb",
+   "NHL": "https://api.sportsdata.io/v3/nhl",
+   "SOCCER": "https://api.sportsdata.io/v3/soccer",
+   "NCAAF": "https://api.sportsdata.io/v3/cfb",
+   "NCAAB": "https://api.sportsdata.io/v3/cbb",
 }
 
 
