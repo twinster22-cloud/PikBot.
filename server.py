@@ -4,7 +4,7 @@ import numpy as np
 from io import StringIO
 from engine import predict,evaluate,backtest,wilson_interval
 from pathlib import Path
-
+from sportsdata import test_connection
 ROOT=Path(__file__).parent
 app=Flask(__name__,static_folder='static',static_url_path='')
 
@@ -68,5 +68,7 @@ def analyze(h,o,run_backtest,is_demo):
 
 @app.get('/health')
 def health():return jsonify(status='ok')
-
+@app.get('/api/sportsdata-test')
+def sportsdata_test():
+    return jsonify(test_connection())
 if __name__=='__main__':app.run(host='127.0.0.1',port=5000,debug=False)
