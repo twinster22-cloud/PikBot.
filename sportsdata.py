@@ -2,7 +2,7 @@ import os
 import requests
 
 BASE_URLS = {
-    "NBA": "https://api.sportsdata.io/v3/nba",
+    "NBA": "https://api.sportsdata.io/v3/nba",
     "WNBA": "https://api.sportsdata.io/v3/wnba",
     "NFL": "https://api.sportsdata.io/v3/nfl",
     "MLB": "https://api.sportsdata.io/v3/mlb",
