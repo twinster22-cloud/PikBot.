@@ -2,7 +2,7 @@ import os
 import requests
 
 BASE_URLS = {
-    "NBA": "https://api.sportsdata.io/v3/nba",
+    "NBA": "https://api.sportsdata.io/v3/nba",
     "WNBA": "https://api.sportsdata.io/v3/wnba",
     "NFL": "https://api.sportsdata.io/v3/nfl",
     "MLB": "https://api.sportsdata.io/v3/mlb",
@@ -31,7 +31,9 @@ def get_sports_data(sport, endpoint):
 
     response = requests.get(
         url,
-        headers={"Ocp-Apim-Subscription-Key": api_key},
+        headers={
+            "Ocp-Apim-Subscription-Key": api_key
+        },
         timeout=20
     )
 
@@ -41,7 +43,10 @@ def get_sports_data(sport, endpoint):
 
 def test_connection():
     try:
-        data = get_sports_data("NBA", "scores/json/Teams")
+        data = get_sports_data(
+            "NBA",
+            "scores/json/Teams"
+        )
 
         return {
             "connected": True,
