@@ -31,10 +31,8 @@ def get_sports_data(sport, endpoint):
 
     response = requests.get(
         url,
-        headers={
-            "Ocp-Apim-Subscription-Key": api_key
-        },
-        timeout=20
+        headers={"Ocp-Apim-Subscription-Key": api_key},
+        timeout=20,
     )
 
     response.raise_for_status()
@@ -43,26 +41,23 @@ def get_sports_data(sport, endpoint):
 
 def test_connection():
     try:
-        data = get_sports_data(
-            "NBA",
-            "scores/json/Teams"
-        )
+        data = get_sports_data("NBA", "scores/json/Teams")
 
         return {
             "connected": True,
             "sport": "NBA",
-            "records": len(data)
+            "records": len(data),
         }
 
     except requests.exceptions.HTTPError as error:
         return {
             "connected": False,
             "error": "SportsDataIO rejected the request",
-            "status": error.response.status_code
+            "status": error.response.status_code,
         }
 
     except Exception as error:
         return {
             "connected": False,
-            "error": str(error)
+            "error": str(error),
         }
