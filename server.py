@@ -67,8 +67,12 @@ def analyze(h,o,run_backtest,is_demo):
     except (ValueError,KeyError,TypeError) as e:return jsonify(error=str(e)),400
 
 @app.get('/health')
-def health():return jsonify(status='ok')
+def health():
+    return jsonify(status='ok')
+    
 @app.get('/api/sportsdata-test')
 def sportsdata_test():
     return jsonify(test_connection())
-if __name__=='__main__':app.run(host='127.0.0.1',port=5000,debug=False)
+    
+if __name__=='__main__':
+    app.run(host='127.0.0.1',port=5000,debug=False)
