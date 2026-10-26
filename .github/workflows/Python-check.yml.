@@ -1,0 +1,14 @@
+
+name: PikBot Python Error Check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Python syntax
+        run: python -m compileall -q server.py engine.py sportsdata.py
