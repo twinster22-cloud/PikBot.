@@ -8,16 +8,6 @@ from sportsdata import test_connection
 ROOT=Path(__file__).parent
 app=Flask(__name__,static_folder='static',static_url_path='')
 
-def demo():
-    rng=np.random.default_rng(19)
-    now=pd.Timestamp.now(tz='UTC').floor('h')
-    specs=[('NBA','Demo Guard A','points',25,22.5),('NBA','Demo Center B','rebounds',12,9.5),('NFL','Demo Receiver C','receptions',7,5.5),('NHL','Demo Skater D','shots',4,2.5),('MLB','Demo Pitcher E','strikeouts',8,5.5),('WNBA','Demo Guard F','assists',8,5.5),('Soccer','Demo Forward G','shots',4,2.5)]
-    h=[];o=[]
-    for i,(sport,player,stat,mean,line) in enumerate(specs):
-        for j in range(40):
-            h.append({'sport':sport,'player':player,'stat':stat,'date':(now-pd.Timedelta(days=42-j)).isoformat(),'value':max(0,int(rng.normal(mean,max(1,mean*.2))))})
-        o.append({'sport':sport,'player':player,'stat':stat,'line':line,'as_of':now.isoformat(),'offer_id':f'demo-{i}','event_id':f'game-{i}'})
-    return pd.DataFrame(h),pd.DataFrame(o)
 
 def parse_csv(upload,required):
     if not upload or not upload.filename.lower().endswith('.csv'):raise ValueError('Upload a .csv file')
@@ -35,10 +25,6 @@ def records(df):
 @app.get('/')
 def index():return send_from_directory(ROOT/'static','index.html')
 
-@app.get('/api/demo')
-def demo_endpoint():
-    h,o=demo()
-    return analyze(h,o,False,True)
 
 @app.post('/api/analyze')
 def analyze_endpoint():
