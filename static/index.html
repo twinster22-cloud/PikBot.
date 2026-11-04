@@ -23,7 +23,12 @@ async function showMembership(){
     $('subscribe').hidden=!info.billing_ready||info.access==='subscriber';
     $('portal').hidden=!info.billing_ready||!info.has_customer;
     const trial=new Date(info.trial_ends).toLocaleDateString();
-    status.textContent={trial:'Free trial through '+trial,subscriber:'Active subscription',demo:'Sample demo access',unavailable:'Subscription verification is temporarily unavailable'}[info.access];
+    status.textContent={trial:'Free trial through '+trial+' · Up to 5 offers per upload · Backtesting requires a subscription',subscriber:'Active subscription',demo:'Sample demo access',unavailable:'Subscription verification is temporarily unavailable'}[info.access];
+    const upload = $('upload');
+    upload.elements.backtest.disabled = info.access !== 'subscriber';
+    if (info.access === 'demo' || info.access === 'unavailable') {
+      for (const field of upload.elements) field.disabled = true;
+    }
     if(!info.billing_ready)status.textContent+=' · Billing setup pending';
   } catch {status.textContent='Could not check your membership. Refresh to try again.'}
 }

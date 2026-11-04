@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from membership import account, init_accounts, premium_required
-from flask import Flask, request, jsonify, send_from_directory, redirect
+from flask import Flask, g, request, jsonify, send_from_directory, redirect
 import pandas as pd
 import numpy as np
 from io import StringIO
@@ -57,10 +57,16 @@ def sample_demo():
 @app.post('/api/analyze')
 @premium_required
 def analyze_endpoint():
+    run_backtest = request.form.get('backtest') == 'true'
+    trial = g.membership_access == 'trial'
+    if trial and run_backtest:
+        return jsonify(error='Backtesting is available with a paid subscription.'), 402
     try:
         h=parse_csv(request.files.get('history'),['sport','player','stat','date','value'])
         o=parse_csv(request.files.get('offers'),['sport','player','stat','line','as_of','offer_id','event_id'])
-        return analyze(h,o,request.form.get('backtest')=='true',False)
+        if trial and len(o) > 5:
+            return jsonify(error='Free trials can analyze up to 5 offers per upload.'), 402
+        return analyze(h, o, run_backtest, False)
     except (ValueError,UnicodeError,pd.errors.ParserError) as e:return jsonify(error=str(e)),400
 
 def analyze(h,o,run_backtest,is_demo):

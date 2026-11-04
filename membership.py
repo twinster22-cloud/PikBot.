@@ -6,7 +6,7 @@ from functools import wraps
 
 import psycopg
 import stripe
-from flask import Blueprint, abort, jsonify, redirect, render_template, request, session
+from flask import Blueprint, abort, g, jsonify, redirect, render_template, request, session
 from psycopg.rows import dict_row
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -159,6 +159,7 @@ def premium_required(fn):
             return jsonify(error='Subscription verification is temporarily unavailable.'), 503
         if level == 'demo':
             return jsonify(error='Your trial has ended. Subscribe to analyze your own data.'), 402
+        g.membership_access = level
         return fn(*args, **kwargs)
     return wrapped
 
