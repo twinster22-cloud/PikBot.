@@ -58,7 +58,7 @@ def access(record):
                     return 'subscriber'
         except stripe.StripeError:
             return 'unavailable'
-    return 'demo'
+    return 'expired'
 
 
 def stripe_client():
@@ -157,7 +157,7 @@ def premium_required(fn):
         level = access(record)
         if level == 'unavailable':
             return jsonify(error='Subscription verification is temporarily unavailable.'), 503
-        if level == 'demo':
+        if level == 'expired':
             return jsonify(error='Your trial has ended. Subscribe to analyze your own data.'), 402
         g.membership_access = level
         return fn(*args, **kwargs)
