@@ -1,4 +1,3 @@
-from datetime import datetime, timedelta, timezone
 from membership import account, init_accounts, premium_required
 from flask import Flask, g, request, jsonify, send_from_directory, redirect
 import pandas as pd
@@ -42,18 +41,6 @@ def index():
         return redirect('/login')
     return send_from_directory(ROOT/'static','index.html')
 
-@app.get('/api/demo')
-def sample_demo():
-    if not account():
-        return jsonify(error='Sign in required'), 401
-    now = datetime.now(timezone.utc)
-    history = pd.DataFrame([{'sport': 'NBA', 'player': 'Sample Player', 'stat': 'PTS',
-                             'date': now - timedelta(days=i), 'value': 22 + i % 4}
-                            for i in range(1, 18)])
-    offers = pd.DataFrame([{'sport': 'NBA', 'player': 'Sample Player', 'stat': 'PTS',
-                            'line': 19.5, 'as_of': now, 'offer_id': 'sample', 'event_id': 'sample'}])
-    return analyze(history, offers, False, True)
-
 @app.post('/api/analyze')
 @premium_required
 def analyze_endpoint():
@@ -66,15 +53,15 @@ def analyze_endpoint():
         o=parse_csv(request.files.get('offers'),['sport','player','stat','line','as_of','offer_id','event_id'])
         if trial and len(o) > 5:
             return jsonify(error='Free trials can analyze up to 5 offers per upload.'), 402
-        return analyze(h, o, run_backtest, False)
+        return analyze(h, o, run_backtest)
     except (ValueError,UnicodeError,pd.errors.ParserError) as e:return jsonify(error=str(e)),400
 
-def analyze(h,o,run_backtest,is_demo):
+def analyze(h,o,run_backtest):
     try:
         pred=predict(h,o)
         entries=evaluate(pred,min_prob=.75,max_entries=10)
         picks=pred.sort_values('p_raw',ascending=False).head(60) if not pred.empty else pred
-        result={'demo':is_demo,'disclaimer':'Statistical estimates are uncalibrated and not guaranteed. Uploaded offers are not verified live lines.',
+        result={'disclaimer':'Statistical estimates are uncalibrated and not guaranteed. Uploaded offers are not verified live lines.',
                 'picks':records(picks[['sport','player','stat','line','side','p_raw','projection','games']] if not picks.empty else picks),
                 'entries':records(entries[['Pick 1','Pick 2','Estimated all-hit %','Pick 1 %','Pick 2 %']] if not entries.empty else entries),
                 'count':len(pred)//2,'backtest':None}
