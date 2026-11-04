@@ -1,4 +1,6 @@
-from flask import Flask, request, jsonify, send_from_directory
+from datetime import datetime, timedelta, timezone
+from membership import account, init_accounts, premium_required
+from flask import Flask, request, jsonify, send_from_directory, redirect
 import pandas as pd
 import numpy as np
 from io import StringIO
@@ -6,7 +8,20 @@ from engine import predict,evaluate,backtest,wilson_interval
 from pathlib import Path
 from sportsdata import test_connection
 ROOT=Path(__file__).parent
-app=Flask(__name__,static_folder='static',static_url_path='')
+app=Flask(__name__, static_folder=None)
+init_accounts(app)
+
+@app.get('/<asset>')
+def public_asset(asset):
+    if asset not in {'sw.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'splash.png', 'icon.svg'}:
+        return jsonify(error='Not found'), 404
+    return send_from_directory(ROOT/'static', asset)
+
+@app.after_request
+def prevent_private_caching(response):
+    if request.path in {'/', '/login', '/api/account'}:
+        response.headers['Cache-Control'] = 'no-store'
+    return response
 
 def parse_csv(upload,required):
     if not upload or not upload.filename.lower().endswith('.csv'):raise ValueError('Upload a .csv file')
@@ -22,9 +37,25 @@ def records(df):
     return df.replace({np.nan:None}).to_dict(orient='records')
 
 @app.get('/')
-def index():return send_from_directory(ROOT/'static','index.html')
+def index():
+    if not account():
+        return redirect('/login')
+    return send_from_directory(ROOT/'static','index.html')
+
+@app.get('/api/demo')
+def sample_demo():
+    if not account():
+        return jsonify(error='Sign in required'), 401
+    now = datetime.now(timezone.utc)
+    history = pd.DataFrame([{'sport': 'NBA', 'player': 'Sample Player', 'stat': 'PTS',
+                             'date': now - timedelta(days=i), 'value': 22 + i % 4}
+                            for i in range(1, 18)])
+    offers = pd.DataFrame([{'sport': 'NBA', 'player': 'Sample Player', 'stat': 'PTS',
+                            'line': 19.5, 'as_of': now, 'offer_id': 'sample', 'event_id': 'sample'}])
+    return analyze(history, offers, False, True)
 
 @app.post('/api/analyze')
+@premium_required
 def analyze_endpoint():
     try:
         h=parse_csv(request.files.get('history'),['sport','player','stat','date','value'])
@@ -37,7 +68,7 @@ def analyze(h,o,run_backtest,is_demo):
         pred=predict(h,o)
         entries=evaluate(pred,min_prob=.75,max_entries=10)
         picks=pred.sort_values('p_raw',ascending=False).head(60) if not pred.empty else pred
-        result={'demo':False,'disclaimer':'Statistical estimates are uncalibrated and not guaranteed. Uploaded offers are not verified live lines.',
+        result={'demo':is_demo,'disclaimer':'Statistical estimates are uncalibrated and not guaranteed. Uploaded offers are not verified live lines.',
                 'picks':records(picks[['sport','player','stat','line','side','p_raw','projection','games']] if not picks.empty else picks),
                 'entries':records(entries[['Pick 1','Pick 2','Estimated all-hit %','Pick 1 %','Pick 2 %']] if not entries.empty else entries),
                 'count':len(pred)//2,'backtest':None}
@@ -53,6 +84,7 @@ def analyze(h,o,run_backtest,is_demo):
 @app.get('/health')
 def health():return jsonify(status='ok')
 @app.get('/api/sportsdata-test')
+@premium_required
 def sportsdata_test():
     return jsonify(test_connection())
 @app.get('/api/live-props-status')
