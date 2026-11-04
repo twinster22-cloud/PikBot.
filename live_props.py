@@ -9,7 +9,7 @@ import requests
 
 BASE = "https://api.sportsdata.io/v3/nba/odds/json"
 STAT_NAMES = {
-    "points": "Points", "rebounds": "Rebounds", "assists": "Assists",
+    "points": "Points", "playerpoints": "Points", "rebounds": "Rebounds", "playerrebounds": "Rebounds", "assists": "Assists", "playerassists": "Assists",
     "threepointersmade": "Three Pointers Made", "steals": "Steals",
     "blockedshots": "Blocks", "blocks": "Blocks",
 }
@@ -24,7 +24,10 @@ def _timestamp(value):
     if not isinstance(value, str) or not value.strip():
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return None
+        return parsed.astimezone(timezone.utc)
     except (ValueError, OverflowError):
         return None
 
@@ -46,7 +49,7 @@ def normalize_prop(record, game_id, now=None):
         line = float(line)
     except (ValueError, TypeError):
         return None
-    if not (0 <= line <= 200):
+    if not (0 <= line <= 200) or line != line:
         return None
     if record.get("IsActive") is False or record.get("IsArchived") is True:
         return None
