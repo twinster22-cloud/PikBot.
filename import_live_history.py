@@ -7,7 +7,7 @@ import pandas as pd
 COLUMNS = ['sport', 'player', 'stat', 'date', 'value']
 
 
-def format_history(rows, sport, stats):
+def format_history(rows, sport, stats, *, skip_conflicts=False):
     output = rows.melt(id_vars=['player', 'date'], value_vars=list(stats),
                        var_name='stat', value_name='value')
     output['stat'] = output['stat'].map(stats)
@@ -18,10 +18,13 @@ def format_history(rows, sport, stats):
     output = output[(output['player'] != '') & (output['value'] >= 0)
                     & (output['value'] < float('inf'))]
     output = output[COLUMNS].drop_duplicates()
+    conflicts = output.duplicated(['sport', 'player', 'stat', 'date'], keep=False)
+    if conflicts.any():
+        if not skip_conflicts:
+            raise ValueError('Conflicting observations found for the same player, stat, and date.')
+        output = output.loc[~conflicts]
     if output.empty:
         raise ValueError('No valid game observations in the supplied files.')
-    if output.duplicated(['sport', 'player', 'stat', 'date']).any():
-        raise ValueError('Conflicting observations found for the same player, stat, and date.')
     return output.sort_values(['player', 'stat', 'date'])
 
 
@@ -38,7 +41,7 @@ def nba(path):
 
 def nfl(path, schedule_path):
     stats = {'passing_yards': 'PASS_YDS', 'rushing_yards': 'RUSH_YDS', 'receiving_yards': 'REC_YDS'}
-    rows = pd.read_csv(path)
+    rows = pd.read_csv(path, low_memory=False)
     if 'team' not in rows and 'recent_team' in rows:
         rows = rows.rename(columns={'recent_team': 'team'})
     games = pd.read_csv(schedule_path).dropna(subset=['home_score', 'away_score'])
@@ -51,7 +54,10 @@ def nfl(path, schedule_path):
                        how='inner', validate='many_to_one')
     dated = dated.rename(columns={'gameday': 'date', 'player_display_name': 'player'})
     dated['player'] = dated['player'].str.strip()
-    return format_history(dated, 'NFL', stats)
+    if 'player_id' in dated:
+        identities = dated.groupby('player')['player_id'].nunique()
+        dated = dated[dated['player'].isin(identities[identities == 1].index)]
+    return format_history(dated, 'NFL', stats, skip_conflicts=True)
 
 
 def main():
