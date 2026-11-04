@@ -5,6 +5,7 @@ from io import StringIO
 from engine import predict,evaluate,backtest,wilson_interval
 from pathlib import Path
 from sportsdata import test_connection
+import os
 ROOT=Path(__file__).parent
 app=Flask(__name__,static_folder='static',static_url_path='')
 
@@ -39,7 +40,7 @@ def analyze(h,o,run_backtest,is_demo):
         pred=predict(h,o)
         entries=evaluate(pred,min_prob=.75,max_entries=10)
         picks=pred.sort_values('p_raw',ascending=False).head(60) if not pred.empty else pred
-        result={'demo':is_demo,'disclaimer':'Synthetic demonstration; uncalibrated estimates. No live lines, guarantees, or validated accuracy.',
+        result={'demo':is_demo,'disclaimer':'Research estimates from user-uploaded data; inputs are not independently verified. Probabilities are uncalibrated. No live lines, guarantees, or validated accuracy.',
                 'picks':records(picks[['sport','player','stat','line','side','p_raw','projection','games']] if not picks.empty else picks),
                 'entries':records(entries[['Pick 1','Pick 2','Estimated all-hit %','Pick 1 %','Pick 2 %']] if not entries.empty else entries),
                 'count':len(pred)//2,'backtest':None}
@@ -60,5 +61,19 @@ def health():
 def sportsdata_test():
     return jsonify(test_connection())
     
+
+@app.get('/api/live-props-status')
+def live_props_status():
+    """Report feed readiness without making a paid API request or exposing secrets."""
+    key_present = bool(os.environ.get('SPORTSDATAIO_API_KEY') or os.environ.get('SPORTSDATA_API_KEY'))
+    group_present = bool(os.environ.get('SPORTSDATAIO_SPORTSBOOK_GROUP'))
+    return jsonify(
+        connected=False,
+        live_props=False,
+        api_key_configured=key_present,
+        sportsbook_group_configured=group_present,
+        reason='Live player-prop feed is not integrated or verified. Historical uploads are not live lines.',
+    )
+
 if __name__=='__main__':
     app.run(host='127.0.0.1',port=5000,debug=False)
