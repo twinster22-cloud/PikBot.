@@ -1,3 +1,6 @@
+from datetime import datetime, timezone
+from functools import lru_cache
+import today
 from flask import Flask, request, jsonify, send_from_directory
 import pandas as pd
 import numpy as np
@@ -49,6 +52,34 @@ def analyze(h,o,run_backtest,is_demo):
             result['backtest']={'entries':len(e),'wins':wins,'win_rate':round(100*wins/len(e),2) if len(e) else None,'interval':[round(lo*100,2),round(hi*100,2)] if len(e) else None,'individual_picks':len(p),'brier':round(float(p.brier.mean()),4) if len(p) else None,'note':'Research-only; overlapping picks may invalidate independence-based confidence intervals.'}
         return jsonify(result)
     except (ValueError,KeyError,TypeError) as e:return jsonify(error=str(e)),400
+
+@app.get('/api/odds-feed-check')
+def odds_feed_check():
+    with today.LOCK:
+        result = check_odds_feed(today.bucket(60))
+    return jsonify(result)
+
+
+@lru_cache(maxsize=2)
+def check_odds_feed(_window):
+    try:
+        slate = today.events('NBA', today.bucket(30))
+        now = datetime.now(timezone.utc)
+        event = next((item for item in slate
+                      if (start := today.timestamp(item.get('commence_time'))) and start > now), None)
+        if not event:
+            return {'key_accepted': True, 'prizepicks_verified': False, 'reason': 'No upcoming NBA game to test.'}
+        payload = today.event_offers('NBA', event['id'], _window)
+        if payload.get('error'):
+            return {'key_accepted': True, 'prizepicks_verified': False, 'reason': payload['error']}
+        count = sum(len(market.get('outcomes', []))
+                    for book in payload.get('bookmakers', []) if book.get('key') == 'prizepicks'
+                    for market in book.get('markets', []))
+        return {'key_accepted': True, 'prizepicks_verified': bool(count), 'outcomes': count,
+                'reason': None if count else 'No PrizePicks outcomes returned for the tested NBA game.'}
+    except today.FeedError as exc:
+        return {'key_accepted': False, 'prizepicks_verified': False, 'reason': str(exc)}
+
 
 @app.get('/health')
 def health():return jsonify(status='ok')
