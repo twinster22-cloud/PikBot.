@@ -5,6 +5,7 @@ from io import StringIO
 from engine import predict,evaluate,backtest,wilson_interval
 from pathlib import Path
 from sportsdata import test_connection
+from live_props import fetch_nba_props, LivePropsError
 import os
 ROOT=Path(__file__).parent
 app=Flask(__name__,static_folder='static',static_url_path='')
@@ -61,6 +62,39 @@ def health():
 def sportsdata_test():
     return jsonify(test_connection())
     
+
+
+@app.get('/api/nba/live-predictions')
+def nba_live_predictions():
+    """Read-only predictions; no demo fallback, no wagering, no secret disclosure."""
+    try:
+        # The baseline requires a sufficiently large, licensed historical data file.
+        history_path = ROOT / 'data' / 'nba_history.csv'
+        if not history_path.is_file():
+            return jsonify(connected=False, live=False,
+                           error='Historical NBA data file is not installed on the server'), 503
+        history = pd.read_csv(history_path, usecols=['sport','player','stat','date','value'])
+        if len(history) > 500000:
+            return jsonify(error='Historical dataset exceeds supported size'), 503
+        offers = fetch_nba_props()
+        o = pd.DataFrame(offers)
+        h = history[history['sport'].str.upper() == 'NBA']
+        pred = predict(h, o)
+        if pred.empty:
+            return jsonify(connected=True, live=True, source='SportsDataIO',
+                           updated_at=max(x['updated_at'] for x in offers),
+                           offers=len(offers), picks=[], entries=[],
+                           note='Fresh lines were received but none qualified for the model'), 200
+        entries = evaluate(pred, min_prob=.75, max_entries=10)
+        cols = ['sport','player','stat','line','side','p_raw','projection','games']
+        return jsonify(connected=True, live=True, source='SportsDataIO',
+                       updated_at=max(x['updated_at'] for x in offers),
+                       offers=len(offers), picks=records(pred.sort_values('p_raw',ascending=False).head(60)[cols]),
+                       entries=records(entries), disclaimer='Uncalibrated research estimates, not guaranteed results')
+    except LivePropsError as exc:
+        return jsonify(connected=False, live=False, error=str(exc)), 503
+    except (ValueError, KeyError, pd.errors.ParserError):
+        return jsonify(connected=False, live=False, error='Historical dataset is incompatible with the prediction engine'), 503
 
 @app.get('/api/live-props-status')
 def live_props_status():
