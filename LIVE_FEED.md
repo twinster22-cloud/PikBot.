@@ -11,3 +11,7 @@ Verify actual PrizePicks entitlement, provider freshness fields, and each league
 
 NBA uses BALLDONTLIE when a local history CSV is absent. Set `BALLDONTLIE_API_KEY` in Render after enabling NBA Game Player Stats access. The adapter checks up to eight unique players per request.
 NFL uses free weekly player stats and completed schedules from [nflverse](https://github.com/nflverse/nflverse-data), licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). PikBot joins games to player stats and converts those stats into projection inputs. NFL history refreshes every six hours per running process.
+
+## College stats
+
+Both leagues use the shared `COLLEGE_DATA_API_KEY`. The first request with current lines starts a background import of up to 365 days of completed games. Once loaded, requests can trigger a seven-day incremental refresh once per day per app process. A failed refresh retries after six hours. The default cache is ephemeral, so restarts can consume additional provider quota. A persistent `PIKBOT_COLLEGE_CACHE_DIR` avoids reimporting on restart. Use one app worker with the free key.

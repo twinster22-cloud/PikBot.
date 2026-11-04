@@ -6,6 +6,10 @@ from io import BytesIO
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from threading import Lock, Thread
+from time import monotonic
+
+from refresh_college_history import refresh_college
 
 import pandas as pd
 import requests
@@ -87,7 +91,47 @@ def nfl_history(season, _window):
         return nfl(stats, games)
 
 
+COLLEGE = {
+    'COLLEGE BASKETBALL': ('basketball', 'basketball_ncaab.csv'),
+    'COLLEGE FOOTBALL': ('football', 'americanfootball_ncaaf.csv'),
+}
+COLLEGE_LOCK = Lock()
+COLLEGE_STATE = {}
+
+
+def college_history(sport):
+    if not os.getenv('COLLEGE_DATA_API_KEY'):
+        raise FeedError('College player stats require the shared college API key.')
+    league, filename = COLLEGE[sport]
+    directory = Path(os.getenv('PIKBOT_COLLEGE_CACHE_DIR', '/tmp/pikbot-college-history'))
+    path = directory / filename
+
+    def refresh():
+        retry_delay = 86400
+        error = None
+        try:
+            refresh_college(directory, league, 7 if path.is_file() else 365)
+        except (OSError, ValueError, TypeError, KeyError, RuntimeError):
+            retry_delay = 21600
+            error = 'The college history refresh failed. It will retry later.'
+        finally:
+            with COLLEGE_LOCK:
+                COLLEGE_STATE[league] = (monotonic() + retry_delay, error)
+
+    with COLLEGE_LOCK:
+        next_refresh, error = COLLEGE_STATE.get(league, (0, None))
+        if monotonic() >= next_refresh:
+            COLLEGE_STATE[league] = (float('inf'), None)
+            Thread(target=refresh, name='pikbot-college-' + league, daemon=True).start()
+            error = None
+    if not path.is_file():
+        raise FeedError(error or 'College game history is loading. Try again shortly.')
+    return pd.read_csv(path)
+
+
 def load_history(sport, offers, now):
+    if sport in COLLEGE:
+        return college_history(sport)
     if sport == 'NBA':
         # Bound cold requests to stay within the provider's per-minute quota.
         players = offers['player'].drop_duplicates().head(8)

@@ -125,7 +125,7 @@ def todays_predictions():
     if not response.is_json or not response.json.get('picks'):
         return jsonify(error='There is not enough matching recent player history.'), 404
     result = response.json
-    stats_source = {'NBA': 'BALLDONTLIE', 'NFL': 'nflverse'}.get(sport, '') if not (path and path.is_file()) else ''
+    stats_source = {'NBA': 'BALLDONTLIE', 'NFL': 'nflverse', 'COLLEGE FOOTBALL': 'CollegeFootballData', 'COLLEGE BASKETBALL': 'CollegeBasketballData'}.get(sport, '') if not (path and path.is_file()) else ''
     result['source'] = 'PrizePicks via The Odds API' + (' · Stats: ' + stats_source if stats_source else '')
     result['disclaimer'] = 'Model estimates for current PrizePicks lines. Coverage is limited to one upcoming game per sport.'
     return jsonify(result)

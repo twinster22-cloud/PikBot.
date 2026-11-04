@@ -98,15 +98,10 @@ def football(start, end):
                 yield from football_rows(dates, boxes)
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('output_dir', type=Path)
-    parser.add_argument('league', choices=('basketball', 'football'))
-    parser.add_argument('--days', type=int, default=365, choices=range(1, 366), metavar='1–365')
-    args = parser.parse_args()
-    end = datetime.now(timezone.utc)
-    start = end - timedelta(days=args.days)
-    if args.league == 'basketball':
+def refresh_college(output_dir, league, days):
+    end = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    start = end - timedelta(days=days)
+    if league == 'basketball':
         rows, sport, filename = basketball(start, end), 'COLLEGE BASKETBALL', 'basketball_ncaab.csv'
         stats = {'points': 'PTS', 'rebounds': 'REB', 'assists': 'AST'}
     else:
@@ -114,14 +109,14 @@ def main():
         stats = {'pass': 'PASS_YDS', 'rush': 'RUSH_YDS'}
     frame = pd.DataFrame(rows).reindex(columns=['player', 'date', *stats])
     result = format_history(frame, sport, stats, skip_conflicts=True)
-    destination = args.output_dir / filename
-    if destination.is_file() and args.days < 365:
+    destination = output_dir / filename
+    if destination.is_file() and days < 365:
         prior = pd.read_csv(destination)
         dates = pd.to_datetime(prior['date'], utc=True, errors='coerce')
         retained = prior.loc[(dates >= end - timedelta(days=365)) & (dates < start.replace(hour=0, minute=0, second=0, microsecond=0))]
         result = pd.concat([retained, result], ignore_index=True)
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    with NamedTemporaryFile(mode='w', dir=args.output_dir, delete=False) as temporary:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with NamedTemporaryFile(mode='w', dir=output_dir, delete=False) as temporary:
         path = Path(temporary.name)
         try:
             result.to_csv(temporary, index=False)
@@ -129,6 +124,15 @@ def main():
             path.replace(destination)
         finally:
             path.unlink(missing_ok=True)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('output_dir', type=Path)
+    parser.add_argument('league', choices=('basketball', 'football'))
+    parser.add_argument('--days', type=int, default=365, choices=range(1, 366), metavar='1–365')
+    args = parser.parse_args()
+    refresh_college(args.output_dir, args.league, args.days)
 
 
 if __name__ == '__main__':
