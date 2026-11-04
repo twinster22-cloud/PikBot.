@@ -2,6 +2,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import today
+import player_history
 from membership import account, init_accounts, premium_required
 from flask import Flask, g, request, jsonify, send_from_directory, redirect
 import pandas as pd
@@ -101,22 +102,20 @@ def todays_predictions():
     directory = os.getenv('PIKBOT_LIVE_HISTORY_DIR')
     key, _ = today.SPORTS[sport]
     path = Path(directory) / (key + '.csv') if directory else None
-    if not path or not path.is_file():
-        return jsonify(error='Recent player stats are unavailable for this sport.'), 503
     try:
-        history = pd.read_csv(path)
-        columns = ['sport', 'player', 'stat', 'date', 'value']
-        if not set(columns).issubset(history.columns):
-            return jsonify(error='The player history file has invalid columns.'), 503
         now = datetime.now(timezone.utc)
         available = today.offers(sport, now)
+        if not available:
+            return jsonify(error='No fresh PrizePicks lines are available for the covered game.'), 404
+        offers = pd.DataFrame(available)
+        history = (pd.read_csv(path) if path and path.is_file()
+                   else player_history.load_history(sport, offers, now))
+        if not set(player_history.COLUMNS).issubset(history.columns):
+            return jsonify(error='The player history has invalid columns.'), 503
     except today.FeedError as exc:
         return jsonify(error=str(exc)), 503
-    except (OSError, ValueError):
+    except (OSError, ValueError, KeyError):
         return jsonify(error='Recent player stats could not be read.'), 503
-    if not available:
-        return jsonify(error='No fresh PrizePicks lines are available for the covered game.'), 404
-    offers = pd.DataFrame(available)
     if g.membership_access == 'trial':
         offers = offers.merge(history[['sport', 'player', 'stat']].drop_duplicates(),
                               on=['sport', 'player', 'stat']).head(5)
@@ -126,7 +125,8 @@ def todays_predictions():
     if not response.is_json or not response.json.get('picks'):
         return jsonify(error='There is not enough matching recent player history.'), 404
     result = response.json
-    result['source'] = 'PrizePicks via The Odds API'
+    stats_source = {'NBA': 'BALLDONTLIE', 'NFL': 'nflverse'}.get(sport, '') if not (path and path.is_file()) else ''
+    result['source'] = 'PrizePicks via The Odds API' + (' · Stats: ' + stats_source if stats_source else '')
     result['disclaimer'] = 'Model estimates for current PrizePicks lines. Coverage is limited to one upcoming game per sport.'
     return jsonify(result)
 
