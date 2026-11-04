@@ -13,13 +13,12 @@
 </head>
 <body><main>
 <h1>PikBot Neon</h1>
-<p>Start with seven days of full access. No card required. After the trial, keep using the sample-data demo or subscribe for $15 USD per month.</p>
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
 <form method="post">
 <input type="hidden" name="csrf" value="{{ csrf }}">
 <label>Email <input type="email" name="email" autocomplete="username" required maxlength="254"></label>
 <label>Password <input type="password" name="password" autocomplete="current-password" required minlength="12" maxlength="128"></label>
-<button name="action" value="login">Sign in</button>
+<button name="action" value="login">Log in</button>
 <button name="action" value="register">Create account and start free trial</button>
 </form>
 </main></body></html>
