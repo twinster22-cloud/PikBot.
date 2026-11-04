@@ -1,3 +1,7 @@
+import os
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+import today
 from membership import account, init_accounts, premium_required
 from flask import Flask, g, request, jsonify, send_from_directory, redirect
 import pandas as pd
@@ -73,6 +77,59 @@ def analyze(h,o,run_backtest):
             result['backtest']={'entries':len(e),'wins':wins,'win_rate':round(100*wins/len(e),2) if len(e) else None,'interval':[round(lo*100,2),round(hi*100,2)] if len(e) else None,'individual_picks':len(p),'brier':round(float(p.brier.mean()),4) if len(p) else None,'note':'Research-only; overlapping picks may invalidate independence-based confidence intervals.'}
         return jsonify(result)
     except (ValueError,KeyError,TypeError) as e:return jsonify(error=str(e)),400
+
+@app.get('/api/today')
+@premium_required
+def todays_sports():
+    now = datetime.now(timezone.utc)
+    try:
+        sports = today.active_sports(today.bucket(30))
+        with ThreadPoolExecutor(max_workers=7) as pool:
+            counts = list(pool.map(lambda sport: len(today.today_events(sport, now)), sports))
+    except today.FeedError as exc:
+        return jsonify(error=str(exc)), 503
+    return jsonify(sports=[{'name': sport, 'events': count}
+                           for sport, count in zip(sports, counts) if count])
+
+
+@app.get('/api/today/predictions')
+@premium_required
+def todays_predictions():
+    sport = request.args.get('sport', '')
+    if sport not in today.SPORTS:
+        return jsonify(error='Choose a supported sport.'), 400
+    directory = os.getenv('PIKBOT_LIVE_HISTORY_DIR')
+    key, _ = today.SPORTS[sport]
+    path = Path(directory) / (key + '.csv') if directory else None
+    if not path or not path.is_file():
+        return jsonify(error='Recent player stats are unavailable for this sport.'), 503
+    try:
+        history = pd.read_csv(path)
+        columns = ['sport', 'player', 'stat', 'date', 'value']
+        if not set(columns).issubset(history.columns):
+            return jsonify(error='The player history file has invalid columns.'), 503
+        now = datetime.now(timezone.utc)
+        available = today.offers(sport, now)
+    except today.FeedError as exc:
+        return jsonify(error=str(exc)), 503
+    except (OSError, ValueError):
+        return jsonify(error='Recent player stats could not be read.'), 503
+    if not available:
+        return jsonify(error='No fresh PrizePicks lines are available for the covered game.'), 404
+    offers = pd.DataFrame(available)
+    if g.membership_access == 'trial':
+        offers = offers.merge(history[['sport', 'player', 'stat']].drop_duplicates(),
+                              on=['sport', 'player', 'stat']).head(5)
+    if offers.empty:
+        return jsonify(error='No current lines match the available player stats.'), 404
+    response = app.make_response(analyze(history, offers, False))
+    if not response.is_json or not response.json.get('picks'):
+        return jsonify(error='There is not enough matching recent player history.'), 404
+    result = response.json
+    result['source'] = 'PrizePicks via The Odds API'
+    result['disclaimer'] = 'Model estimates for current PrizePicks lines. Coverage is limited to one upcoming game per sport.'
+    return jsonify(result)
+
 
 @app.get('/health')
 def health():return jsonify(status='ok')
