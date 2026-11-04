@@ -1,12 +1,12 @@
 {
-  "name": "PikBot \u2014 Research Simulator",
+  "name": "PikBot \u2014 Sports Intelligence",
   "short_name": "PikBot",
-  "description": "Offline-capable shell for sports projection research and simulation",
+  "description": "Sports projection research dashboard",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#090f1c",
-  "theme_color": "#090f1c",
+  "background_color": "#050b0a",
+  "theme_color": "#050b0a",
   "icons": [
     {
       "src": "/icon-192.png",
