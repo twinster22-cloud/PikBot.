@@ -1,4 +1,7 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor
+import os
+import requests
 from functools import lru_cache
 import today
 from flask import Flask, request, jsonify, send_from_directory
@@ -79,6 +82,47 @@ def check_odds_feed(_window):
                 'reason': None if count else 'No PrizePicks outcomes returned for the tested NBA game.'}
     except today.FeedError as exc:
         return {'key_accepted': False, 'prizepicks_verified': False, 'reason': str(exc)}
+
+
+@lru_cache(maxsize=2)
+def check_college_feeds(_window):
+    key = os.getenv('COLLEGE_DATA_API_KEY')
+    if not key:
+        return {'configured': False}
+    now = datetime.now(timezone.utc)
+    # Check a completed window so provider access can be tested out of season.
+    february = datetime(now.year - (now.month < 3), 2, 1, tzinfo=timezone.utc)
+    targets = {
+        'college_basketball': ('https://api.collegebasketballdata.com/games/players', {
+            'startDateRange': february.isoformat(),
+            'endDateRange': (february + timedelta(days=1)).isoformat(),
+        }),
+        'college_football': ('https://api.collegefootballdata.com/games/players', {
+            'year': now.year - (now.month < 9), 'week': 1,
+            'seasonType': 'regular', 'classification': 'fbs',
+        }),
+    }
+
+    def check(item):
+        name, (url, params) = item
+        try:
+            response = requests.get(url, params=params, headers={'Authorization': 'Bearer ' + key}, timeout=10)
+            data = response.json() if response.ok else None
+            records = sum(isinstance(row, dict) and bool(row.get('players') or row.get('teams'))
+                          for row in data) if isinstance(data, list) else 0
+            return name, {'http_status': response.status_code, 'box_score_records': records,
+                          'verified': bool(records)}
+        except (requests.RequestException, ValueError):
+            return name, {'verified': False, 'error': 'Provider request failed or returned invalid JSON.'}
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        return {'configured': True, **dict(pool.map(check, targets.items()))}
+
+
+@app.get('/api/college-feed-check')
+def college_feed_check():
+    with today.LOCK:
+        return jsonify(check_college_feeds(today.bucket(60)))
 
 
 @app.get('/health')
