@@ -17,9 +17,11 @@ from io import StringIO
 from engine import predict,evaluate,backtest,wilson_interval
 from pathlib import Path
 from sportsdata import test_connection
+from owner_dashboard import init_owner
 ROOT=Path(__file__).parent
 app=Flask(__name__, static_folder=None)
 init_accounts(app)
+init_owner(app)
 
 @app.get('/<asset>')
 def public_asset(asset):
