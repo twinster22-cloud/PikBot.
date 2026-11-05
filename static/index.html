@@ -257,7 +257,7 @@ async function loadSportPicks(sport){
       return;
     }
   }
-  $('today-status').textContent='No '+sport+' picks loaded. See the feed or daily allowance message below, or choose another matchup.';
+  $('today-status').textContent='No '+sport+' picks loaded. See the specific data-provider message below, or choose another matchup.';
 }
 $('today-sport').onchange=event=>{
   if(event.target.value)loadSportPicks(event.target.value);
@@ -277,8 +277,17 @@ async function openMatchup(button,automatic=false){
     const cacheKey=button.dataset.league+'|'+button.dataset.game;
     const cached=livePickCache.get(cacheKey);
     const valid=cached&&cached.day===easternDay()&&Date.now()<cached.expires;
-    const response=valid?{ok:true}:await fetch('/api/today/predictions?'+query,{cache:'no-store'});
-    const data=valid?cached.data:await response.json();
+    let response=valid?{ok:true}:await fetch('/api/today/predictions?'+query,{cache:'no-store'});
+    let data=valid?cached.data:await response.json();
+    for(let retry=0;!response.ok&&String(data.error||'').includes('history is loading')&&retry<12;retry++){
+      if(request!==liveRequest)return false;
+      cards.textContent='Loading completed college games… Picks will appear automatically when ready.';
+      $('today-status').textContent='College history is refreshing · Checking again automatically.';
+      await new Promise(resolve=>setTimeout(resolve,5000));
+      if(request!==liveRequest)return false;
+      response=await fetch('/api/today/predictions?'+query,{cache:'no-store'});
+      data=await response.json();
+    }
     if(request!==liveRequest)return;
     if(!response.ok)throw Error(data.error||'Picks are unavailable.');
     if(easternDay()!==slateDay){section.hidden=true;loadToday();return}
