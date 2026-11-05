@@ -60,10 +60,34 @@ class SecurityTests(unittest.TestCase):
             for path in paths:
                 self.assertEqual(self.client.get('/api/' + path).status_code, 403, path)
 
-    def test_paid_upload_requires_csrf(self):
-        with patch('membership.account', return_value={'email': 'test@example.com'}), \
-             patch('membership.access', return_value='subscriber'):
+    def test_paid_members_cannot_use_owner_uploads(self):
+        with patch('membership.account', return_value={'email': 'member@example.com'}), \
+             patch('membership.access', return_value='subscriber'), \
+             patch('membership.private_paid_test', return_value=False):
+            self.assertEqual(self.client.post('/api/analyze').status_code, 403)
+
+    def test_owner_upload_requires_csrf(self):
+        with patch('membership.account', return_value={'email': 'owner@example.com'}), \
+             patch('membership.private_paid_test', return_value=True):
             self.assertEqual(self.client.post('/api/analyze').status_code, 400)
+
+    def test_membership_does_not_grant_owner_permissions(self):
+        from datetime import datetime, timezone
+        record = {'email': 'member@example.com', 'customer_id': 'cus_test',
+                  'trial_ends': datetime.now(timezone.utc)}
+        for owner, expected in [(False, 'member'), (True, 'owner')]:
+            with patch('membership.account', return_value=record), \
+                 patch('membership.access', return_value='subscriber'), \
+                 patch('membership.private_paid_test', return_value=owner):
+                response = self.client.get('/api/account')
+                self.assertEqual(response.json['role'], expected)
+                self.assertEqual(response.json['permissions']['owner_tools'], owner)
+
+    def test_paid_members_keep_read_access_to_sports(self):
+        with patch('membership.account', return_value={'email': 'member@example.com'}), \
+             patch('membership.access', return_value='subscriber'), \
+             patch('today.active_sports', return_value=[]):
+            self.assertEqual(self.client.get('/api/today').status_code, 200)
 
     def test_expired_and_unpaid_accounts_cannot_fetch_picks(self):
         with patch('membership.account', return_value={'email': 'test@example.com'}):
