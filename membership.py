@@ -103,9 +103,9 @@ def login():
             error = 'Enter a valid email and a password of 12 to 128 characters.'
         elif request.form.get('action') == 'register':
             code = os.getenv('PIKBOT_SIGNUP_TEST_CODE')
-            if not code or not secrets.compare_digest(request.form.get('test_code', ''), code):
+            if not code or not secrets.compare_digest(request.form.get('test_code', '').strip().encode('utf-8'), code.encode('utf-8')):
                 return render_template('login.html', csrf=csrf_token(),
-                                       error='Public signup opens at launch.'), 403
+                                       error='Private signup code did not match. Copy the full code and try again.'), 403
             with database() as conn:
                 row = conn.execute(
                     """INSERT INTO pikbot_accounts (email, password_hash, trial_ends)
