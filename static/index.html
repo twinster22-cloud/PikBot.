@@ -52,10 +52,10 @@ async function showMembership(){
     $('subscribe').hidden=!info.billing_ready||info.access==='subscriber';
     $('portal').hidden=!info.billing_ready||!info.has_customer;
     const trial=new Date(info.trial_ends).toLocaleDateString();
-    status.textContent={trial:'Free trial through '+trial+' · Up to 5 offers per upload · Backtesting requires a subscription',subscriber:'Active subscription',expired:'Your free trial has ended. Subscribe to continue.',unavailable:'Subscription verification is temporarily unavailable'}[info.access];
+    status.textContent={trial:'Free trial through '+trial+' · 3 live picks per day across all sports · Resets at midnight Eastern',subscriber:'Active subscription',expired:'Your free trial has ended. Subscribe to continue.',unavailable:'Subscription verification is temporarily unavailable'}[info.access];
     const upload = $('upload');
     upload.elements.backtest.disabled = info.access !== 'subscriber';
-    if (info.access === 'expired' || info.access === 'unavailable') {
+    if (info.access !== 'subscriber') {
       for (const field of upload.elements) field.disabled = true;
     }
     if(!info.billing_ready)status.textContent+=' · Billing setup pending';

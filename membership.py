@@ -1,8 +1,10 @@
+import json
 import os
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from functools import wraps
+from zoneinfo import ZoneInfo
 
 import psycopg
 import stripe
@@ -34,6 +36,12 @@ def init_accounts(app):
         conn.execute('''CREATE TABLE IF NOT EXISTS pikbot_login_attempts (
             bucket TEXT PRIMARY KEY, attempts INTEGER NOT NULL, expires TIMESTAMPTZ NOT NULL
         )''')
+        conn.execute("""CREATE TABLE IF NOT EXISTS pikbot_trial_picks (
+            email TEXT NOT NULL REFERENCES pikbot_accounts(email) ON DELETE CASCADE,
+            pick_day DATE NOT NULL,
+            pick_key TEXT NOT NULL,
+            PRIMARY KEY (email, pick_day, pick_key)
+        )""")
     app.register_blueprint(membership)
 
 
@@ -150,6 +158,26 @@ def account_status():
         billing_ready=os.getenv('PIKBOT_CHECKOUT_ENABLED') == '1' and all(os.getenv(key) for key in ('STRIPE_SECRET_KEY', 'STRIPE_PRICE_ID', 'PIKBOT_PUBLIC_URL')),
         has_customer=bool(record['customer_id']),
     )
+
+
+def daily_trial_picks(predictions):
+    email = session['email']
+    day = datetime.now(ZoneInfo('America/New_York')).date()
+    columns = ['sport', 'event_id', 'player', 'stat']
+    ranked = predictions.sort_values('p_raw', ascending=False).drop_duplicates(columns)
+    keys = [json.dumps(list(row), ensure_ascii=False)
+            for row in ranked[columns].itertuples(index=False, name=None)]
+    with database() as conn:
+        conn.execute('SELECT email FROM pikbot_accounts WHERE email=%s FOR UPDATE', (email,))
+        conn.execute('DELETE FROM pikbot_trial_picks WHERE email=%s AND pick_day<%s', (email, day))
+        rows = conn.execute('SELECT pick_key FROM pikbot_trial_picks WHERE email=%s AND pick_day=%s',
+                            (email, day)).fetchall()
+        seen = {row['pick_key'] for row in rows}
+        new = [key for key in keys if key not in seen][:max(0, 3 - len(seen))]
+        for key in new:
+            conn.execute('INSERT INTO pikbot_trial_picks VALUES (%s, %s, %s)', (email, day, key))
+        seen.update(new)
+    return ranked.loc[[key in seen for key in keys]]
 
 
 def premium_required(fn):

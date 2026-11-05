@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import today
 import player_history
-from membership import account, init_accounts, premium_required
+from membership import account, daily_trial_picks, init_accounts, premium_required
 from flask import Flask, g, request, jsonify, send_from_directory, redirect
 import pandas as pd
 import numpy as np
@@ -52,26 +52,27 @@ def index():
 @premium_required
 def analyze_endpoint():
     run_backtest = request.form.get('backtest') == 'true'
-    trial = g.membership_access == 'trial'
-    if trial and run_backtest:
-        return jsonify(error='Backtesting is available with a paid subscription.'), 402
+    if g.membership_access == 'trial':
+        return jsonify(error='Trial accounts get three live picks per day. CSV analysis requires a subscription.'), 402
     try:
         h=parse_csv(request.files.get('history'),['sport','player','stat','date','value'])
         o=parse_csv(request.files.get('offers'),['sport','player','stat','line','as_of','offer_id','event_id'])
-        if trial and len(o) > 5:
-            return jsonify(error='Free trials can analyze up to 5 offers per upload.'), 402
         return analyze(h, o, run_backtest)
     except (ValueError,UnicodeError,pd.errors.ParserError) as e:return jsonify(error=str(e)),400
 
-def analyze(h,o,run_backtest):
+def analyze(h,o,run_backtest, *, trial_live=False):
     try:
         pred=predict(h,o)
+        if trial_live and not pred.empty:
+            pred = daily_trial_picks(pred)
+            if pred.empty:
+                return jsonify(error='Your three live picks for today have been used. The limit resets at midnight Eastern.'), 429
         entries=evaluate(pred,min_prob=.75,max_entries=10)
         picks=pred.sort_values('p_raw',ascending=False).head(60) if not pred.empty else pred
         result={'disclaimer':'Statistical estimates are uncalibrated and not guaranteed. Uploaded offers are not verified live lines.',
                 'picks':records(picks[['sport','player','stat','line','side','p_raw','projection','games']] if not picks.empty else picks),
                 'entries':records(entries[['Pick 1','Pick 2','Estimated all-hit %','Pick 1 %','Pick 2 %']] if not entries.empty else entries),
-                'count':len(pred)//2,'backtest':None}
+                'count':len(pred) if trial_live else len(pred)//2,'backtest':None}
         if run_backtest:
             if 'actual' not in o.columns:raise ValueError('Backtest needs an actual column in offers.csv')
             p,e=backtest(h,o)
@@ -118,12 +119,11 @@ def todays_predictions():
         return jsonify(error=str(exc)), 503
     except (OSError, ValueError, KeyError):
         return jsonify(error='Recent player stats could not be read.'), 503
-    if g.membership_access == 'trial':
-        offers = offers.merge(history[['sport', 'player', 'stat']].drop_duplicates(),
-                              on=['sport', 'player', 'stat']).head(5)
     if offers.empty:
         return jsonify(error='No current lines match the available player stats.'), 404
-    response = app.make_response(analyze(history, offers, False))
+    response = app.make_response(analyze(history, offers, False, trial_live=g.membership_access == 'trial'))
+    if response.status_code != 200:
+        return response
     if not response.is_json or not response.json.get('picks'):
         return jsonify(error='There is not enough matching recent player history.'), 404
     result = response.json
