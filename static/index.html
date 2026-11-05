@@ -142,6 +142,7 @@ let todaysSlate=[];
 let liveRequest=0;
 let slateDay='';
 let picksExpire=0;
+let autoPickGeneration=0;
 function easternDay(){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
 function gameTime(value){
   if(!value)return '—';
@@ -172,6 +173,7 @@ async function loadToday(){
   } catch(error) {status.textContent=error.message||'Today’s schedule is unavailable.'}
 }
 async function openInitialPick(){
+  const generation=++autoPickGeneration;
   const order=[selected,'NFL','NHL','COLLEGE FOOTBALL','NBA','COLLEGE BASKETBALL','WNBA','MLB'];
   const leagues=[...todaysSlate].sort((a,b)=>order.indexOf(a.name)-order.indexOf(b.name));
   let tried=0;
@@ -181,6 +183,7 @@ async function openInitialPick(){
     tried++;
     $('today-status').textContent='Checking '+league.name+' for current picks…';
     const ok=await openMatchup({dataset:{league:league.name,game:game.id}},true);
+    if(generation!==autoPickGeneration)return;
     if(ok){
       $('today-sport').value=league.name;showMatchups(league.name);
       $('today-status').textContent='Current picks loaded · Tap a player card to change the analysis.';
@@ -192,6 +195,7 @@ async function openInitialPick(){
 $('today-sport').onchange=event=>showMatchups(event.target.value);
 async function openMatchup(button,automatic=false){
   if(!button||button.disabled)return false;
+  if(!automatic)autoPickGeneration++;
   clearLiveAnalysis();
   const section=$('live-player-picks'), cards=$('live-player-cards'), request=++liveRequest;
   section.hidden=false;
