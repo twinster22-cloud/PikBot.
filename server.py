@@ -256,6 +256,33 @@ def sports_coverage_check():
         return jsonify(error=str(exc)), 503
 
 
+@lru_cache(maxsize=1)
+def check_dunk_history(day):
+    if not (os.getenv('DUNKAPI_API_KEY') or os.getenv('DUNKAPI_KEY')):
+        return {'configured': False, 'verified': False}
+    try:
+        player = player_history.dunk_player_id('nba', 'Jayson Tatum')
+        if not player:
+            return {'configured': True, 'verified': False, 'reason': 'Player lookup returned no unique match.'}
+        now = datetime.now(timezone.utc)
+        season = now.year + int(now.month >= 9)
+        games = player_history.dunk_games('nba', player, season, day)
+        if not games:
+            games = player_history.dunk_games('nba', player, season - 1, day)
+        count = sum(game.get('result') in {'W','L'} and not game.get('did_not_play')
+                    and isinstance(game.get('pts'), (int,float)) for game in games)
+        return {'configured': True, 'verified': bool(count), 'completed_games': count}
+    except today.FeedError as exc:
+        return {'configured': True, 'verified': False, 'reason': str(exc)}
+
+
+@app.get('/api/dunk-feed-check')
+@premium_required
+def dunk_feed_check():
+    with today.LOCK:
+        return jsonify(check_dunk_history(datetime.now(timezone.utc).date().isoformat()))
+
+
 @app.get('/health')
 def health():return jsonify(status='ok')
 @app.get('/api/sportsdata-test')
