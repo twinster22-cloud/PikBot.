@@ -1,0 +1,31 @@
+name: Security checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: pip install -r requirements.txt
+      - run: python -m unittest discover -s tests -p 'test_security.py' -v
+      - name: Check dashboard JavaScript syntax
+        run: |
+          python - <<'PY'
+          import pathlib, re
+          html = pathlib.Path('static/index.html').read_text()
+          scripts = re.findall(r'<script>(.*?)</script>', html, re.S)
+          assert scripts, 'Dashboard script not found'
+          pathlib.Path('/tmp/pikbot-dashboard.js').write_text('\n'.join(scripts))
+          PY
+          node --check /tmp/pikbot-dashboard.js
