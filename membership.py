@@ -54,8 +54,6 @@ def account():
 
 
 def access(record):
-    if record['trial_ends'] > datetime.now(timezone.utc):
-        return 'trial'
     if record['customer_id'] and os.getenv('STRIPE_SECRET_KEY') and os.getenv('STRIPE_PRICE_ID'):
         try:
             subscriptions = stripe_client().v1.subscriptions.list({
@@ -66,6 +64,8 @@ def access(record):
                     return 'subscriber'
         except stripe.StripeError:
             return 'unavailable'
+    if record['trial_ends'] > datetime.now(timezone.utc):
+        return 'trial'
     return 'expired'
 
 
