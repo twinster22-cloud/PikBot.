@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import today
 import player_history
 from player_photos import attach_photos
-from membership import account, daily_trial_picks, init_accounts, premium_required
+from membership import trial_daily_board, account, daily_trial_picks, init_accounts, premium_required
 from flask import Flask, g, request, jsonify, send_from_directory, redirect
 import pandas as pd
 import numpy as np
@@ -108,6 +108,10 @@ def todays_sports():
 @app.get('/api/today/predictions')
 @premium_required
 def todays_predictions():
+    if g.membership_access == 'trial':
+        board = trial_daily_board()
+        if board:
+            return jsonify(board)
     sport = request.args.get('sport', '')
     if sport not in today.SPORTS:
         return jsonify(error='Choose a supported sport.'), 400
@@ -152,11 +156,32 @@ def todays_predictions():
         game = matchups.get(pick['event_id'], {})
         pick['matchup'] = ' at '.join(filter(None, (game.get('away_team'), game.get('home_team'))))
         pick['starts_at'] = game.get('commence_time')
+        pick['reason'] = pick_reason(pick)
     result['source'] = 'PrizePicks via The Odds API' + (' · Stats: ' + stats_source if stats_source else '')
     result['disclaimer'] = 'Model estimates for current PrizePicks lines. Only players with enough recent history are shown.'
     if 'SportsDataverse' in stats_source:
         result['disclaimer'] += ' Reserve stats: SportsDataverse contributors, CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Player game records transformed into PikBot estimates.'
+    if g.membership_access == 'trial':
+        result['picks'] = result['picks'][:3]
+        result['entries'] = []
+        result['daily_board'] = True
+        result['selected_at'] = now.isoformat()
+        result['disclaimer'] += ' Your fixed daily selections. Lines and estimates were captured at the selection time; no additional trial picks are revealed today.'
+        result = trial_daily_board(result)
     return jsonify(result)
+
+
+def pick_reason(pick):
+    line, projection = float(pick['line']), float(pick['projection'])
+    side = pick['side']
+    games = pick.get('recent_games') or []
+    hits = sum(float(game['value']) > line if side == 'MORE' else float(game['value']) < line for game in games)
+    comparison = 'above' if projection > line else 'below' if projection < line else 'at'
+    text = (f"{side} {line:g} {pick['stat']}: the weighted model projects {projection:.1f}, "
+            f"{abs(projection-line):.1f} {comparison} the listed line, using {pick['games']} completed games.")
+    if games:
+        text += f" In the last {len(games)} games, {hits} finished on this side of that line."
+    return text + ' This is a statistical estimate, not a guaranteed result; injuries and lineup changes are not included.'
 
 
 @app.get('/api/odds-feed-check')
