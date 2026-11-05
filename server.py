@@ -68,12 +68,10 @@ def index():
     return send_from_directory(ROOT/'static','index.html')
 
 @app.post('/api/analyze')
-@premium_required
+@owner_required
 def analyze_endpoint():
     check_csrf()
     run_backtest = request.form.get('backtest') == 'true'
-    if g.membership_access == 'trial':
-        return jsonify(error='Trial accounts get three live picks per day. CSV analysis requires a subscription.'), 402
     try:
         h=parse_csv(request.files.get('history'),['sport','player','stat','date','value'])
         o=parse_csv(request.files.get('offers'),['sport','player','stat','line','as_of','offer_id','event_id'])
