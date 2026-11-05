@@ -129,7 +129,67 @@ def college_history(sport):
     return pd.read_csv(path)
 
 
+DUNK_LEAGUES = {'NBA': 'nba', 'WNBA': 'wnba'}
+
+
+def dunk_get(endpoint, **body):
+    key = os.getenv('DUNKAPI_API_KEY') or os.getenv('DUNKAPI_KEY')
+    try:
+        response = requests.post('https://mcp.dunkapi.com/v1/' + endpoint,
+                                 json=body, headers={'x-api-key': key}, timeout=5)
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError()
+        return payload
+    except requests.HTTPError as exc:
+        raise FeedError(f'DunkAPI denied the stats request (HTTP {exc.response.status_code}). Check key and credits.') from None
+    except (requests.RequestException, ValueError):
+        raise FeedError('DunkAPI player history is temporarily unavailable.') from None
+
+
+@lru_cache(maxsize=512)
+def dunk_player_id(league, player):
+    matches = {str(row['player_id']) for row in dunk_get('search_players', league=league, name=player).get('players', [])
+               if row.get('player_id') and str(row.get('name', '')).casefold() == player.casefold()}
+    return next(iter(matches)) if len(matches) == 1 else None
+
+
+@lru_cache(maxsize=512)
+def dunk_games(league, player_id, season, _day):
+    return dunk_get('get_player_games', league=league, player_id=player_id,
+                    season=season, limit=50).get('games', [])
+
+
+def dunk_history(sport, offers, now):
+    league = DUNK_LEAGUES[sport]
+    season = now.year + int(league == 'nba' and now.month >= 9)
+    def player_rows(player):
+        player_id = dunk_player_id(league, player)
+        if not player_id:
+            return []
+        day = now.date().isoformat()
+        games = dunk_games(league, player_id, season, day)
+        def completed(rows):
+            return {row['game_id']: row for row in rows
+                    if row.get('game_id') and row.get('result') in {'W', 'L'}
+                    and not row.get('did_not_play') and row.get('date') and row['date'] < day}
+        valid = completed(games)
+        if len(valid) < 12:
+            valid = {**completed(dunk_games(league, player_id, season - 1, day)), **valid}
+        return [(sport, player, stat, row['date'], row[field])
+                for row in valid.values()
+                for field, stat in (('pts', 'PTS'), ('reb', 'REB'), ('ast', 'AST'))
+                if isinstance(row.get(field), (int, float)) and 0 <= row[field] < float('inf')]
+    players = offers['player'].drop_duplicates().head(3)
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        rows = list(pool.map(player_rows, players))
+    return pd.DataFrame([row for player in rows for row in player], columns=COLUMNS).drop_duplicates()
+
+
 def load_history(sport, offers, now):
+    if sport in DUNK_LEAGUES and (os.getenv('DUNKAPI_API_KEY') or os.getenv('DUNKAPI_KEY')):
+        return dunk_history(sport, offers, now)
     if sport in COLLEGE:
         return college_history(sport)
     if sport == 'NBA':

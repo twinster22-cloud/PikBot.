@@ -136,6 +136,8 @@ def todays_predictions():
         return jsonify(error='There is not enough matching recent player history.'), 404
     result = response.json
     stats_source = {'NBA': 'BALLDONTLIE', 'NFL': 'nflverse', 'COLLEGE FOOTBALL': 'CollegeFootballData', 'COLLEGE BASKETBALL': 'CollegeBasketballData'}.get(sport, '') if not (path and path.is_file()) else ''
+    if not (path and path.is_file()) and sport in player_history.DUNK_LEAGUES and (os.getenv('DUNKAPI_API_KEY') or os.getenv('DUNKAPI_KEY')):
+        stats_source = 'DunkAPI'
     matchups = {game['id']: game for game in today.today_events(sport, now)}
     for pick in result['picks']:
         game = matchups.get(pick['event_id'], {})
