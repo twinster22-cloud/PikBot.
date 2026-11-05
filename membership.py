@@ -6,6 +6,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from zoneinfo import ZoneInfo
+import time
 
 import psycopg
 import stripe
@@ -28,6 +29,10 @@ def init_accounts(app):
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE='Lax',
         PERMANENT_SESSION_LIFETIME=timedelta(days=7),
+        SESSION_REFRESH_EACH_REQUEST=False,
+        MAX_CONTENT_LENGTH=4_000_000,
+        MAX_FORM_MEMORY_SIZE=128_000,
+        MAX_FORM_PARTS=20,
     )
     with database() as conn:
         conn.execute("""CREATE TABLE IF NOT EXISTS pikbot_accounts (
@@ -66,7 +71,13 @@ def owner_account(record):
 
 
 def private_paid_test(record):
-    return session.get('owner_test') is True and owner_account(record)
+    code = os.getenv('PIKBOT_SIGNUP_TEST_CODE', '')
+    issued = session.get('owner_authenticated_at')
+    bound_code = session.get('owner_code_digest', '')
+    return (session.get('owner_test') is True and owner_account(record)
+            and isinstance(issued, (int, float)) and 0 <= time.time() - issued < 7200
+            and bool(code) and secrets.compare_digest(
+                bound_code, hashlib.sha256(code.encode('utf-8')).hexdigest()))
 
 
 def access(record):
@@ -112,7 +123,7 @@ def csrf_token():
 
 def check_csrf():
     expected = session.get('csrf')
-    if not expected or not secrets.compare_digest(request.form.get('csrf', ''), expected):
+    if not expected or not secrets.compare_digest(request.form.get('csrf', '').encode('utf-8'), expected.encode('utf-8')):
         abort(400)
 
 
@@ -166,6 +177,8 @@ def login():
                 if record and valid and owner_account(record) and valid_code:
                     response = sign_in(email)
                     session['owner_test'] = True
+                    session['owner_authenticated_at'] = time.time()
+                    session['owner_code_digest'] = hashlib.sha256(code.encode('utf-8')).hexdigest()
                     return response
             elif record and valid:
                 return sign_in(email)
@@ -224,6 +237,18 @@ def daily_trial_picks(predictions):
             conn.execute('INSERT INTO pikbot_trial_picks VALUES (%s, %s, %s)', (email, day, key))
         seen.update(new)
     return ranked.loc[[key in seen for key in keys]]
+
+
+def owner_required(fn):
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        record = account()
+        if not record:
+            return jsonify(error='Sign in required'), 401
+        if not private_paid_test(record):
+            return jsonify(error='Private owner login required.'), 403
+        return fn(*args, **kwargs)
+    return wrapped
 
 
 def premium_required(fn):
