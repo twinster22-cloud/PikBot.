@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import re
@@ -53,7 +54,15 @@ def account():
     return None
 
 
+def private_paid_test(record):
+    configured = os.getenv('PIKBOT_PAID_TEST_EMAIL_SHA256', '')
+    digest = hashlib.sha256(record['email'].strip().lower().encode()).hexdigest()
+    return bool(configured) and secrets.compare_digest(configured, digest)
+
+
 def access(record):
+    if private_paid_test(record):
+        return 'subscriber'
     if record['customer_id'] and os.getenv('STRIPE_SECRET_KEY') and os.getenv('STRIPE_PRICE_ID'):
         try:
             subscriptions = stripe_client().v1.subscriptions.list({
@@ -154,6 +163,7 @@ def account_status():
     if not record:
         return jsonify(error='Sign in required'), 401
     return jsonify(
+        private_paid_test=private_paid_test(record),
         access=access(record), csrf=csrf_token(), trial_ends=record['trial_ends'].isoformat(),
         billing_ready=os.getenv('PIKBOT_CHECKOUT_ENABLED') == '1' and all(os.getenv(key) for key in ('STRIPE_SECRET_KEY', 'STRIPE_PRICE_ID', 'PIKBOT_PUBLIC_URL')),
         has_customer=bool(record['customer_id']),
