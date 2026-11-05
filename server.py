@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import today
 import player_history
+from player_photos import attach_photos
 from membership import account, daily_trial_picks, init_accounts, premium_required
 from flask import Flask, g, request, jsonify, send_from_directory, redirect
 import pandas as pd
@@ -140,6 +141,7 @@ def todays_predictions():
         stats_source = 'DunkAPI'
     if not (path and path.is_file()) and sport in player_history.ADDITIONAL_FEEDS:
         stats_source = player_history.ADDITIONAL_FEEDS[sport][0]
+    attach_photos(result['picks'])
     matchups = {game['id']: game for game in today.today_events(sport, now)}
     for pick in result['picks']:
         game = matchups.get(pick['event_id'], {})
