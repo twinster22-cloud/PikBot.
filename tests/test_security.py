@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 
 import membership
+import owner_dashboard
 
 def configure_test_app(app):
     app.config.update(TESTING=True, SECRET_KEY='test-only-secret',
@@ -16,7 +17,8 @@ def configure_test_app(app):
                       MAX_FORM_MEMORY_SIZE=128_000, MAX_FORM_PARTS=20)
     app.register_blueprint(membership.membership)
 
-with patch('membership.init_accounts', configure_test_app):
+with patch('membership.init_accounts', configure_test_app), \
+     patch('owner_dashboard.init_owner', lambda app: app.register_blueprint(owner_dashboard.owner)):
     server = importlib.import_module('server')
 
 class SecurityTests(unittest.TestCase):
@@ -119,3 +121,4 @@ class SecurityTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
