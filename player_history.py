@@ -132,10 +132,9 @@ def college_history(sport):
 DUNK_LEAGUES = {'NBA': 'nba', 'WNBA': 'wnba'}
 
 
-def dunk_get(endpoint, **body):
-    key = os.getenv('DUNKAPI_API_KEY') or os.getenv('DUNKAPI_KEY')
+def sportsdata_post(provider, host, key, endpoint, **body):
     try:
-        response = requests.post('https://mcp.dunkapi.com/v1/' + endpoint,
+        response = requests.post(host + '/v1/' + endpoint,
                                  json=body, headers={'x-api-key': key}, timeout=5)
         response.raise_for_status()
         payload = response.json()
@@ -143,9 +142,14 @@ def dunk_get(endpoint, **body):
             raise ValueError()
         return payload['data']
     except requests.HTTPError as exc:
-        raise FeedError(f'DunkAPI denied the stats request (HTTP {exc.response.status_code}). Check key and credits.') from None
+        raise FeedError(f'{provider} denied the stats request (HTTP {exc.response.status_code}). Check key and credits.') from None
     except (requests.RequestException, ValueError):
-        raise FeedError('DunkAPI player history is temporarily unavailable.') from None
+        raise FeedError(f'{provider} player history is temporarily unavailable.') from None
+
+
+def dunk_get(endpoint, **body):
+    key = os.getenv('DUNKAPI_API_KEY') or os.getenv('DUNKAPI_KEY')
+    return sportsdata_post('DunkAPI', 'https://mcp.dunkapi.com', key, endpoint, **body)
 
 
 @lru_cache(maxsize=512)
@@ -187,7 +191,67 @@ def dunk_history(sport, offers, now):
     return pd.DataFrame([row for player in rows for row in player], columns=COLUMNS).drop_duplicates()
 
 
+ADDITIONAL_FEEDS = {
+    'NHL': ('PuckAPI', 'https://mcp.puckapi.com', 'PUCKAPI_API_KEY', 'query', 'id', 'get_player_game_log'),
+    'MLB': ('FastballAPI', 'https://mcp.fastballapi.com', 'FASTBALLAPI_API_KEY', 'name', 'player_id', 'get_player_games'),
+}
+
+
+@lru_cache(maxsize=512)
+def additional_player_id(sport, player):
+    provider, host, env, search_field, id_field, _ = ADDITIONAL_FEEDS[sport]
+    rows = sportsdata_post(provider, host, os.environ[env], 'search_players',
+                           **{search_field: player}).get('players', [])
+    matches = {row[id_field] for row in rows if row.get(id_field)
+               and str(row.get('name', '')).casefold() == player.casefold()}
+    return next(iter(matches)) if len(matches) == 1 else None
+
+
+@lru_cache(maxsize=512)
+def additional_games(sport, player_id, season, _day):
+    provider, host, env, _, _, endpoint = ADDITIONAL_FEEDS[sport]
+    return sportsdata_post(provider, host, os.environ[env], endpoint,
+                           player_id=player_id, season=season, limit=50)
+
+
+def additional_history(sport, offers, now):
+    provider, _, env, *_ = ADDITIONAL_FEEDS[sport]
+    if not os.getenv(env):
+        raise FeedError(f'{sport} player history requires a {provider} API key.')
+    day = now.date().isoformat()
+    season_start = now.year - int(now.month < 9)
+
+    def player_rows(player):
+        player_id = additional_player_id(sport, player)
+        if not player_id:
+            return []
+        if sport == 'NHL':
+            fields = (('shots', 'SOG'), ('points', 'PTS'))
+            date_field = 'gameDate'
+            games = additional_games(sport, player_id, f'{season_start}{season_start + 1}', day).get('games', [])
+            if len(games) < 12:
+                previous = additional_games(sport, player_id, f'{season_start - 1}{season_start}', day)
+                games = games + previous.get('games', [])
+        else:
+            fields = (('h', 'H'),)
+            date_field = 'date'
+            games = additional_games(sport, player_id, now.year, day).get('batting', [])
+            if len(games) < 12:
+                games = games + additional_games(sport, player_id, now.year - 1, day).get('batting', [])
+        return [(sport, player, stat, game[date_field], game[field])
+                for game in games if game.get(date_field) and game[date_field] < day
+                for field, stat in fields
+                if isinstance(game.get(field), (int, float)) and 0 <= game[field] < float('inf')]
+
+    players = offers['player'].drop_duplicates().head(3)
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        rows = list(pool.map(player_rows, players))
+    return pd.DataFrame([row for player in rows for row in player], columns=COLUMNS)
+
+
 def load_history(sport, offers, now):
+    if sport in ADDITIONAL_FEEDS:
+        return additional_history(sport, offers, now)
     if sport in DUNK_LEAGUES and (os.getenv('DUNKAPI_API_KEY') or os.getenv('DUNKAPI_KEY')):
         return dunk_history(sport, offers, now)
     if sport in COLLEGE:
