@@ -279,10 +279,10 @@ async function openMatchup(button,automatic=false){
     const valid=cached&&cached.day===easternDay()&&Date.now()<cached.expires;
     let response=valid?{ok:true}:await fetch('/api/today/predictions?'+query,{cache:'no-store'});
     let data=valid?cached.data:await response.json();
-    for(let retry=0;!response.ok&&String(data.error||'').includes('history is loading')&&retry<12;retry++){
+    for(let retry=0;!response.ok&&/is loading|is refreshing|temporarily unavailable/i.test(String(data.error||''))&&retry<(/is loading|is refreshing/i.test(String(data.error||''))?12:2);retry++){
       if(request!==liveRequest)return false;
-      cards.textContent='Loading completed college games… Picks will appear automatically when ready.';
-      $('today-status').textContent='College history is refreshing · Checking again automatically.';
+      cards.textContent='Loading '+button.dataset.league+' player data… Picks will appear automatically when ready.';
+      $('today-status').textContent=button.dataset.league+' data is refreshing · Checking again automatically.';
       await new Promise(resolve=>setTimeout(resolve,5000));
       if(request!==liveRequest)return false;
       response=await fetch('/api/today/predictions?'+query,{cache:'no-store'});
