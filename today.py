@@ -85,11 +85,13 @@ def event_offers(sport, event_id, _window):
         return {'error': str(exc)}
 
 
-def offers(sport, now, event_id=None):
+def offers(sport, now, event_id=None, *, next_slate=False):
     _, markets = SPORTS[sport]
     result = {}
-    upcoming = [event for event in today_events(sport, now)
-                if timestamp(event.get('commence_time')) > now]
+    slate = events(sport, bucket(30)) if next_slate else today_events(sport, now)
+    upcoming = sorted((event for event in slate
+                       if (start := timestamp(event.get('commence_time'))) and start > now),
+                      key=lambda event: timestamp(event['commence_time']))
     if event_id:
         upcoming = [event for event in upcoming if event['id'] == event_id]
     for event in upcoming[:1]:

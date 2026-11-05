@@ -283,6 +283,36 @@ def dunk_feed_check():
         return jsonify(check_dunk_history(datetime.now(timezone.utc).date().isoformat()))
 
 
+@lru_cache(maxsize=8)
+def check_next_projection(sport, _window):
+    now = datetime.now(timezone.utc)
+    try:
+        offers = pd.DataFrame(today.offers(sport, now, next_slate=True))
+        if offers.empty:
+            return {'verified': False, 'reason': 'No fresh PrizePicks lines for the next upcoming matchup.'}
+        history = player_history.load_history(sport, offers, now)
+        modeled = predict(history, offers, include_history=True)
+        if modeled.empty:
+            return {'verified': False, 'lines': len(offers),
+                    'reason': 'No lines matched enough recent player history.'}
+        return {'verified': True, 'lines': len(offers),
+                'modeled_offers': int(modeled['offer_id'].nunique()),
+                'history_chart_verified': bool(modeled.iloc[0]['recent_games'])}
+    except today.FeedError as exc:
+        return {'verified': False, 'reason': str(exc)}
+    except (OSError, ValueError, TypeError, KeyError):
+        return {'verified': False, 'reason': 'The provider data could not be matched or scored.'}
+
+
+@app.get('/api/next-projection-check')
+@premium_required
+def next_projection_check():
+    sport = request.args.get('sport', 'NBA')
+    if sport not in {'NBA', 'NFL'}:
+        return jsonify(error='Choose NBA or NFL.'), 400
+    return jsonify(check_next_projection(sport, today.bucket(60)))
+
+
 @app.get('/health')
 def health():return jsonify(status='ok')
 @app.get('/api/sportsdata-test')
