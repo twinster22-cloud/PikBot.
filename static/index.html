@@ -161,7 +161,13 @@ async function showMembership(){
     if (info.access !== 'subscriber') {
       for (const field of upload.elements) field.disabled = true;
     }
-    if(!info.billing_ready)status.textContent+=' · Billing setup pending';
+    if(info.private_paid_test){
+      status.textContent='Private paid-feature test · Unlimited daily pick views · No charge';
+      $('paid-preview-notice').hidden=true;
+      $('paid-member-banner').hidden=false;
+      $('paid-member-banner').innerHTML='<span class="chip">PRIVATE TEST ACCESS · NO CHARGE</span><h2>PikBot</h2><p>Unlimited daily pick views · All supported sports · Player photos and analysis</p>';
+      $('upgrade-plan').hidden=true;
+    }else if(!info.billing_ready)status.textContent+=' · Billing setup pending';
   } catch {status.textContent='Could not check your membership. Refresh to try again.'}
 }
 let todaysSlate=[];
