@@ -30,3 +30,12 @@ jobs:
           PY
           node --check /tmp/pikbot-dashboard.js
 
+      - name: Check owner dashboard JavaScript syntax
+        run: |
+          python - <<'PYTHON'
+          import pathlib, re
+          from jinja2 import Environment, FileSystemLoader
+          html = Environment(loader=FileSystemLoader('templates')).get_template('owner.html').render(csrf='ci-only')
+          pathlib.Path('/tmp/pikbot-owner.js').write_text('\n'.join(re.findall(r'<script>(.*?)</script>', html, re.S)))
+          PYTHON
+          node --check /tmp/pikbot-owner.js
