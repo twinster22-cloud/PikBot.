@@ -59,6 +59,8 @@ def init_accounts(app):
         )""")
         conn.execute('ALTER TABLE pikbot_accounts ADD COLUMN IF NOT EXISTS billing_hold TEXT')
         conn.execute('ALTER TABLE pikbot_accounts ADD COLUMN IF NOT EXISTS billing_status TEXT')
+        conn.execute('ALTER TABLE pikbot_accounts ADD COLUMN IF NOT EXISTS billing_checked_at TIMESTAMPTZ')
+        conn.execute('ALTER TABLE pikbot_accounts ADD COLUMN IF NOT EXISTS billing_mode BOOLEAN')
         conn.execute("""CREATE TABLE IF NOT EXISTS pikbot_billing_events (
             event_id TEXT PRIMARY KEY, event_type TEXT NOT NULL,
             received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -209,6 +211,7 @@ def login():
                     session['owner_test'] = True
                     session['owner_authenticated_at'] = time.time()
                     session['owner_code_digest'] = hashlib.sha256(code.encode('utf-8')).hexdigest()
+                    response.headers['Location'] = '/owner'
                     return response
             elif record and valid:
                 return sign_in(email)
@@ -244,7 +247,8 @@ def account_status():
     is_owner = private_paid_test(record)
     return jsonify(
         role='owner' if is_owner else 'member',
-        permissions={'owner_tools': is_owner},
+        permissions={'owner_tools': is_owner, 'view_members': is_owner,
+                     'view_finances': is_owner, 'issue_refunds': is_owner},
         private_paid_test=is_owner,
         access=access(record), csrf=csrf_token(), trial_ends=record['trial_ends'].isoformat(),
         billing_ready=billing_ready(),
@@ -440,8 +444,8 @@ def stripe_webhook():
                 (event['id'], event_type)).fetchone()
             if inserted:
                 for customer, state in states.items():
-                    conn.execute('UPDATE pikbot_accounts SET billing_status=%s WHERE customer_id=%s',
-                                 (state or 'payment_required', customer))
+                    conn.execute('UPDATE pikbot_accounts SET billing_status=%s,billing_checked_at=NOW(),billing_mode=%s WHERE customer_id=%s',
+                                 (state or 'payment_required', bool(event['livemode']), customer))
                     if risk:
                         conn.execute('UPDATE pikbot_accounts SET billing_hold=%s WHERE customer_id=%s',
                                      (event_type, customer))
