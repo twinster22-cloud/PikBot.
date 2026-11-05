@@ -139,9 +139,9 @@ def dunk_get(endpoint, **body):
                                  json=body, headers={'x-api-key': key}, timeout=5)
         response.raise_for_status()
         payload = response.json()
-        if not isinstance(payload, dict):
+        if not isinstance(payload, dict) or not isinstance(payload.get('data'), dict):
             raise ValueError()
-        return payload
+        return payload['data']
     except requests.HTTPError as exc:
         raise FeedError(f'DunkAPI denied the stats request (HTTP {exc.response.status_code}). Check key and credits.') from None
     except (requests.RequestException, ValueError):
