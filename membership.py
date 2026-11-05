@@ -211,8 +211,11 @@ def account_status():
     record = account()
     if not record:
         return jsonify(error='Sign in required'), 401
+    is_owner = private_paid_test(record)
     return jsonify(
-        private_paid_test=private_paid_test(record),
+        role='owner' if is_owner else 'member',
+        permissions={'owner_tools': is_owner},
+        private_paid_test=is_owner,
         access=access(record), csrf=csrf_token(), trial_ends=record['trial_ends'].isoformat(),
         billing_ready=os.getenv('PIKBOT_CHECKOUT_ENABLED') == '1' and all(os.getenv(key) for key in ('STRIPE_SECRET_KEY', 'STRIPE_PRICE_ID', 'PIKBOT_PUBLIC_URL')),
         has_customer=bool(record['customer_id']),
