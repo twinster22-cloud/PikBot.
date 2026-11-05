@@ -13,10 +13,7 @@
 </head>
 <body><main>
 <h1>PikBot</h1>
-<nav class="login-options" aria-label="Choose login type">
-<a href="/login"{% if not owner_mode %} aria-current="page"{% endif %}>Public login / Free trial</a>
-<a href="/owner/login"{% if owner_mode %} aria-current="page"{% endif %}>Owner login</a>
-</nav>
+
 {% if owner_mode %}<p>Owner testing login</p>{% endif %}
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
 <form method="post">
