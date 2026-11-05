@@ -111,7 +111,7 @@ def todays_predictions():
     if g.membership_access == 'trial':
         board = trial_daily_board()
         if board:
-            return jsonify(board)
+            return jsonify(trial_public_board(board))
     sport = request.args.get('sport', '')
     if sport not in today.SPORTS:
         return jsonify(error='Choose a supported sport.'), 400
@@ -146,7 +146,7 @@ def todays_predictions():
     if not (path and path.is_file()) and sport in player_history.ADDITIONAL_FEEDS:
         stats_source = player_history.ADDITIONAL_FEEDS[sport][0]
     stats_source = history.attrs.get('source', stats_source)
-    if 'reserve' not in stats_source:
+    if 'reserve' not in stats_source and g.membership_access != 'trial':
         attach_photos(result['picks'])
     for pick in result['picks']:
         if not pick.get('photo_url'):
@@ -167,8 +167,20 @@ def todays_predictions():
         result['daily_board'] = True
         result['selected_at'] = now.isoformat()
         result['disclaimer'] += ' Your fixed daily selections. Lines and estimates were captured at the selection time; no additional trial picks are revealed today.'
-        result = trial_daily_board(result)
+        result = trial_daily_board(trial_public_board(result))
+        result = trial_public_board(result)
     return jsonify(result)
+
+
+def trial_public_board(board):
+    allowed = {'sport', 'player', 'stat', 'line', 'side', 'event_id', 'matchup', 'starts_at'}
+    return {
+        'picks': [{key: value for key, value in pick.items() if key in allowed}
+                  for pick in board.get('picks', [])[:3]],
+        'entries': [], 'daily_board': True, 'selected_at': board.get('selected_at'),
+        'source': 'PikBot daily selections',
+        'disclaimer': 'Your daily trial selections. Lines are captured at selection time. Full analysis is available with paid access.',
+    }
 
 
 def pick_reason(pick):
