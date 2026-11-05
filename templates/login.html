@@ -13,13 +13,17 @@
 </head>
 <body><main>
 <h1>PikBot</h1>
+{% if owner_mode %}<p>Owner testing login</p>{% endif %}
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
 <form method="post">
 <input type="hidden" name="csrf" value="{{ csrf }}">
 <label>Email <input type="email" name="email" autocomplete="username" required maxlength="254"></label>
-<label>Password <input type="password" name="password" autocomplete="current-password" required minlength="12" maxlength="128"></label>
-{% if request.args.get('signup') == '1' %}
-<label>Private signup code <input type="password" name="test_code" autocomplete="off" required></label>
+<label>Password <input type="password" name="password" autocomplete="{{ 'new-password' if request.args.get('signup') == '1' and not owner_mode else 'current-password' }}" required minlength="12" maxlength="128"></label>
+{% if owner_mode %}
+<label>Private owner code <input type="password" name="test_code" autocomplete="off" required></label>
+<button name="action" value="login">Owner sign in</button>
+<a class="signup" href="/login">Public login</a>
+{% elif request.args.get('signup') == '1' %}
 <button name="action" value="register">Create account and start free trial</button>
 <a class="signup" href="/login">Back to login</a>
 {% else %}
