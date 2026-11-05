@@ -257,33 +257,35 @@ def dashboard():
         sync = conn.execute('SELECT * FROM pikbot_owner_sync WHERE id=1').fetchone()
         if sync and sync.get('livemode') != live:
             sync = None
-        members = conn.execute('''SELECT email,trial_ends,billing_status,billing_hold,billing_checked_at
-            FROM pikbot_accounts ORDER BY email LIMIT 50''').fetchall()
-        payments = conn.execute('SELECT * FROM pikbot_payment_records WHERE livemode=%s ORDER BY created_at DESC LIMIT 50', (live,)).fetchall()
-        feedback = conn.execute('SELECT * FROM pikbot_feedback ORDER BY created_at DESC LIMIT 50').fetchall()
-        bills = conn.execute('SELECT * FROM pikbot_expenses WHERE NOT archived ORDER BY paid_at NULLS FIRST,due_date,id LIMIT 50').fetchall()
+        payments = conn.execute('SELECT COUNT(*) AS count FROM pikbot_payment_records WHERE livemode=%s', (live,)).fetchone()['count']
+        feedback = conn.execute('''SELECT COUNT(*) FILTER (WHERE NOT reviewed) AS unread,
+            ROUND(AVG(rating) FILTER (WHERE kind='review'),1)::float AS average_rating
+            FROM pikbot_feedback''').fetchone()
         refunds = conn.execute('SELECT * FROM pikbot_refund_audit WHERE livemode=%s ORDER BY created_at DESC LIMIT 30', (live,)).fetchall()
     paid, refunded, fees = money.get('payment', 0), money.get('refund', 0), money.get('fee', 0)
+    configured = bool(os.getenv('STRIPE_SECRET_KEY') and os.getenv('STRIPE_PRICE_ID'))
     return jsonify(month=month, counts=counts, revenue=dict(collected=paid, refunded=refunded, fees=fees,
-        net_after_known_fees=paid-refunded-fees, fees_missing=fees_missing),
+        net_after_known_fees=paid-refunded-fees,
+        after_recorded_bills=paid-refunded-fees-int(expenses['paid']), fees_missing=fees_missing),
         expenses={key: int(value) for key, value in expenses.items()},
-        stripe_configured=bool(os.getenv('STRIPE_SECRET_KEY') and os.getenv('STRIPE_PRICE_ID')),
-        mode='live' if os.getenv('STRIPE_SECRET_KEY', '').startswith(('sk_live_', 'rk_live_')) else 'test / not configured',
-        sync=serial(sync) if sync else None, members=[serial(row) for row in members],
-        payments=[serial(row) for row in payments], feedback=[serial(row) for row in feedback],
-        bills=[serial(row) for row in bills], refunds=[serial(row) for row in refunds])
+        stripe_configured=configured,
+        mode='live' if live else ('test' if configured else 'not connected'),
+        payment_count=payments, feedback_summary=feedback,
+        webhook_configured=bool(os.getenv('STRIPE_WEBHOOK_SECRET')),
+        refund_reauth_required=time.time()-session.get('owner_authenticated_at', 0)>=900,
+        sync=serial(sync) if sync else None, refunds=[serial(row) for row in refunds])
 
 
 @owner.get('/api/owner/list/<kind>')
 @owner_required
 def list_records(kind):
-    queries = {
-        'members': 'SELECT email,trial_ends,billing_status,billing_hold,billing_checked_at,billing_mode FROM pikbot_accounts ORDER BY email',
-        'payments': 'SELECT * FROM pikbot_payment_records WHERE livemode=%s ORDER BY created_at DESC,invoice_id',
-        'feedback': 'SELECT * FROM pikbot_feedback ORDER BY created_at DESC,id DESC',
-        'bills': 'SELECT * FROM pikbot_expenses WHERE NOT archived ORDER BY paid_at NULLS FIRST,due_date,id',
+    sources = {
+        'members': ('SELECT email,trial_ends,billing_status,billing_hold,billing_checked_at,billing_mode,customer_id IS NOT NULL AS has_subscription FROM pikbot_accounts', 'email', 'email'),
+        'payments': ('SELECT * FROM pikbot_payment_records', "email || ' ' || invoice_id", 'created_at DESC,invoice_id'),
+        'feedback': ('SELECT * FROM pikbot_feedback', "email || ' ' || body", 'created_at DESC,id DESC'),
+        'bills': ('SELECT * FROM pikbot_expenses', 'title', 'paid_at NULLS FIRST,due_date,id'),
     }
-    if kind not in queries:
+    if kind not in sources:
         return jsonify(error='Unknown list.'), 404
     try:
         page = int(request.args.get('page', '0'))
@@ -291,9 +293,31 @@ def list_records(kind):
             raise ValueError()
     except ValueError:
         return jsonify(error='Invalid page.'), 400
+    query, searchable, ordering = sources[kind]
+    predicates, params = [], []
+    search = request.args.get('q', '').strip()[:120]
+    state = request.args.get('state', '')
+    if search:
+        predicates.append(f"strpos(lower({searchable}), lower(%s)) > 0")
+        params.append(search)
+    if kind == 'payments':
+        predicates.append('livemode=%s')
+        params.append(os.getenv('STRIPE_SECRET_KEY','').startswith(('sk_live_', 'rk_live_')))
+        if state in {'paid','open','draft','void','uncollectible'}:
+            predicates.append('status=%s')
+            params.append(state)
+    elif kind == 'feedback' and state in {'unread','reviewed'}:
+        predicates.append('reviewed=%s')
+        params.append(state == 'reviewed')
+    elif kind == 'bills':
+        predicates.append('archived=%s')
+        params.append(state == 'archived')
+        if state in {'paid','unpaid'}:
+            predicates.append('paid_at IS NOT NULL' if state == 'paid' else 'paid_at IS NULL')
+    if predicates:
+        query += ' WHERE ' + ' AND '.join(predicates)
     with database() as conn:
-        params = (os.getenv('STRIPE_SECRET_KEY','').startswith(('sk_live_', 'rk_live_')), page*50) if kind=='payments' else (page*50,)
-        rows = conn.execute(queries[kind] + ' LIMIT 51 OFFSET %s', params).fetchall()
+        rows = conn.execute(query + f' ORDER BY {ordering} LIMIT 51 OFFSET %s', (*params, page*50)).fetchall()
     return jsonify(rows=[serial(row) for row in rows[:50]], page=page, has_more=len(rows)>50)
 
 
@@ -303,9 +327,13 @@ def start_sync():
     check_csrf()
     if not os.getenv('STRIPE_SECRET_KEY') or not os.getenv('STRIPE_PRICE_ID'):
         return jsonify(error='Stripe is not configured. Member and feedback lists still work.'), 503
+    live = os.environ['STRIPE_SECRET_KEY'].startswith(('sk_live_', 'rk_live_'))
     with database() as conn:
         row = conn.execute('''UPDATE pikbot_owner_sync SET running_until=NOW()+INTERVAL '15 minutes',message='Syncing Stripe records…'
-            WHERE id=1 AND (running_until IS NULL OR running_until<NOW()) RETURNING id''').fetchone()
+            ,last_finished=CASE WHEN livemode=%s THEN last_finished END
+            ,account_balance=CASE WHEN livemode=%s THEN account_balance END
+            ,complete=CASE WHEN livemode=%s THEN complete ELSE FALSE END,livemode=%s
+            WHERE id=1 AND (running_until IS NULL OR running_until<NOW()) RETURNING id''', (live,live,live,live)).fetchone()
     if row:
         SYNC_POOL.submit(refresh_bookkeeping)
     return jsonify(syncing=True), 202
@@ -344,8 +372,9 @@ def review_feedback(item_id):
 
 
 @owner.post('/api/owner/expenses')
+@owner.post('/api/owner/expenses/<int:item_id>/edit')
 @owner_required
-def create_expense():
+def create_expense(item_id=None):
     check_csrf()
     try:
         amount = cents(request.form.get('amount'))
@@ -356,8 +385,12 @@ def create_expense():
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
     with database() as conn:
-        conn.execute('INSERT INTO pikbot_expenses(title,cents,due_date) VALUES (%s,%s,%s)', (title, amount, due))
-    return jsonify(saved=True), 201
+        if item_id is None:
+            conn.execute('INSERT INTO pikbot_expenses(title,cents,due_date) VALUES (%s,%s,%s)', (title, amount, due))
+        elif not conn.execute('UPDATE pikbot_expenses SET title=%s,cents=%s,due_date=%s WHERE id=%s AND NOT archived RETURNING id',
+                              (title,amount,due,item_id)).fetchone():
+            return jsonify(error='This bill is unavailable or archived.'), 404
+    return jsonify(saved=True), 201 if item_id is None else 200
 
 
 @owner.post('/api/owner/expenses/<int:item_id>/<action>')
@@ -366,7 +399,8 @@ def change_expense(item_id, action):
     check_csrf()
     statements = {'paid': 'UPDATE pikbot_expenses SET paid_at=NOW() WHERE id=%s AND paid_at IS NULL',
                   'unpaid': 'UPDATE pikbot_expenses SET paid_at=NULL WHERE id=%s',
-                  'archive': 'UPDATE pikbot_expenses SET archived=TRUE WHERE id=%s'}
+                  'archive': 'UPDATE pikbot_expenses SET archived=TRUE WHERE id=%s',
+                  'restore': 'UPDATE pikbot_expenses SET archived=FALSE WHERE id=%s'}
     if action not in statements:
         return jsonify(error='Unknown bill action.'), 400
     with database() as conn:
