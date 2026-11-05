@@ -59,10 +59,14 @@ def account():
     return None
 
 
-def private_paid_test(record):
+def owner_account(record):
     configured = os.getenv('PIKBOT_PAID_TEST_EMAIL_SHA256', '')
     digest = hashlib.sha256(record['email'].strip().lower().encode()).hexdigest()
     return bool(configured) and secrets.compare_digest(configured, digest)
+
+
+def private_paid_test(record):
+    return session.get('owner_test') is True and owner_account(record)
 
 
 def access(record):
@@ -112,22 +116,20 @@ def allow_attempt(email):
 
 
 @membership.route('/login', methods=['GET', 'POST'])
+@membership.route('/owner/login', methods=['GET', 'POST'])
 def login():
+    owner_mode = request.path == '/owner/login'
     error = None
     if request.method == 'POST':
         check_csrf()
         email = request.form.get('email', '').strip().lower()
         password = request.form.get('password', '')
         if not allow_attempt(email):
-            return render_template('login.html', csrf=csrf_token(),
+            return render_template('login.html', owner_mode=owner_mode, csrf=csrf_token(),
                                    error='Too many attempts. Try again in 15 minutes.'), 429
         if len(email) > 254 or not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', email) or not 12 <= len(password) <= 128:
             error = 'Enter a valid email and a password of 12 to 128 characters.'
-        elif request.form.get('action') == 'register':
-            code = os.getenv('PIKBOT_SIGNUP_TEST_CODE')
-            if not code or not secrets.compare_digest(request.form.get('test_code', '').strip().encode('utf-8'), code.encode('utf-8')):
-                return render_template('login.html', csrf=csrf_token(),
-                                       error='Private signup code did not match. Copy the full code and try again.'), 403
+        elif request.form.get('action') == 'register' and not owner_mode:
             with database() as conn:
                 row = conn.execute(
                     """INSERT INTO pikbot_accounts (email, password_hash, trial_ends)
@@ -140,12 +142,26 @@ def login():
             error = 'Unable to create an account. Try signing in.'
         else:
             with database() as conn:
-                record = conn.execute('SELECT password_hash FROM pikbot_accounts WHERE email=%s', (email,)).fetchone()
+                record = conn.execute('SELECT email, password_hash FROM pikbot_accounts WHERE email=%s', (email,)).fetchone()
             valid = check_password_hash(record['password_hash'] if record else DUMMY_HASH, password)
-            if record and valid:
+            if owner_mode:
+                code = os.getenv('PIKBOT_SIGNUP_TEST_CODE', '')
+                supplied = request.form.get('test_code', '').strip()
+                valid_code = bool(code) and secrets.compare_digest(supplied.encode('utf-8'), code.encode('utf-8'))
+                if record and valid and owner_account(record) and valid_code:
+                    response = sign_in(email)
+                    session['owner_test'] = True
+                    return response
+            elif record and valid:
                 return sign_in(email)
-            error = 'Email or password was incorrect.'
-    return render_template('login.html', csrf=csrf_token(), error=error), 400 if error else 200
+            error = 'Login details were incorrect.'
+    return render_template('login.html', owner_mode=owner_mode, csrf=csrf_token(), error=error), 400 if error else 200
+
+
+@membership.after_request
+def prevent_auth_caching(response):
+    response.headers['Cache-Control'] = 'no-store'
+    return response
 
 
 def sign_in(email):
