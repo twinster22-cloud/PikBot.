@@ -310,9 +310,30 @@ def check_next_projection(sport, _window):
 @premium_required
 def next_projection_check():
     sport = request.args.get('sport', 'NBA')
-    if sport not in {'NBA', 'NFL'}:
-        return jsonify(error='Choose NBA or NFL.'), 400
+    if sport not in {'NBA', 'NFL', 'NHL', 'MLB'}:
+        return jsonify(error='Choose NBA, NFL, NHL, or MLB.'), 400
     return jsonify(check_next_projection(sport, today.bucket(60)))
+
+
+@lru_cache(maxsize=4)
+def check_additional_history(sport, _day):
+    name = {'NHL': 'Connor McDavid', 'MLB': 'Bryce Harper'}[sport]
+    try:
+        history = player_history.additional_history(
+            sport, pd.DataFrame({'player': [name]}), datetime.now(timezone.utc))
+        return {'verified': not history.empty, 'records': len(history),
+                'stats': sorted(history['stat'].unique().tolist())}
+    except today.FeedError as exc:
+        return {'verified': False, 'reason': str(exc)}
+
+
+@app.get('/api/additional-feed-check')
+@premium_required
+def additional_feed_check():
+    sport = request.args.get('sport', '')
+    if sport not in player_history.ADDITIONAL_FEEDS:
+        return jsonify(error='Choose NHL or MLB.'), 400
+    return jsonify(check_additional_history(sport, datetime.now(timezone.utc).date().isoformat()))
 
 
 @app.get('/health')
