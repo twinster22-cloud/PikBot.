@@ -2,7 +2,7 @@ from functools import lru_cache
 import requests
 import os
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import today
 import player_history
 from membership import account, daily_trial_picks, init_accounts, premium_required
@@ -310,8 +310,8 @@ def check_next_projection(sport, _window):
 @premium_required
 def next_projection_check():
     sport = request.args.get('sport', 'NBA')
-    if sport not in {'NBA', 'NFL', 'NHL', 'MLB'}:
-        return jsonify(error='Choose NBA, NFL, NHL, or MLB.'), 400
+    if sport not in today.SPORTS:
+        return jsonify(error='Choose a supported sport.'), 400
     return jsonify(check_next_projection(sport, today.bucket(60)))
 
 
@@ -344,7 +344,22 @@ def sportsdata_test():
     return jsonify(test_connection())
 @app.get('/api/live-props-status')
 def live_props_status():
-    return jsonify(connected=False, live_props=False, reason='SportsDataIO props endpoint and sportsbook group have not been validated for this API subscription. Historical uploads are not live betting lines.'), 503
+    # Configuration is not evidence that a provider has passed a live test.
+    configured = {
+        'NBA': bool(os.getenv('DUNKAPI_API_KEY') or os.getenv('DUNKAPI_KEY') or os.getenv('BALLDONTLIE_API_KEY')),
+        'WNBA': bool(os.getenv('DUNKAPI_API_KEY') or os.getenv('DUNKAPI_KEY')),
+        'NFL': True,
+        'NHL': bool(os.getenv('PUCKAPI_API_KEY')),
+        'MLB': bool(os.getenv('FASTBALLAPI_API_KEY')),
+        'COLLEGE BASKETBALL': bool(os.getenv('COLLEGE_DATA_API_KEY')),
+        'COLLEGE FOOTBALL': bool(os.getenv('COLLEGE_DATA_API_KEY')),
+    }
+    return jsonify(
+        odds_configured=bool(os.getenv('ODDS_API_KEY')),
+        history_configured=configured,
+        verified=False,
+        reason='Configuration only. Current lines and matching recent player history must be verified per matchup.',
+    )
 
 if __name__=='__main__':app.run(host='0.0.0.0',port=int(__import__('os').environ.get('PORT',5000)),debug=False)
 
