@@ -26,7 +26,8 @@ class SecurityTests(unittest.TestCase):
     def test_login_options_and_public_signup_need_no_code(self):
         response = self.client.get('/login?signup=1')
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b'href="/owner/login"', response.data)
+        self.assertNotIn(b'/owner/login', response.data)
+        self.assertNotIn(b'/owner/login', self.client.get('/login').data)
         self.assertIn(b'href="/login"', response.data)
         self.assertNotIn(b'name="test_code"', response.data)
         self.assertIn(b'name="test_code"', self.client.get('/owner/login').data)
