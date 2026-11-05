@@ -60,7 +60,7 @@ def analyze_endpoint():
         return analyze(h, o, run_backtest)
     except (ValueError,UnicodeError,pd.errors.ParserError) as e:return jsonify(error=str(e)),400
 
-def analyze(h,o,run_backtest, *, trial_live=False):
+def analyze(h,o,run_backtest, *, trial_live=False, live=False):
     try:
         pred=predict(h,o)
         if trial_live and not pred.empty:
@@ -68,9 +68,12 @@ def analyze(h,o,run_backtest, *, trial_live=False):
             if pred.empty:
                 return jsonify(error='Your three live picks for today have been used. The limit resets at midnight Eastern.'), 429
         entries=evaluate(pred,min_prob=.75,max_entries=10)
-        picks=pred.sort_values('p_raw',ascending=False).head(60) if not pred.empty else pred
+        picks = pred.sort_values('p_raw', ascending=False) if not pred.empty else pred
+        if live and not picks.empty:
+            picks = picks.drop_duplicates(['sport', 'event_id', 'player', 'stat', 'line'])
+        picks = picks.head(60)
         result={'disclaimer':'Statistical estimates are uncalibrated and not guaranteed. Uploaded offers are not verified live lines.',
-                'picks':records(picks[['sport','player','stat','line','side','p_raw','projection','games']] if not picks.empty else picks),
+                'picks':records(picks[['sport','player','stat','line','side','p_raw','projection','games'] + (['event_id', 'p_push'] if live else [])] if not picks.empty else picks),
                 'entries':records(entries[['Pick 1','Pick 2','Estimated all-hit %','Pick 1 %','Pick 2 %']] if not entries.empty else entries),
                 'count':len(pred) if trial_live else len(pred)//2,'backtest':None}
         if run_backtest:
@@ -89,11 +92,16 @@ def todays_sports():
     try:
         sports = today.active_sports(today.bucket(30))
         with ThreadPoolExecutor(max_workers=7) as pool:
-            counts = list(pool.map(lambda sport: len(today.today_events(sport, now)), sports))
+            slates = list(pool.map(lambda sport: today.today_events(sport, now), sports))
     except today.FeedError as exc:
         return jsonify(error=str(exc)), 503
-    return jsonify(sports=[{'name': sport, 'events': count}
-                           for sport, count in zip(sports, counts) if count])
+    return jsonify(sports=[{
+        'name': sport, 'events': len(games),
+        'matchups': [{'id': game['id'], 'home': game.get('home_team'), 'away': game.get('away_team'),
+                      'starts_at': game.get('commence_time'),
+                      'started': today.timestamp(game['commence_time']) <= now}
+                     for game in sorted(games, key=lambda game: game['commence_time'])],
+    } for sport, games in zip(sports, slates) if games])
 
 
 @app.get('/api/today/predictions')
@@ -121,13 +129,18 @@ def todays_predictions():
         return jsonify(error='Recent player stats could not be read.'), 503
     if offers.empty:
         return jsonify(error='No current lines match the available player stats.'), 404
-    response = app.make_response(analyze(history, offers, False, trial_live=g.membership_access == 'trial'))
+    response = app.make_response(analyze(history, offers, False, trial_live=g.membership_access == 'trial', live=True))
     if response.status_code != 200:
         return response
     if not response.is_json or not response.json.get('picks'):
         return jsonify(error='There is not enough matching recent player history.'), 404
     result = response.json
     stats_source = {'NBA': 'BALLDONTLIE', 'NFL': 'nflverse', 'COLLEGE FOOTBALL': 'CollegeFootballData', 'COLLEGE BASKETBALL': 'CollegeBasketballData'}.get(sport, '') if not (path and path.is_file()) else ''
+    matchups = {game['id']: game for game in today.today_events(sport, now)}
+    for pick in result['picks']:
+        game = matchups.get(pick['event_id'], {})
+        pick['matchup'] = ' at '.join(filter(None, (game.get('away_team'), game.get('home_team'))))
+        pick['starts_at'] = game.get('commence_time')
     result['source'] = 'PrizePicks via The Odds API' + (' · Stats: ' + stats_source if stats_source else '')
     result['disclaimer'] = 'Model estimates for current PrizePicks lines. Coverage is limited to one upcoming game per sport.'
     return jsonify(result)
