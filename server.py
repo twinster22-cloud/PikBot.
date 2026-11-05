@@ -9,7 +9,7 @@ import player_history
 import history_loader
 import psycopg
 from player_photos import attach_photos
-from membership import trial_daily_board, account, daily_trial_picks, init_accounts, premium_required, owner_required, check_csrf, database
+from membership import trial_daily_board, account, daily_trial_picks, init_accounts, premium_required, owner_required, check_csrf, database, private_paid_test
 from flask import Flask, g, request, jsonify, send_from_directory, redirect
 import pandas as pd
 import numpy as np
@@ -88,8 +88,11 @@ def write_history_cache(key, frame):
 
 @app.get('/')
 def index():
-    if not account():
+    record = account()
+    if not record:
         return redirect('/login')
+    if private_paid_test(record) and request.args.get('view') != 'picks':
+        return redirect('/owner')
     return send_from_directory(ROOT/'static','index.html')
 
 @app.post('/api/analyze')
