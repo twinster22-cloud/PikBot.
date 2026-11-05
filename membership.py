@@ -53,6 +53,16 @@ def init_accounts(app):
             pick_day DATE NOT NULL, payload JSONB NOT NULL,
             PRIMARY KEY (email, pick_day)
         )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS pikbot_history_cache (
+            cache_key TEXT PRIMARY KEY, payload JSONB NOT NULL,
+            expires TIMESTAMPTZ NOT NULL
+        )""")
+        conn.execute('ALTER TABLE pikbot_accounts ADD COLUMN IF NOT EXISTS billing_hold TEXT')
+        conn.execute('ALTER TABLE pikbot_accounts ADD COLUMN IF NOT EXISTS billing_status TEXT')
+        conn.execute("""CREATE TABLE IF NOT EXISTS pikbot_billing_events (
+            event_id TEXT PRIMARY KEY, event_type TEXT NOT NULL,
+            received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )""")
     app.register_blueprint(membership)
 
 
@@ -83,23 +93,36 @@ def private_paid_test(record):
 def access(record):
     if private_paid_test(record):
         return 'subscriber'
-    if record['customer_id']:
+    if record.get('billing_hold'):
+        return 'payment_required'
+    paid = subscription_access(record.get('customer_id'))
+    if paid is not None:
+        return paid
+    if record['trial_ends'] > datetime.now(timezone.utc):
+        return 'trial'
+    return 'expired'
+
+
+def subscription_access(customer_id):
+    """Stripe, rather than a browser redirect or event order, decides payment state."""
+    if customer_id:
         if not os.getenv('STRIPE_SECRET_KEY') or not os.getenv('STRIPE_PRICE_ID'):
             return 'unavailable'
         try:
             client = stripe_client()
             subscriptions = client.v1.subscriptions.list({
-                'customer': record['customer_id'], 'status': 'all',
+                'customer': customer_id, 'status': 'all',
                 'expand': ['data.latest_invoice'],
             })
             payment_required = False
             for sub in subscriptions.auto_paging_iter():
-                if not any(item.price.id == os.environ['STRIPE_PRICE_ID'] for item in sub['items'].data):
+                sub = stripe_data(sub)
+                if not matches_price(sub):
                     continue
                 invoice = sub.get('latest_invoice')
                 if isinstance(invoice, str):
-                    invoice = client.v1.invoices.retrieve(invoice)
-                if (sub.status == 'active' and not sub.get('pause_collection')
+                    invoice = stripe_data(client.v1.invoices.retrieve(invoice))
+                if (sub.get('status') == 'active' and not sub.get('pause_collection')
                         and invoice and invoice.get('status') == 'paid'):
                     return 'subscriber'
                 # A failed, pending, paused or ended membership cannot fall back to a trial.
@@ -108,13 +131,20 @@ def access(record):
                 return 'payment_required'
         except stripe.StripeError:
             return 'unavailable'
-    if record['trial_ends'] > datetime.now(timezone.utc):
-        return 'trial'
-    return 'expired'
+    return None
 
 
 def stripe_client():
     return stripe.StripeClient(os.environ['STRIPE_SECRET_KEY'])
+
+
+def billing_ready():
+    key = os.getenv('STRIPE_SECRET_KEY', '')
+    mode = os.getenv('PIKBOT_BILLING_MODE', 'live')
+    prefix = ('sk_live_', 'rk_live_') if mode == 'live' else ('sk_test_', 'rk_test_')
+    return (mode in {'live', 'test'} and os.getenv('PIKBOT_CHECKOUT_ENABLED') == '1' and key.startswith(prefix)
+            and all(os.getenv(name) for name in
+                    ('STRIPE_PRICE_ID', 'STRIPE_WEBHOOK_SECRET', 'PIKBOT_PUBLIC_URL')))
 
 
 def csrf_token():
@@ -217,7 +247,7 @@ def account_status():
         permissions={'owner_tools': is_owner},
         private_paid_test=is_owner,
         access=access(record), csrf=csrf_token(), trial_ends=record['trial_ends'].isoformat(),
-        billing_ready=os.getenv('PIKBOT_CHECKOUT_ENABLED') == '1' and all(os.getenv(key) for key in ('STRIPE_SECRET_KEY', 'STRIPE_PRICE_ID', 'PIKBOT_PUBLIC_URL')),
+        billing_ready=billing_ready(),
         has_customer=bool(record['customer_id']),
     )
 
@@ -280,7 +310,9 @@ def billing(action):
         abort(404)
     if os.getenv('PIKBOT_CHECKOUT_ENABLED') != '1':
         return jsonify(error='Checkout is closed during launch testing.'), 503
-    if not all(os.getenv(key) for key in ('STRIPE_SECRET_KEY', 'STRIPE_PRICE_ID', 'PIKBOT_PUBLIC_URL')):
+    if not billing_ready():
+        return jsonify(error='Verified payment configuration is required before checkout opens.'), 503
+    if not all(os.getenv(key) for key in ('STRIPE_SECRET_KEY', 'STRIPE_PRICE_ID', 'STRIPE_WEBHOOK_SECRET', 'PIKBOT_PUBLIC_URL')):
         return jsonify(error='Billing is not configured.'), 503
     client = stripe_client()
     origin = os.environ['PIKBOT_PUBLIC_URL'].rstrip('/')
@@ -292,7 +324,8 @@ def billing(action):
             return redirect(result.url, code=303)
 
         price = client.v1.prices.retrieve(os.environ['STRIPE_PRICE_ID'])
-        if not (price.active and price.currency == 'usd' and price.unit_amount == 1500
+        if not (bool(price.livemode) == os.environ['STRIPE_SECRET_KEY'].startswith(('sk_live_', 'rk_live_'))
+                and price.active and price.currency == 'usd' and price.unit_amount == 1500
                 and price.recurring and price.recurring.interval == 'month'
                 and price.recurring.interval_count == 1):
             return jsonify(error='The configured price must be $15 USD monthly.'), 503
@@ -300,7 +333,8 @@ def billing(action):
             row = conn.execute('SELECT customer_id FROM pikbot_accounts WHERE email=%s FOR UPDATE', (record['email'],)).fetchone()
             customer_id = row['customer_id']
             if not customer_id:
-                customer = client.v1.customers.create({'email': record['email']})
+                customer = client.v1.customers.create({'email': record['email']},
+                    options={'idempotency_key': 'pikbot-customer-' + hashlib.sha256(record['email'].encode()).hexdigest()})
                 customer_id = customer.id
                 conn.execute('UPDATE pikbot_accounts SET customer_id=%s WHERE email=%s', (customer_id, record['email']))
         with database() as conn:
@@ -314,12 +348,119 @@ def billing(action):
                 return redirect(sessions.data[0].url, code=303)
             result = client.v1.checkout.sessions.create({
                 'mode': 'subscription', 'customer': customer_id,
+                'integration_identifier': 'pikbot_' + ''.join(secrets.choice('abcdefghijklmnopqrstuvwxyz') for _ in range(8)),
                 'line_items': [{'price': price.id, 'quantity': 1}],
                 'success_url': origin + '/', 'cancel_url': origin + '/',
             })
         return redirect(result.url, code=303)
     except stripe.StripeError:
         return jsonify(error='Stripe billing is temporarily unavailable.'), 502
+
+
+WEBHOOK_EVENTS = {
+    'customer.subscription.created', 'customer.subscription.updated',
+    'customer.subscription.deleted', 'customer.subscription.paused',
+    'customer.subscription.resumed', 'invoice.paid', 'invoice.payment_failed',
+    'invoice.payment_action_required', 'checkout.session.completed',
+    'checkout.session.async_payment_succeeded', 'checkout.session.async_payment_failed',
+    'charge.refunded', 'charge.dispute.created', 'radar.early_fraud_warning.created',
+}
+
+
+def stripe_id(value):
+    value = stripe_data(value)
+    return value.get('id') if isinstance(value, dict) else value
+
+
+def stripe_data(value):
+    # Stripe SDK 15 objects deliberately no longer implement dict.get().
+    return value.to_dict() if hasattr(value, 'to_dict') else value
+
+
+def matches_price(sub):
+    sub = stripe_data(sub)
+    return any(item['price']['id'] == os.environ['STRIPE_PRICE_ID']
+               for item in sub.get('items', {}).get('data', []))
+
+
+def risk_customers(event_type, obj, client):
+    """Resolve affected subscriptions through Stripe's invoice-payment object graph."""
+    if event_type == 'charge.refunded' and not obj.get('refunded'):
+        return set()  # Partial refunds do not automatically suspend a membership.
+    intent = stripe_id(obj.get('payment_intent'))
+    if not intent:
+        charge = obj if event_type == 'charge.refunded' else stripe_data(client.v1.charges.retrieve(stripe_id(obj['charge'])))
+        intent = stripe_id(charge.get('payment_intent'))
+    if not intent:
+        return set()
+    payments = client.v1.invoice_payments.list({
+        'payment': {'type': 'payment_intent', 'payment_intent': intent}, 'status': 'paid',
+    })
+    customers = set()
+    for payment in payments.auto_paging_iter():
+        invoice = stripe_data(client.v1.invoices.retrieve(stripe_id(payment['invoice'])))
+        parent = invoice.get('parent') or {}
+        subscription_id = stripe_id((parent.get('subscription_details') or {}).get('subscription'))
+        subscription_id = subscription_id or stripe_id(invoice.get('subscription'))
+        if not subscription_id:
+            continue
+        sub = stripe_data(client.v1.subscriptions.retrieve(subscription_id))
+        if matches_price(sub):
+            customers.add(stripe_id(sub['customer']))
+    return customers
+
+
+@membership.post('/billing/webhook')
+def stripe_webhook():
+    signing_secret = os.getenv('STRIPE_WEBHOOK_SECRET')
+    key = os.getenv('STRIPE_SECRET_KEY', '')
+    if not signing_secret or not key or not os.getenv('STRIPE_PRICE_ID'):
+        return jsonify(error='Webhook is not configured.'), 503
+    try:
+        event = stripe_data(stripe.Webhook.construct_event(request.get_data(),
+                    request.headers.get('Stripe-Signature', ''), signing_secret))
+    except (ValueError, stripe.SignatureVerificationError):
+        return jsonify(error='Invalid webhook signature.'), 400
+    if bool(event.get('livemode')) != key.startswith(('sk_live_', 'rk_live_')):
+        return jsonify(error='Payment environment mismatch.'), 400
+    event_type = event['type']
+    if event_type not in WEBHOOK_EVENTS:
+        return jsonify(received=True)
+    obj = event['data']['object']
+    try:
+        client = stripe_client()
+        risk = event_type in {'charge.refunded', 'charge.dispute.created', 'radar.early_fraud_warning.created'}
+        customers = risk_customers(event_type, obj, client) if risk else {stripe_id(obj.get('customer'))}
+        states = {customer: subscription_access(customer) for customer in customers if customer}
+        if any(state == 'unavailable' for state in states.values()):
+            return jsonify(error='Payment verification unavailable; retry delivery.'), 503
+        with database() as conn:
+            inserted = conn.execute('''INSERT INTO pikbot_billing_events (event_id,event_type)
+                VALUES (%s,%s) ON CONFLICT DO NOTHING RETURNING event_id''',
+                (event['id'], event_type)).fetchone()
+            if inserted:
+                for customer, state in states.items():
+                    conn.execute('UPDATE pikbot_accounts SET billing_status=%s WHERE customer_id=%s',
+                                 (state or 'payment_required', customer))
+                    if risk:
+                        conn.execute('UPDATE pikbot_accounts SET billing_hold=%s WHERE customer_id=%s',
+                                     (event_type, customer))
+        return jsonify(received=True)
+    except (stripe.StripeError, psycopg.Error, KeyError, TypeError):
+        return jsonify(error='Payment notification could not be processed; retry delivery.'), 503
+
+
+@membership.get('/api/owner/launch-status')
+@owner_required
+def launch_status():
+    key = os.getenv('STRIPE_SECRET_KEY', '')
+    return jsonify(
+        checkout_enabled=os.getenv('PIKBOT_CHECKOUT_ENABLED') == '1',
+        live_key_configured=key.startswith(('sk_live_', 'rk_live_')),
+        price_configured=bool(os.getenv('STRIPE_PRICE_ID')),
+        webhook_configured=bool(os.getenv('STRIPE_WEBHOOK_SECRET')),
+        billing_ready=billing_ready(),
+    )
 
 
 def trial_daily_board(payload=None):
@@ -336,3 +477,4 @@ def trial_daily_board(payload=None):
         row = conn.execute('SELECT payload FROM pikbot_trial_daily_board WHERE email=%s AND pick_day=%s',
                            (email, day)).fetchone()
     return row['payload'] if row else None
+
