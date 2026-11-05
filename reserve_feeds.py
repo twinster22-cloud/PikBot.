@@ -23,7 +23,7 @@ def get(url,**kwargs):
  try:
   r=requests.get(url,timeout=20,**kwargs);r.raise_for_status();return r
  except requests.RequestException:raise FeedError('The free reserve history is temporarily unavailable.') from None
-@lru_cache(maxsize=16)
+@lru_cache(maxsize=4)
 def season_frame(sport,season,day):
  tag,prefix=SPECS[sport]
  names={'game_id','game_date','athlete_id','athlete_display_name','athlete_name','did_not_play','minutes','points','rebounds','assists','athlete_headshot_href','passingYards','rushingYards','player_id','player_name','shots_on_goal','toi'}
@@ -103,3 +103,4 @@ def mlb_history(offers,now):
      if date and date<now.date().isoformat() and isinstance(value,(int,float)) and value>=0:rows.append(('MLB',name,stat,date,value))
  result=pd.DataFrame(rows,columns=COLUMNS).drop_duplicates();result.attrs.update(source='MLB Stats API (reserve)',photos={})
  return result
+
