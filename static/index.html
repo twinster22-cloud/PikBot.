@@ -151,11 +151,29 @@ async function showMembership(){
     if(response.status===401){window.location.replace('/login');return}
     if(!response.ok)throw Error();
     const info=await response.json();
+    clearTimeout(trialExpiryTimer);
+    const wasBlocked=accessBlocked;
+    const wasTrial=trialOnly;
+    accessBlocked=!['trial','subscriber'].includes(info.access);
+    if(accessBlocked){
+      ++liveRequest; ++autoPickGeneration; livePickCache.clear();
+      dataset=null; focusedPick=null; picksExpire=0;
+      $('selected-prop-content').hidden=true;
+      $('live-player-picks').hidden=false;
+      $('live-player-cards').textContent='No picks available. Complete your subscription payment to unlock unlimited picks.';
+      $('today-matchups').innerHTML='';
+      for(const id of ['entries','picks','backtest'])$(id).textContent='No picks available.';
+      $('today-sport').disabled=true;
+    }
     trialOnly=info.access==='trial';
+    if(trialOnly){
+      const delay=Date.parse(info.trial_ends)-Date.now();
+      if(delay>0&&delay<2147483647)trialExpiryTimer=setTimeout(showMembership,delay+100);
+    }
     document.body.classList.toggle('trial-plan',trialOnly);
     document.querySelector('#live-player-picks .tag').textContent=trialOnly?'3 PICKS DAILY':'TAP TO ANALYZE';
-    document.querySelectorAll('[data-sport]').forEach(button=>button.disabled=trialOnly);
-    document.querySelector('.analysis-controls').hidden=trialOnly;
+    document.querySelectorAll('[data-sport]').forEach(button=>button.disabled=trialOnly||accessBlocked);
+    document.querySelector('.analysis-controls').hidden=trialOnly||accessBlocked;
     for(const id of ['subscribe','portal','logout']) $(id).elements.csrf.value=info.csrf;
     $('logout').hidden=false;
     const paidPreview=new URLSearchParams(window.location.search).get('preview')==='paid';
@@ -169,7 +187,7 @@ async function showMembership(){
     $('subscribe').hidden=!info.billing_ready||info.access==='subscriber';
     $('portal').hidden=!info.billing_ready||!info.has_customer;
     const trial=new Date(info.trial_ends).toLocaleDateString();
-    status.textContent={trial:'Free trial through '+trial+' · 3 live picks per day across all sports · Resets at midnight Eastern',subscriber:'PikBot paid membership · Unlimited daily pick views',expired:'Your free trial has ended. Subscribe to continue.',unavailable:'Subscription verification is temporarily unavailable'}[info.access];
+    status.textContent={trial:'Free trial through '+trial+' · 3 live picks per day across all sports · Resets at midnight Eastern',subscriber:'PikBot paid membership · Unlimited daily pick views',expired:'No picks available. Your 7-day trial has ended. Subscribe for $15/month to unlock unlimited picks.',payment_required:'No picks available. Your payment has not completed. Update your payment method to restore unlimited picks.',unavailable:'Subscription verification is temporarily unavailable'}[info.access];
     const upload = $('upload');
     upload.elements.backtest.disabled = info.access !== 'subscriber';
     if (info.access !== 'subscriber') {
@@ -182,6 +200,10 @@ async function showMembership(){
       $('paid-member-banner').innerHTML='<span class="chip">PRIVATE TEST ACCESS · NO CHARGE</span><h2>PikBot</h2><p>Unlimited daily pick views · All supported sports · Player photos and analysis</p>';
       $('upgrade-plan').hidden=true;
     }else if(!info.billing_ready)status.textContent+=' · Billing setup pending';
+    if(!accessBlocked&&(wasBlocked||wasTrial!==trialOnly)){
+      livePickCache.clear(); ++liveRequest; ++autoPickGeneration;
+      await loadToday();
+    }
   } catch {status.textContent='Could not check your membership. Refresh to try again.'}
 }
 let todaysSlate=[];
@@ -191,6 +213,8 @@ let picksExpire=0;
 let autoPickGeneration=0;
 let userSportChoice=false;
 let trialOnly=false;
+let accessBlocked=true;
+let trialExpiryTimer;
 const livePickCache=new Map();
 const lastSportMatchup=new Map();
 function easternDay(){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
@@ -208,6 +232,7 @@ function showMatchups(sport){
       (game.started?' · Scheduled start passed':' · View picks')+'</button></li>').join('')+'</ul>').join('');
 }
 async function loadToday(){
+  if(accessBlocked)return;
   const status=$('today-status'), picker=$('today-sport');
   try {
     const response=await fetch('/api/today'), data=await response.json();
@@ -223,6 +248,7 @@ async function loadToday(){
   } catch(error) {status.textContent=error.message||'Today’s schedule is unavailable.'}
 }
 async function openInitialPick(){
+  if(accessBlocked)return;
   const generation=++autoPickGeneration;
   const order=[selected,'NFL','NHL','COLLEGE FOOTBALL','NBA','COLLEGE BASKETBALL','WNBA','MLB'];
   const leagues=[...todaysSlate].sort((a,b)=>order.indexOf(a.name)-order.indexOf(b.name));
@@ -243,6 +269,7 @@ async function openInitialPick(){
   $('today-status').textContent='No picks loaded automatically. Choose a matchup below to check its available lines and your daily allowance.';
 }
 async function loadSportPicks(sport){
+  if(accessBlocked)return;
   if(trialOnly){$('today-status').textContent='Your trial includes only PikBot’s 3 daily selections. Other picks require paid access.';return;}
   userSportChoice=true;
   const generation=++autoPickGeneration;
@@ -280,6 +307,7 @@ $('today-sport').onchange=event=>{
   else showMatchups('');
 };
 async function openMatchup(button,automatic=false){
+  if(accessBlocked)return false;
   if(!button||button.disabled)return false;
   if(!automatic)autoPickGeneration++;
   clearLiveAnalysis();
@@ -358,8 +386,9 @@ function checkSlateAge(){
   }
 }
 document.addEventListener('visibilitychange',()=>{
-  if(document.visibilityState==='visible')checkSlateAge();
+  if(document.visibilityState==='visible'){showMembership();checkSlateAge();}
 });
 setInterval(checkSlateAge,60000);
-showMembership().then(loadToday);
+showMembership();
+setInterval(showMembership,60000);
 </script></body></html>
