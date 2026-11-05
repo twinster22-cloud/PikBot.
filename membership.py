@@ -72,14 +72,29 @@ def private_paid_test(record):
 def access(record):
     if private_paid_test(record):
         return 'subscriber'
-    if record['customer_id'] and os.getenv('STRIPE_SECRET_KEY') and os.getenv('STRIPE_PRICE_ID'):
+    if record['customer_id']:
+        if not os.getenv('STRIPE_SECRET_KEY') or not os.getenv('STRIPE_PRICE_ID'):
+            return 'unavailable'
         try:
-            subscriptions = stripe_client().v1.subscriptions.list({
-                'customer': record['customer_id'], 'status': 'active',
+            client = stripe_client()
+            subscriptions = client.v1.subscriptions.list({
+                'customer': record['customer_id'], 'status': 'all',
+                'expand': ['data.latest_invoice'],
             })
+            payment_required = False
             for sub in subscriptions.auto_paging_iter():
-                if any(item.price.id == os.environ['STRIPE_PRICE_ID'] for item in sub['items'].data):
+                if not any(item.price.id == os.environ['STRIPE_PRICE_ID'] for item in sub['items'].data):
+                    continue
+                invoice = sub.get('latest_invoice')
+                if isinstance(invoice, str):
+                    invoice = client.v1.invoices.retrieve(invoice)
+                if (sub.status == 'active' and not sub.get('pause_collection')
+                        and invoice and invoice.get('status') == 'paid'):
                     return 'subscriber'
+                # A failed, pending, paused or ended membership cannot fall back to a trial.
+                payment_required = True
+            if payment_required:
+                return 'payment_required'
         except stripe.StripeError:
             return 'unavailable'
     if record['trial_ends'] > datetime.now(timezone.utc):
@@ -220,8 +235,8 @@ def premium_required(fn):
         level = access(record)
         if level == 'unavailable':
             return jsonify(error='Subscription verification is temporarily unavailable.'), 503
-        if level == 'expired':
-            return jsonify(error='Your trial has ended. Subscribe to analyze your own data.'), 402
+        if level in {'expired', 'payment_required'}:
+            return jsonify(error='No picks available. A successful subscription payment is required to unlock unlimited picks.', access=level), 402
         g.membership_access = level
         return fn(*args, **kwargs)
     return wrapped
