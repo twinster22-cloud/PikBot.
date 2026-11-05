@@ -17,6 +17,10 @@ import requests
 from import_live_history import COLUMNS, nfl
 from today import FeedError, bucket
 
+class FeedQuotaError(FeedError):
+    """A provider rejected a request because of its rate or credit limit."""
+
+
 BDL = 'https://api.balldontlie.io/v1'
 NFLVERSE = 'https://github.com/nflverse/nflverse-data/releases/download'
 
@@ -111,9 +115,9 @@ def college_history(sport):
         error = None
         try:
             refresh_college(directory, league, 7 if path.is_file() else 365)
-        except (OSError, ValueError, TypeError, KeyError, RuntimeError):
+        except (OSError, ValueError, TypeError, KeyError, RuntimeError) as exc:
             retry_delay = 21600
-            error = 'The college history refresh failed. It will retry later.'
+            error = 'College provider quota reached.' if 'HTTP 429' in str(exc) else 'The college history refresh failed. It will retry later.'
         finally:
             with COLLEGE_LOCK:
                 COLLEGE_STATE[league] = (monotonic() + retry_delay, error)
@@ -124,6 +128,8 @@ def college_history(sport):
             COLLEGE_STATE[league] = (float('inf'), None)
             Thread(target=refresh, name='pikbot-college-' + league, daemon=True).start()
             error = None
+    if error and 'quota reached' in error:
+        raise FeedQuotaError(error)
     if not path.is_file():
         raise FeedError(error or 'College game history is loading. Try again shortly.')
     return pd.read_csv(path)
@@ -142,6 +148,8 @@ def sportsdata_post(provider, host, key, endpoint, **body):
             raise ValueError()
         return payload['data']
     except requests.HTTPError as exc:
+        if exc.response.status_code == 429:
+            raise FeedQuotaError(f'{provider} request or credit limit reached.') from None
         raise FeedError(f'{provider} denied the stats request (HTTP {exc.response.status_code}). Check key and credits.') from None
     except (requests.RequestException, ValueError):
         raise FeedError(f'{provider} player history is temporarily unavailable.') from None
@@ -249,11 +257,78 @@ def additional_history(sport, offers, now):
     return pd.DataFrame([row for player in rows for row in player], columns=COLUMNS)
 
 
-def load_history(sport, offers, now):
+
+RESERVE_LOCK = Lock()
+DUNK_RESERVE_UNTIL = 0
+
+
+@lru_cache(maxsize=4)
+def reserve_nba_season(season, _day):
+    url = ('https://github.com/sportsdataverse/sportsdataverse-data/releases/download/'
+           f'espn_nba_player_boxscores/player_box_{season}.csv')
+    try:
+        response = requests.get(url, timeout=15)
+        response.raise_for_status()
+        columns = ['game_id', 'game_date', 'athlete_id', 'athlete_display_name',
+                   'did_not_play', 'minutes', 'points', 'rebounds', 'assists',
+                   'athlete_headshot_href']
+        return pd.read_csv(BytesIO(response.content), usecols=columns,
+                           dtype={'athlete_id': str, 'game_id': str})
+    except (requests.RequestException, ValueError):
+        raise FeedError('The free NBA reserve history is temporarily unavailable.') from None
+
+
+def reserve_nba_history(offers, now):
+    season = now.year + int(now.month >= 9)
+    with RESERVE_LOCK:
+        current = reserve_nba_season(season, now.date().isoformat())
+        newest = pd.to_datetime(current['game_date'], utc=True, errors='coerce').max()
+        if pd.isna(newest) or now - newest.to_pydatetime() > timedelta(days=7):
+            raise FeedError('The free NBA reserve has not published sufficiently recent games.')
+        previous = reserve_nba_season(season - 1, now.date().isoformat())
+    frame = pd.concat([previous, current], ignore_index=True)
+    frame['date'] = pd.to_datetime(frame['game_date'], utc=True, errors='coerce')
+    frame = frame[(frame['date'] < now.replace(hour=0, minute=0, second=0, microsecond=0))
+                  & (frame['date'] >= now - timedelta(days=365))]
+    frame = frame[(frame['did_not_play'].astype(str).str.lower() == 'false')
+                  & (pd.to_numeric(frame['minutes'], errors='coerce') > 0)]
+    rows, photos = [], {}
+    for name in offers['player'].drop_duplicates():
+        matches = frame[frame['athlete_display_name'].str.casefold() == str(name).casefold()]
+        if matches['athlete_id'].nunique() != 1:
+            continue
+        photo = matches['athlete_headshot_href'].dropna()
+        if len(photo):
+            photos[name] = str(photo.iloc[-1])
+        for field, stat in (('points', 'PTS'), ('rebounds', 'REB'), ('assists', 'AST')):
+            games = matches[['game_id', 'date', field]].copy()
+            games[field] = pd.to_numeric(games[field], errors='coerce')
+            conflicts = games.groupby('game_id')[field].nunique()
+            games = games[~games['game_id'].isin(conflicts[conflicts > 1].index)]
+            for _, game in games.drop_duplicates('game_id').iterrows():
+                value = game[field]
+                if pd.notna(value) and 0 <= value < float('inf'):
+                    rows.append(('NBA', name, stat, game['date'].isoformat(), float(value)))
+    result = pd.DataFrame(rows, columns=COLUMNS)
+    result.attrs['source'] = 'SportsDataverse / hoopR (reserve)'
+    result.attrs['photos'] = photos
+    return result
+
+
+def _primary_history(sport, offers, now):
     if sport in ADDITIONAL_FEEDS:
         return additional_history(sport, offers, now)
     if sport in DUNK_LEAGUES and (os.getenv('DUNKAPI_API_KEY') or os.getenv('DUNKAPI_KEY')):
-        return dunk_history(sport, offers, now)
+        global DUNK_RESERVE_UNTIL
+        if sport == 'NBA' and monotonic() < DUNK_RESERVE_UNTIL:
+            return reserve_nba_history(offers, now)
+        try:
+            return dunk_history(sport, offers, now)
+        except FeedQuotaError:
+            if sport != 'NBA':
+                raise
+            DUNK_RESERVE_UNTIL = monotonic() + 600
+            return reserve_nba_history(offers, now)
     if sport in COLLEGE:
         return college_history(sport)
     if sport == 'NBA':
@@ -266,3 +341,19 @@ def load_history(sport, offers, now):
         season = now.year - (now.month < 3)
         return nfl_history(season, bucket(360))
     raise FeedError('Automatic player history is unavailable for this sport.')
+
+
+RESERVE_COOLDOWN = {}
+
+
+def load_history(sport, offers, now):
+    from reserve_feeds import reserve_history
+    if sport in RESERVE_COOLDOWN and monotonic() < RESERVE_COOLDOWN[sport]:
+        return reserve_history(sport, offers, now)
+    try:
+        return _primary_history(sport, offers, now)
+    except FeedQuotaError:
+        if sport not in {'WNBA', 'NHL', 'MLB', 'COLLEGE FOOTBALL', 'COLLEGE BASKETBALL'}:
+            raise
+        RESERVE_COOLDOWN[sport] = monotonic() + 600
+        return reserve_history(sport, offers, now)
