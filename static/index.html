@@ -165,6 +165,8 @@ let slateDay='';
 let picksExpire=0;
 let autoPickGeneration=0;
 let userSportChoice=false;
+const livePickCache=new Map();
+const lastSportMatchup=new Map();
 function easternDay(){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
 function gameTime(value){
   if(!value)return '—';
@@ -234,6 +236,7 @@ async function loadSportPicks(sport){
     $('status').textContent=message;
     return;
   }
+  games.sort((a,b)=>Number(b.id===lastSportMatchup.get(sport))-Number(a.id===lastSportMatchup.get(sport)));
   $('today-status').textContent='Checking current '+sport+' lines…';
   for(const game of games.slice(0,3)){
     const ok=await openMatchup({dataset:{league:sport,game:game.id}},true);
@@ -260,12 +263,17 @@ async function openMatchup(button,automatic=false){
   section.scrollIntoView({block:'nearest'});
   try{
     const query=new URLSearchParams({sport:button.dataset.league,event_id:button.dataset.game});
-    const response=await fetch('/api/today/predictions?'+query,{cache:'no-store'});
-    const data=await response.json();
+    const cacheKey=button.dataset.league+'|'+button.dataset.game;
+    const cached=livePickCache.get(cacheKey);
+    const valid=cached&&cached.day===easternDay()&&Date.now()<cached.expires;
+    const response=valid?{ok:true}:await fetch('/api/today/predictions?'+query,{cache:'no-store'});
+    const data=valid?cached.data:await response.json();
     if(request!==liveRequest)return;
     if(!response.ok)throw Error(data.error||'Picks are unavailable.');
     if(easternDay()!==slateDay){section.hidden=true;loadToday();return}
-    picksExpire=Math.min(Date.now()+15*60*1000,Date.parse(data.picks[0].starts_at));
+    picksExpire=valid?cached.expires:Math.min(Date.now()+15*60*1000,Date.parse(data.picks[0].starts_at));
+    livePickCache.set(cacheKey,{data,expires:picksExpire,day:easternDay()});
+    lastSportMatchup.set(button.dataset.league,button.dataset.game);
     const players=new Map();
     for(const pick of data.picks){
       if(!players.has(pick.player))players.set(pick.player,[]);
