@@ -208,6 +208,10 @@ class OwnerDashboardTests(unittest.TestCase):
                 cursor.fetchall.return_value=[{'kind':'payment','cents':3000},{'kind':'refund','cents':500},{'kind':'fee','cents':150}]
             elif 'WHERE NOT fees_complete' in sql:
                 cursor.fetchone.return_value={'count':0}
+            elif 'SELECT COUNT(*) AS count FROM pikbot_payment_records' in sql:
+                cursor.fetchone.return_value={'count':1}
+            elif 'average_rating' in sql:
+                cursor.fetchone.return_value={'unread':2,'average_rating':4.5}
             elif 'AS outstanding' in sql:
                 cursor.fetchone.return_value={'paid':400,'outstanding':600,'due':200}
             elif 'SELECT * FROM pikbot_owner_sync' in sql:
@@ -221,6 +225,50 @@ class OwnerDashboardTests(unittest.TestCase):
         self.assertEqual(response.json['revenue']['net_after_known_fees'],2350)
         self.assertEqual(response.json['expenses']['paid'],400)
         self.assertEqual(response.json['expenses']['due'],200)
+        self.assertEqual(response.json['revenue']['after_recorded_bills'],1950)
+        self.assertEqual(response.json['feedback_summary']['unread'],2)
+
+    def test_first_sync_records_mode_before_background_job(self):
+        self.owner_session()
+        db=MagicMock()
+        conn=db.return_value.__enter__.return_value
+        conn.execute.return_value.fetchone.return_value={'id':1}
+        with patch('membership.account',return_value={'email':'owner@example.com'}), \
+             patch('membership.private_paid_test',return_value=True),patch('owner_dashboard.database',db), \
+             patch('owner_dashboard.SYNC_POOL') as pool:
+            response=self.client.post('/api/owner/sync',data={'csrf':'unit-csrf'})
+        self.assertEqual(response.status_code,202)
+        self.assertIn('livemode=%s',conn.execute.call_args.args[0])
+        self.assertEqual(conn.execute.call_args.args[1],(False,False,False,False))
+        pool.submit.assert_called_once_with(admin.refresh_bookkeeping)
+
+    def test_payment_search_preserves_mode_scope_and_uses_bound_search(self):
+        db=MagicMock()
+        conn=db.return_value.__enter__.return_value
+        conn.execute.return_value.fetchall.return_value=[]
+        search="' OR 1=1 --"
+        with patch('membership.account',return_value={'email':'owner@example.com'}), \
+             patch('membership.private_paid_test',return_value=True),patch('owner_dashboard.database',db):
+            response=self.client.get('/api/owner/list/payments',query_string={'q':search,'state':'paid','page':1})
+        self.assertEqual(response.status_code,200)
+        sql,params=conn.execute.call_args.args
+        self.assertNotIn(search,sql)
+        self.assertIn('livemode=%s',sql)
+        self.assertEqual(params,(search,False,'paid',50))
+
+    def test_bills_can_be_edited_and_restored_by_owner(self):
+        self.owner_session()
+        db=MagicMock()
+        conn=db.return_value.__enter__.return_value
+        conn.execute.return_value.fetchone.return_value={'id':1}
+        with patch('membership.account',return_value={'email':'owner@example.com'}), \
+             patch('membership.private_paid_test',return_value=True),patch('owner_dashboard.database',db):
+            response=self.client.post('/api/owner/expenses/1/edit',data={'csrf':'unit-csrf','title':'Hosting','amount':'12.50','due_date':'2026-11-06'})
+            self.assertEqual(response.status_code,200)
+            self.assertEqual(conn.execute.call_args.args[1][1],1250)
+            response=self.client.post('/api/owner/expenses/1/restore',data={'csrf':'unit-csrf'})
+            self.assertEqual(response.status_code,200)
+            self.assertIn('archived=FALSE',conn.execute.call_args.args[0])
 
 
 if __name__=='__main__':
