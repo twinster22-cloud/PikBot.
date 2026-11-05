@@ -6,7 +6,7 @@ from scipy.stats import norm
 
 KEYS=['sport','player','stat']
 
-def predict(history, offers, min_games=12, max_age_days=30):
+def predict(history, offers, min_games=12, max_age_days=30, *, include_history=False):
     """Baseline predictions. Never use records on/after the offer's as_of timestamp."""
     h=history.copy(); o=offers.copy()
     for col in ['date']:
@@ -32,8 +32,12 @@ def predict(history, offers, min_games=12, max_age_days=30):
             push=max(0,1-more-less)
         else:
             more=norm.sf((line-mu)/sd);less=1-more;push=0.
+        recent = ({'recent_games': [
+            {'date': date.date().isoformat(), 'value': float(value)}
+            for date, value in s[['date', 'value']].tail(10).itertuples(index=False, name=None)
+        ]} if include_history else {})
         for side,p in [('MORE',more),('LESS',less)]:
-            output.append({**{k:r[k] for k in KEYS},'line':line,'as_of':r['as_of'], 'event_id':str(r.get('event_id','')),
+            output.append({**recent, **{k:r[k] for k in KEYS},'line':line,'as_of':r['as_of'], 'event_id':str(r.get('event_id','')),
                 'side':side,'p_raw':float(p),'p_push':float(push),'projection':float(mu),'games':len(x),
                 'actual':r.get('actual',np.nan),'offer_id':str(r.get('offer_id',f'{r["sport"]}|{r["player"]}|{r["stat"]}|{r["as_of"]}|{line}'))})
     return pd.DataFrame(output)

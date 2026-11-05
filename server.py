@@ -62,7 +62,7 @@ def analyze_endpoint():
 
 def analyze(h,o,run_backtest, *, trial_live=False, live=False):
     try:
-        pred=predict(h,o)
+        pred=predict(h,o,include_history=live)
         if trial_live and not pred.empty:
             pred = daily_trial_picks(pred)
             if pred.empty:
@@ -73,7 +73,7 @@ def analyze(h,o,run_backtest, *, trial_live=False, live=False):
             picks = picks.drop_duplicates(['sport', 'event_id', 'player', 'stat', 'line'])
         picks = picks.head(60)
         result={'disclaimer':'Statistical estimates are uncalibrated and not guaranteed. Uploaded offers are not verified live lines.',
-                'picks':records(picks[['sport','player','stat','line','side','p_raw','projection','games'] + (['event_id', 'p_push'] if live else [])] if not picks.empty else picks),
+                'picks':records(picks[['sport','player','stat','line','side','p_raw','projection','games'] + (['event_id', 'p_push', 'recent_games'] if live else [])] if not picks.empty else picks),
                 'entries':records(entries[['Pick 1','Pick 2','Estimated all-hit %','Pick 1 %','Pick 2 %']] if not entries.empty else entries),
                 'count':len(pred) if trial_live else len(pred)//2,'backtest':None}
         if run_backtest:
