@@ -125,6 +125,45 @@ def college_feed_check():
         return jsonify(check_college_feeds(today.bucket(60)))
 
 
+@lru_cache(maxsize=1)
+def check_sports_coverage(_day):
+    now = datetime.now(timezone.utc)
+    active = set(today.active_sports(today.bucket(30)))
+
+    def check(sport):
+        if sport not in active:
+            return sport, {'status': 'not_in_active_catalog'}
+        try:
+            slate = today.events(sport, today.bucket(30))
+            event = next((item for item in slate
+                          if (start := today.timestamp(item.get('commence_time'))) and start > now), None)
+            if not event:
+                return sport, {'status': 'no_upcoming_game'}
+            payload = today.event_offers(sport, event['id'], today.bucket(60))
+            if payload.get('error'):
+                return sport, {'status': 'provider_error', 'reason': payload['error']}
+            count = sum(len(market.get('outcomes', []))
+                        for book in payload.get('bookmakers', []) if book.get('key') == 'prizepicks'
+                        for market in book.get('markets', []))
+            return sport, {'status': 'lines_found' if count else 'no_lines_for_tested_game',
+                           'outcomes': count, 'game_time': event.get('commence_time')}
+        except today.FeedError as exc:
+            return sport, {'status': 'provider_error', 'reason': str(exc)}
+
+    with ThreadPoolExecutor(max_workers=7) as pool:
+        return dict(pool.map(check, today.SPORTS))
+
+
+@app.get('/api/sports-coverage-check')
+def sports_coverage_check():
+    try:
+        with today.LOCK:
+            coverage = check_sports_coverage(datetime.now(timezone.utc).date())
+        return jsonify(coverage)
+    except today.FeedError as exc:
+        return jsonify(error=str(exc)), 503
+
+
 @app.get('/health')
 def health():return jsonify(status='ok')
 @app.get('/api/sportsdata-test')
