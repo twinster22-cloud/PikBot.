@@ -27,7 +27,7 @@ NFLVERSE = 'https://github.com/nflverse/nflverse-data/releases/download'
 
 def download(url, **kwargs):
     try:
-        response = requests.get(url, timeout=5, **kwargs)
+        response = requests.get(url, timeout=(5, 25), **kwargs)
         response.raise_for_status()
         return response
     except requests.RequestException as exc:
@@ -87,7 +87,11 @@ def nfl_history(season, _window):
     urls.append(f'{NFLVERSE}/schedules/games.csv')
     with ThreadPoolExecutor(max_workers=3) as pool:
         previous, current, schedule = pool.map(lambda url: download(url).content, urls)
-    rows = pd.concat([pd.read_csv(BytesIO(previous)), pd.read_csv(BytesIO(current))], ignore_index=True)
+    needed = {'season', 'week', 'team', 'recent_team', 'opponent_team',
+              'player_id', 'player_display_name', 'passing_yards',
+              'rushing_yards', 'receiving_yards'}
+    rows = pd.concat([pd.read_csv(BytesIO(data), usecols=lambda col: col in needed)
+                      for data in (previous, current)], ignore_index=True)
     with TemporaryDirectory() as folder:
         stats, games = Path(folder) / 'stats.csv', Path(folder) / 'games.csv'
         rows.to_csv(stats, index=False)
@@ -141,7 +145,7 @@ DUNK_LEAGUES = {'NBA': 'nba', 'WNBA': 'wnba'}
 def sportsdata_post(provider, host, key, endpoint, **body):
     try:
         response = requests.post(host + '/v1/' + endpoint,
-                                 json=body, headers={'x-api-key': key}, timeout=5)
+                                 json=body, headers={'x-api-key': key}, timeout=(5, 20))
         response.raise_for_status()
         payload = response.json()
         if not isinstance(payload, dict) or not isinstance(payload.get('data'), dict):
@@ -262,7 +266,7 @@ RESERVE_LOCK = Lock()
 DUNK_RESERVE_UNTIL = 0
 
 
-@lru_cache(maxsize=4)
+@lru_cache(maxsize=2)
 def reserve_nba_season(season, _day):
     url = ('https://github.com/sportsdataverse/sportsdataverse-data/releases/download/'
            f'espn_nba_player_boxscores/player_box_{season}.csv')
@@ -357,3 +361,4 @@ def load_history(sport, offers, now):
             raise
         RESERVE_COOLDOWN[sport] = monotonic() + 600
         return reserve_history(sport, offers, now)
+

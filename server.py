@@ -6,8 +6,10 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import today
 import player_history
+import history_loader
+import psycopg
 from player_photos import attach_photos
-from membership import trial_daily_board, account, daily_trial_picks, init_accounts, premium_required, owner_required, check_csrf
+from membership import trial_daily_board, account, daily_trial_picks, init_accounts, premium_required, owner_required, check_csrf, database
 from flask import Flask, g, request, jsonify, send_from_directory, redirect
 import pandas as pd
 import numpy as np
@@ -60,6 +62,27 @@ def parse_csv(upload,required):
 def records(df):
     if df.empty:return []
     return df.replace({np.nan:None}).to_dict(orient='records')
+
+
+def read_history_cache(key):
+    try:
+        with database() as conn:
+            row = conn.execute('SELECT payload FROM pikbot_history_cache WHERE cache_key=%s AND expires>NOW()', (key,)).fetchone()
+        return history_loader.decode(row['payload']) if row else None
+    except (psycopg.Error, ValueError, KeyError):
+        app.logger.warning('History cache read unavailable')
+        return None
+
+
+def write_history_cache(key, frame):
+    try:
+        payload = history_loader.encode(frame)
+        with database() as conn:
+            conn.execute('DELETE FROM pikbot_history_cache WHERE expires<=NOW()')
+            conn.execute('''INSERT INTO pikbot_history_cache VALUES (%s,%s::jsonb,NOW()+INTERVAL '6 hours')
+                ON CONFLICT (cache_key) DO UPDATE SET payload=EXCLUDED.payload,expires=EXCLUDED.expires''', (key, payload))
+    except (psycopg.Error, ValueError, TypeError):
+        app.logger.warning('History cache write unavailable')
 
 @app.get('/')
 def index():
@@ -142,7 +165,8 @@ def todays_predictions():
             return jsonify(error='No fresh PrizePicks lines are available for the covered game.'), 404
         offers = pd.DataFrame(available)
         history = (pd.read_csv(path) if path and path.is_file()
-                   else player_history.load_history(sport, offers, now))
+                   else history_loader.load(sport, offers, now, player_history.load_history,
+                                            read_history_cache, write_history_cache))
         if not set(player_history.COLUMNS).issubset(history.columns):
             return jsonify(error='The player history has invalid columns.'), 503
     except today.FeedError as exc:
@@ -429,4 +453,5 @@ def live_props_status():
     )
 
 if __name__=='__main__':app.run(host='0.0.0.0',port=int(__import__('os').environ.get('PORT',5000)),debug=False)
+
 
