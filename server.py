@@ -1,12 +1,13 @@
 from functools import lru_cache
 import requests
+import secrets
 import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import today
 import player_history
 from player_photos import attach_photos
-from membership import trial_daily_board, account, daily_trial_picks, init_accounts, premium_required
+from membership import trial_daily_board, account, daily_trial_picks, init_accounts, premium_required, owner_required, check_csrf
 from flask import Flask, g, request, jsonify, send_from_directory, redirect
 import pandas as pd
 import numpy as np
@@ -26,8 +27,25 @@ def public_asset(asset):
 
 @app.after_request
 def prevent_private_caching(response):
-    if request.path in {'/', '/login', '/api/account'}:
-        response.headers['Cache-Control'] = 'no-store'
+    if request.path == '/' or request.path.startswith(('/api/', '/login', '/owner/', '/billing/', '/logout')):
+        response.headers['Cache-Control'] = 'no-store, private'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Referrer-Policy'] = 'no-referrer'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000'
+    response.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=(), payment=()'
+    nonce = secrets.token_urlsafe(24)
+    if response.mimetype == 'text/html' and response.status_code == 200:
+        response.direct_passthrough = False
+        response.set_data(response.get_data(as_text=True).replace('<script>', '<script nonce="' + nonce + '">'))
+        response.headers.pop('ETag', None)
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; script-src 'self' 'nonce-" + nonce + "'; "
+        "style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; "
+        "connect-src 'self'; worker-src 'self'; object-src 'none'; "
+        "base-uri 'none'; frame-ancestors 'none'; "
+        "form-action 'self' https://checkout.stripe.com https://billing.stripe.com"
+    )
     return response
 
 def parse_csv(upload,required):
@@ -52,6 +70,7 @@ def index():
 @app.post('/api/analyze')
 @premium_required
 def analyze_endpoint():
+    check_csrf()
     run_backtest = request.form.get('backtest') == 'true'
     if g.membership_access == 'trial':
         return jsonify(error='Trial accounts get three live picks per day. CSV analysis requires a subscription.'), 402
@@ -197,6 +216,7 @@ def pick_reason(pick):
 
 
 @app.get('/api/odds-feed-check')
+@owner_required
 def odds_feed_check():
     with today.LOCK:
         result = check_odds_feed(today.bucket(60))
@@ -260,6 +280,7 @@ def check_college_feeds(_window):
 
 
 @app.get('/api/college-feed-check')
+@owner_required
 def college_feed_check():
     with today.LOCK:
         return jsonify(check_college_feeds(today.bucket(60)))
@@ -295,6 +316,7 @@ def check_sports_coverage(_day):
 
 
 @app.get('/api/sports-coverage-check')
+@owner_required
 def sports_coverage_check():
     try:
         with today.LOCK:
@@ -325,7 +347,7 @@ def check_dunk_history(day):
 
 
 @app.get('/api/dunk-feed-check')
-@premium_required
+@owner_required
 def dunk_feed_check():
     with today.LOCK:
         return jsonify(check_dunk_history(datetime.now(timezone.utc).date().isoformat()))
@@ -353,7 +375,7 @@ def check_next_projection(sport, _window):
 
 
 @app.get('/api/next-projection-check')
-@premium_required
+@owner_required
 def next_projection_check():
     sport = request.args.get('sport', 'NBA')
     if sport not in today.SPORTS:
@@ -374,7 +396,7 @@ def check_additional_history(sport, _day):
 
 
 @app.get('/api/additional-feed-check')
-@premium_required
+@owner_required
 def additional_feed_check():
     sport = request.args.get('sport', '')
     if sport not in player_history.ADDITIONAL_FEEDS:
@@ -385,10 +407,11 @@ def additional_feed_check():
 @app.get('/health')
 def health():return jsonify(status='ok')
 @app.get('/api/sportsdata-test')
-@premium_required
+@owner_required
 def sportsdata_test():
     return jsonify(test_connection())
 @app.get('/api/live-props-status')
+@owner_required
 def live_props_status():
     # Configuration is not evidence that a provider has passed a live test.
     configured = {
