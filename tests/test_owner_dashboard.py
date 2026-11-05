@@ -50,6 +50,12 @@ class OwnerDashboardTests(unittest.TestCase):
             self.assertIn('no-store', response.headers['Cache-Control'])
             self.assertIn(b'OWNER ONLY', response.data)
 
+    def test_signed_in_owner_app_opens_business_dashboard(self):
+        with patch('server.account',return_value={'email':'owner@example.com'}), \
+             patch('server.private_paid_test',return_value=True):
+            self.assertEqual(self.client.get('/').headers['Location'],'/owner')
+            self.assertEqual(self.client.get('/?view=picks').status_code,200)
+
     def test_owner_mutations_need_csrf(self):
         with patch('membership.account', return_value={'email':'owner@example.com'}), \
              patch('membership.private_paid_test', return_value=True):
