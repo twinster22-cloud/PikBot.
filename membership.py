@@ -43,6 +43,11 @@ def init_accounts(app):
             pick_key TEXT NOT NULL,
             PRIMARY KEY (email, pick_day, pick_key)
         )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS pikbot_trial_daily_board (
+            email TEXT NOT NULL REFERENCES pikbot_accounts(email) ON DELETE CASCADE,
+            pick_day DATE NOT NULL, payload JSONB NOT NULL,
+            PRIMARY KEY (email, pick_day)
+        )""")
     app.register_blueprint(membership)
 
 
@@ -256,3 +261,19 @@ def billing(action):
         return redirect(result.url, code=303)
     except stripe.StripeError:
         return jsonify(error='Stripe billing is temporarily unavailable.'), 502
+
+
+def trial_daily_board(payload=None):
+    """Only the first successful three-pick board may be published each Eastern day."""
+    email = session['email']
+    day = datetime.now(ZoneInfo('America/New_York')).date()
+    with database() as conn:
+        if payload is not None:
+            conn.execute('SELECT email FROM pikbot_accounts WHERE email=%s FOR UPDATE', (email,))
+            conn.execute('DELETE FROM pikbot_trial_daily_board WHERE email=%s AND pick_day<%s', (email, day))
+            conn.execute('''INSERT INTO pikbot_trial_daily_board (email,pick_day,payload)
+                            VALUES (%s,%s,%s::jsonb) ON CONFLICT DO NOTHING''',
+                         (email, day, json.dumps(payload)))
+        row = conn.execute('SELECT payload FROM pikbot_trial_daily_board WHERE email=%s AND pick_day=%s',
+                           (email, day)).fetchone()
+    return row['payload'] if row else None
