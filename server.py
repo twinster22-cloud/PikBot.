@@ -141,7 +141,12 @@ def todays_predictions():
         stats_source = 'DunkAPI'
     if not (path and path.is_file()) and sport in player_history.ADDITIONAL_FEEDS:
         stats_source = player_history.ADDITIONAL_FEEDS[sport][0]
-    attach_photos(result['picks'])
+    stats_source = history.attrs.get('source', stats_source)
+    if 'reserve' not in stats_source:
+        attach_photos(result['picks'])
+    for pick in result['picks']:
+        if not pick.get('photo_url'):
+            pick['photo_url'] = history.attrs.get('photos', {}).get(pick['player'])
     matchups = {game['id']: game for game in today.today_events(sport, now)}
     for pick in result['picks']:
         game = matchups.get(pick['event_id'], {})
@@ -149,6 +154,8 @@ def todays_predictions():
         pick['starts_at'] = game.get('commence_time')
     result['source'] = 'PrizePicks via The Odds API' + (' · Stats: ' + stats_source if stats_source else '')
     result['disclaimer'] = 'Model estimates for current PrizePicks lines. Only players with enough recent history are shown.'
+    if 'SportsDataverse' in stats_source:
+        result['disclaimer'] += ' Reserve stats: SportsDataverse contributors, CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Player game records transformed into PikBot estimates.'
     return jsonify(result)
 
 
