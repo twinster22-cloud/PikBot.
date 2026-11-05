@@ -115,7 +115,7 @@ def todays_predictions():
     path = Path(directory) / (key + '.csv') if directory else None
     try:
         now = datetime.now(timezone.utc)
-        available = today.offers(sport, now)
+        available = today.offers(sport, now, event_id=request.args.get('event_id'))
         if not available:
             return jsonify(error='No fresh PrizePicks lines are available for the covered game.'), 404
         offers = pd.DataFrame(available)
@@ -142,7 +142,7 @@ def todays_predictions():
         pick['matchup'] = ' at '.join(filter(None, (game.get('away_team'), game.get('home_team'))))
         pick['starts_at'] = game.get('commence_time')
     result['source'] = 'PrizePicks via The Odds API' + (' · Stats: ' + stats_source if stats_source else '')
-    result['disclaimer'] = 'Model estimates for current PrizePicks lines. Coverage is limited to one upcoming game per sport.'
+    result['disclaimer'] = 'Model estimates for current PrizePicks lines. Only players with enough recent history are shown.'
     return jsonify(result)
 
 

@@ -85,12 +85,13 @@ def event_offers(sport, event_id, _window):
         return {'error': str(exc)}
 
 
-def offers(sport, now):
+def offers(sport, now, event_id=None):
     _, markets = SPORTS[sport]
     result = {}
     upcoming = [event for event in today_events(sport, now)
                 if timestamp(event.get('commence_time')) > now]
-    # Fetch at most one event per league per hour on the starter quota.
+    if event_id:
+        upcoming = [event for event in upcoming if event['id'] == event_id]
     for event in upcoming[:1]:
         event_id = event['id']
         with LOCK:
