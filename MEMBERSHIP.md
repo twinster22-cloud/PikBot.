@@ -1,4 +1,4 @@
-# PikBot Neon membership setup
+# PikBot membership setup
 
 Set these environment variables on a staging service before deploying this branch.
 
