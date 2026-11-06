@@ -152,9 +152,10 @@ def sportsdata_post(provider, host, key, endpoint, **body):
             raise ValueError()
         return payload['data']
     except requests.HTTPError as exc:
-        if exc.response.status_code == 429:
+        status = exc.response.status_code
+        if status == 429 or (provider == 'DunkAPI' and status == 402):
             raise FeedQuotaError(f'{provider} request or credit limit reached.') from None
-        raise FeedError(f'{provider} denied the stats request (HTTP {exc.response.status_code}). Check key and credits.') from None
+        raise FeedError(f'{provider} denied the stats request (HTTP {status}). Check key and credits.') from None
     except (requests.RequestException, ValueError):
         raise FeedError(f'{provider} player history is temporarily unavailable.') from None
 
