@@ -35,7 +35,19 @@
 <form method="post" action="/billing/checkout" id="subscribe" hidden><input type="hidden" name="csrf"><button class="btn primary">Subscribe for $15/month</button></form>
 <form method="post" action="/billing/portal" id="portal" hidden><input type="hidden" name="csrf"><button class="btn">Manage subscription</button></form>
 <a class="btn primary" href="/owner" data-owner-only hidden style="text-decoration:none">Owner dashboard</a><form method="post" action="/logout" id="logout" hidden><input type="hidden" name="csrf"><button class="btn">Sign out</button></form>
-</div><section id="upgrade-plan" class="panel"><span class="chip">$15 / MONTH</span><h2>PikBot Paid Membership</h2><a class="btn primary" href="/?preview=paid" style="display:inline-block;text-decoration:none">Preview paid dashboard</a><p>Unlimited daily pick views across all supported sports, player photos, MORE/LESS estimates, and recent game history.</p><p class="muted">The 7-day free trial includes 3 picks per day total. Paid members have no daily viewing cap. Available picks depend on current lines, sufficient player history, and data-provider availability.</p><p id="plan-checkout-status" class="muted"></p></section></section><section id="dashboard"><div class="section-head"><h2>PLAYER PROPS ANALYSIS</h2><span class="tag" id="selected-sport">NBA · RESEARCH</span></div><div class="panel props-console"><div class="console-brand"><span>PB</span><strong>PLAYER PROPS ANALYSIS</strong><small>PIKBOT</small></div><div class="analysis-controls"><div><label for="today-sport">Today's sports</label>
+</div>
+<details id="previous-results" class="panel" hidden>
+  <summary><strong>Previous Pick Results</strong></summary>
+  <p class="muted">Saved picks from the last 30 days. Results compare the saved line with the final player stat.</p>
+  <p id="previous-results-status" role="status"></p>
+  <div id="previous-results-list"></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn" id="previous-results-refresh" type="button">Refresh results</button>
+    <button class="btn" id="previous-results-newer" type="button" hidden>Newer picks</button>
+    <button class="btn" id="previous-results-older" type="button" hidden>Older picks</button>
+  </div>
+</details>
+<section id="upgrade-plan" class="panel"><span class="chip">$15 / MONTH</span><h2>PikBot Paid Membership</h2><a class="btn primary" href="/?preview=paid" style="display:inline-block;text-decoration:none">Preview paid dashboard</a><p>Unlimited daily pick views across all supported sports, player photos, MORE/LESS estimates, and recent game history.</p><p class="muted">The 7-day free trial includes 3 picks per day total. Paid members have no daily viewing cap. Available picks depend on current lines, sufficient player history, and data-provider availability.</p><p id="plan-checkout-status" class="muted"></p></section></section><section id="dashboard"><div class="section-head"><h2>PLAYER PROPS ANALYSIS</h2><span class="tag" id="selected-sport">NBA · RESEARCH</span></div><div class="panel props-console"><div class="console-brand"><span>PB</span><strong>PLAYER PROPS ANALYSIS</strong><small>PIKBOT</small></div><div class="analysis-controls"><div><label for="today-sport">Today's sports</label>
 <select id="today-sport" disabled><option value="">Choose a sport</option></select>
 <p id="today-status" role="status"></p>
 <div id="today-matchups"></div></div>
@@ -144,6 +156,39 @@ function paintPlayer(p){
 function render(){if(!dataset){paintPlayer(null);$('player-heading').textContent='Player Intelligence';$('data-label').textContent='AWAITING DATA';$('metrics').innerHTML='<div class="statbox"><div class="tag">OFFERS ANALYZED</div><div class="num">—</div></div><div class="statbox"><div class="tag">2-PICK CANDIDATES</div><div class="num">—</div></div><div class="statbox"><div class="tag">MODEL STATUS</div><div class="num" style="font-size:18px">UNVALIDATED</div></div>';setGauge('more',NaN);setGauge('less',NaN);$('more-sub').textContent=$('less-sub').textContent='Awaiting a projection';$('entries').innerHTML='<div class="empty">No results yet. Upload history and offers to see results.</div>';$('picks').innerHTML='<div class="empty">No player projections loaded.</div>';return}let d=dataset,ps=(d.picks||[]).filter(p=>String(p.sport).toUpperCase()===selected),en=(d.entries||[]).filter(e=>{let str=String(e['Pick 1']||'')+' '+String(e['Pick 2']||'');return ps.some(p=>str.toLowerCase().includes(String(p.player).toLowerCase()))});$('metrics').innerHTML='<div class="statbox"><div class="tag">'+esc(selected)+' PROJECTIONS</div><div class="num">'+ps.length+'</div></div><div class="statbox"><div class="tag">MATCHING 2-PICK CANDIDATES</div><div class="num">'+en.length+'</div></div><div class="statbox"><div class="tag">MODEL STATUS</div><div class="num" style="font-size:18px">UNCALIBRATED</div></div>';let p=ps.includes(focusedPick)?focusedPick:ps[0];paintPlayer(p);let prob=p?Number(p.p_raw)*100:NaN;if(p&&prob>100)prob=Number(p.p_raw);if(p?.matchup)$('metrics').innerHTML=[['PRIZEPICKS LINE',p.line],['PROJECTION',fmt(p.projection)],['GAMES USED',p.games]].map(([label,value])=>'<div class="statbox"><div class="tag">'+esc(label)+'</div><div class="num">'+esc(value)+'</div></div>').join('');$('player-heading').textContent=p?p.player+' · '+p.stat:'Player Intelligence';$('data-label').textContent=d.source||'UPLOADED DATA';setGauge('more',p&&String(p.side).toLowerCase().includes('more')?prob:p?Math.max(0,100-prob-100*Number(p.p_push||0)):NaN);setGauge('less',p&&String(p.side).toLowerCase().includes('less')?prob:p?Math.max(0,100-prob-100*Number(p.p_push||0)):NaN);$('more-sub').textContent=p?'Line '+p.line+' · '+p.stat:'No projection for this sport';$('less-sub').textContent=p?'Model estimate only':'No projection for this sport';$('entries').innerHTML=tabulate(en,[['Pick 1','Selection 1'],['Pick 2','Selection 2'],['Estimated all-hit %','Uncalibrated estimate']]);$('picks').innerHTML=tabulate(ps,d.source?[['player','Player'],['matchup','Matchup'],['stat','Stat'],['line','PrizePicks line'],['side','Model lean'],['projection','Projected stat'],['games','Games used']]:[['player','Player'],['stat','Stat'],['line','Line'],['side','Side'],['projection','Projection'],['games','Games']]);let b=d.backtest;$('backtest').innerHTML=b?'<div class="grid3"><div class="statbox"><div class="tag">COMPLETED ENTRIES</div><div class="num">'+esc(b.entries)+'</div></div><div class="statbox"><div class="tag">OBSERVED WIN RATE</div><div class="num">'+(b.win_rate===null?'N/A':esc(b.win_rate)+'%')+'</div></div><div class="statbox"><div class="tag">95% INTERVAL</div><div class="num" style="font-size:17px">'+(b.interval?esc(b.interval.join('–'))+'%':'N/A')+'</div></div></div><p class="muted">'+esc(b.note)+'</p>':'Backtest not run for this dataset.'}async function run(url,opt){$('status').textContent='Analyzing data…';try{let r=await fetch(url,opt),d=await r.json();if(!r.ok)throw Error(d.error||'Analysis failed');dataset=d;showUploadedSports(d.picks||[]);$('status').textContent=d.source?d.disclaimer:'Uploaded data analyzed. Live status has not been verified.';render();showTab('dashboard')}catch(e){$('status').innerHTML='<span class="error">'+esc(e.message)+'</span>';showTab('dashboard')}}$('clear').onclick=()=>{dataset=null;showUploadedSports([]);$('status').textContent='Results cleared.';render();showTab('dashboard')};$('upload').onsubmit=e=>{e.preventDefault();run('/api/analyze',{method:'POST',body:new FormData(e.target)})};if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
 
 
+let resultsPage=0, resultsRequest=0;
+async function loadPreviousResults(page){
+  const requestId=++resultsRequest;
+  const status=$('previous-results-status');
+  const list=$('previous-results-list');
+  status.textContent='Checking final player stats…';
+  list.replaceChildren();
+  $('previous-results-newer').hidden=true;
+  $('previous-results-older').hidden=true;
+  try{
+    const response=await fetch('/api/pick-results?page='+page,{cache:'no-store'});
+    if(!response.ok)throw Error();
+    const data=await response.json();
+    if(requestId!==resultsRequest||accessBlocked)return;
+    resultsPage=page;
+    const labels={WIN:'Passed',LOSS:'Failed',PUSH:'Push',PENDING:'Pending'};
+    list.innerHTML=data.picks.map(p=>'<article class="statbox" style="margin-bottom:8px">'+
+      '<strong>'+esc(p.player)+'</strong> · '+esc(p.sport)+'<br>'+
+      '<span class="muted">'+esc(p.matchup)+' · '+esc(new Date(p.starts_at).toLocaleDateString('en-US',{timeZone:'America/New_York'}))+' · '+esc(gameTime(p.starts_at))+'</span><br>'+
+      esc(p.side)+' '+esc(p.line)+' '+esc(p.stat)+' · <strong>'+esc(labels[p.result])+'</strong>'+
+      (p.actual===null?'':' · Final stat '+esc(p.actual))+'</article>').join('');
+    status.textContent=data.picks.length?'':'No saved picks from games that have started.';
+    $('previous-results-newer').hidden=page===0;
+    $('previous-results-older').hidden=!data.has_more;
+  }catch{
+    if(requestId===resultsRequest)status.textContent='Could not load pick results. Try refreshing.';
+  }
+}
+$('previous-results').ontoggle=()=>{if($('previous-results').open)loadPreviousResults(0)};
+$('previous-results-refresh').onclick=()=>loadPreviousResults(resultsPage);
+$('previous-results-newer').onclick=()=>loadPreviousResults(resultsPage-1);
+$('previous-results-older').onclick=()=>loadPreviousResults(resultsPage+1);
+
 async function showMembership(){
   const status=$('membership-status');
   try {
@@ -159,6 +204,12 @@ async function showMembership(){
     const wasBlocked=accessBlocked;
     const wasTrial=trialOnly;
     accessBlocked=!['trial','subscriber'].includes(info.access);
+    $('previous-results').hidden=accessBlocked;
+    if(accessBlocked){
+      ++resultsRequest;
+      $('previous-results').open=false;
+      $('previous-results-list').replaceChildren();
+    }
     if(accessBlocked){
       ++liveRequest; ++autoPickGeneration; livePickCache.clear();
       dataset=null; focusedPick=null; picksExpire=0;

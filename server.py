@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 import today
 import player_history
 import history_loader
+import pick_results
 import psycopg
 from player_photos import attach_photos
 from membership import trial_daily_board, account, daily_trial_picks, init_accounts, premium_required, owner_required, check_csrf, database, private_paid_test
@@ -215,13 +216,61 @@ def todays_predictions():
         result['disclaimer'] += ' Your fixed daily selections. Lines and estimates were captured at the selection time; no additional trial picks are revealed today.'
         result = trial_daily_board(trial_public_board(result))
         result = trial_public_board(result)
+    else:
+        save_member_pick_board(result['picks'], now)
     return jsonify(result)
 
 
+PICK_SNAPSHOT_FIELDS = {'sport', 'player', 'stat', 'line', 'side', 'event_id', 'matchup', 'starts_at'}
+
+
+def save_member_pick_board(picks, now):
+    event_id = picks[0]['event_id']
+    if not event_id or not today.timestamp(picks[0].get('starts_at')):
+        return
+    email = g.member_email
+    day = now.astimezone(pick_results.EASTERN).date()
+    payload = {'picks': [{key: value for key, value in pick.items() if key in PICK_SNAPSHOT_FIELDS}
+                         for pick in picks if pick['event_id'] == event_id]}
+    try:
+        with database() as conn:
+            conn.execute('DELETE FROM pikbot_member_pick_boards WHERE email=%s AND pick_day<%s',
+                         (email, day - timedelta(days=30)))
+            conn.execute("""INSERT INTO pikbot_member_pick_boards (email, pick_day, event_id, payload)
+                            VALUES (%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
+                         (email, day, event_id, psycopg.types.json.Jsonb(payload)))
+    except psycopg.Error:
+        app.logger.warning('Could not save the live pick board for results.')
+
+
+@app.get('/api/pick-results')
+@premium_required
+def previous_pick_results():
+    page = request.args.get('page', 0, type=int)
+    if not 0 <= page <= 500:
+        return jsonify(error='Invalid results page.'), 400
+    now = datetime.now(timezone.utc)
+    cutoff = now.astimezone(pick_results.EASTERN).date() - timedelta(days=30)
+    email = g.member_email
+    with database() as conn:
+        rows = conn.execute("""WITH boards AS (
+                SELECT pick_day, '' AS board_key, payload FROM pikbot_trial_daily_board
+                WHERE email=%s AND pick_day >= %s
+                UNION ALL
+                SELECT pick_day, event_id AS board_key, payload FROM pikbot_member_pick_boards
+                WHERE email=%s AND pick_day >= %s
+            )
+            SELECT pick FROM boards
+            CROSS JOIN LATERAL jsonb_array_elements(payload->'picks') WITH ORDINALITY AS saved(pick, pick_order)
+            WHERE NULLIF(pick->>'starts_at', '')::timestamptz <= %s
+            ORDER BY pick_day DESC, (pick->>'starts_at')::timestamptz DESC, board_key, pick_order
+            LIMIT 13 OFFSET %s""", (email, cutoff, email, cutoff, now, page * 12)).fetchall()
+    return jsonify(picks=pick_results.grade([row['pick'] for row in rows[:12]], now), has_more=len(rows) > 12)
+
+
 def trial_public_board(board):
-    allowed = {'sport', 'player', 'stat', 'line', 'side', 'event_id', 'matchup', 'starts_at'}
     return {
-        'picks': [{key: value for key, value in pick.items() if key in allowed}
+        'picks': [{key: value for key, value in pick.items() if key in PICK_SNAPSHOT_FIELDS}
                   for pick in board.get('picks', [])[:3]],
         'entries': [], 'daily_board': True, 'selected_at': board.get('selected_at'),
         'source': 'PikBot daily selections',

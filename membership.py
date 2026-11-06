@@ -61,6 +61,11 @@ def init_accounts(app):
             pick_day DATE NOT NULL, payload JSONB NOT NULL,
             PRIMARY KEY (email, pick_day)
         )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS pikbot_member_pick_boards (
+            email TEXT NOT NULL REFERENCES pikbot_accounts(email) ON DELETE CASCADE,
+            pick_day DATE NOT NULL, event_id TEXT NOT NULL, payload JSONB NOT NULL,
+            PRIMARY KEY (email, pick_day, event_id)
+        )""")
         conn.execute("""CREATE TABLE IF NOT EXISTS pikbot_history_cache (
             cache_key TEXT PRIMARY KEY, payload JSONB NOT NULL,
             expires TIMESTAMPTZ NOT NULL
@@ -410,6 +415,7 @@ def premium_required(fn):
         if level in {'expired', 'payment_required'}:
             return jsonify(error='No picks available. A successful subscription payment is required to unlock unlimited picks.', access=level), 402
         g.membership_access = level
+        g.member_email = record['email']
         return fn(*args, **kwargs)
     return wrapped
 
@@ -584,7 +590,8 @@ def trial_daily_board(payload=None):
     with database() as conn:
         if payload is not None:
             conn.execute('SELECT email FROM pikbot_accounts WHERE email=%s FOR UPDATE', (email,))
-            conn.execute('DELETE FROM pikbot_trial_daily_board WHERE email=%s AND pick_day<%s', (email, day))
+            conn.execute('DELETE FROM pikbot_trial_daily_board WHERE email=%s AND pick_day<%s',
+                         (email, day - timedelta(days=30)))
             conn.execute('''INSERT INTO pikbot_trial_daily_board (email,pick_day,payload)
                             VALUES (%s,%s,%s::jsonb) ON CONFLICT DO NOTHING''',
                          (email, day, json.dumps(payload)))
