@@ -11,7 +11,7 @@ import pick_results
 import psycopg
 from player_photos import attach_photos
 from membership import trial_daily_board, account, daily_trial_picks, init_accounts, premium_required, owner_required, check_csrf, database, private_paid_test
-from flask import Flask, g, request, jsonify, send_from_directory, redirect
+from flask import Flask, g, request, jsonify, send_from_directory, redirect, session
 import pandas as pd
 import numpy as np
 from io import StringIO
@@ -243,15 +243,15 @@ def save_member_pick_board(picks, now):
         app.logger.warning('Could not save the live pick board for results.')
 
 
-@app.get('/api/pick-results')
-@premium_required
+@app.get('/api/owner/pick-results')
+@owner_required
 def previous_pick_results():
     page = request.args.get('page', 0, type=int)
     if not 0 <= page <= 500:
         return jsonify(error='Invalid results page.'), 400
     now = datetime.now(timezone.utc)
     cutoff = now.astimezone(pick_results.EASTERN).date() - timedelta(days=30)
-    email = g.member_email
+    email = session['email']
     with database() as conn:
         rows = conn.execute("""WITH boards AS (
                 SELECT pick_day, '' AS board_key, payload FROM pikbot_trial_daily_board
