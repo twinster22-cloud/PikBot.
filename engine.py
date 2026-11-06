@@ -3,6 +3,7 @@ import math
 import numpy as np
 import pandas as pd
 from scipy.stats import norm
+from scipy.special import ndtr
 
 KEYS=['sport','player','stat']
 
@@ -43,7 +44,8 @@ def predict(history, offers, min_games=12, max_age_days=30, *, include_history=F
         x=s['value'].tail(50).to_numpy(float)
         if len(x)<min_games or np.any(x<0):continue
         if (r['as_of']-s['date'].max()).days>max_age_days:continue
-        mu = weighted_recent(x)
+        baseline = weighted_recent(x)
+        mu = baseline
         playing_time = nba_playing_time(s) if include_history and r['sport'] == 'NBA' else None
         if playing_time and playing_time['adjusted']:
             minutes_adjusted = mu * playing_time['projected'] / playing_time['baseline']
@@ -52,8 +54,15 @@ def predict(history, offers, min_games=12, max_age_days=30, *, include_history=F
         line=float(r['line'])
         integer=np.allclose(x,np.round(x))
         if integer:
-            more=norm.sf((math.floor(line)+.5-mu)/sd)
-            less=norm.cdf((math.ceil(line)-.5-mu)/sd)
+            more_cutoff = math.floor(line) + .5
+            less_cutoff = math.ceil(line) - .5
+            more = norm.sf((more_cutoff - mu) / sd)
+            less = norm.cdf((less_cutoff - mu) / sd)
+            if include_history and r['sport'] == 'NBA' and r['stat'] in {'PTS', 'REB', 'AST'}:
+                # Align historical results with the current playing-time projection.
+                adjusted_history = x + (mu - baseline)
+                more = .75 * more + .25 * weighted_recent(ndtr((adjusted_history - more_cutoff) / .8))
+                less = .75 * less + .25 * weighted_recent(ndtr((less_cutoff - adjusted_history) / .8))
             push=max(0,1-more-less)
         else:
             more=norm.sf((line-mu)/sd);less=1-more;push=0.

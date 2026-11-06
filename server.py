@@ -230,7 +230,8 @@ def save_member_pick_board(picks, now):
         return
     email = g.member_email
     day = now.astimezone(pick_results.EASTERN).date()
-    payload = {'picks': [{key: value for key, value in pick.items() if key in PICK_SNAPSHOT_FIELDS}
+    fields = PICK_SNAPSHOT_FIELDS | {'p_raw'} if picks[0]['sport'] == 'NBA' else PICK_SNAPSHOT_FIELDS
+    payload = {'picks': [{key: value for key, value in pick.items() if key in fields}
                          for pick in picks if pick['event_id'] == event_id]}
     try:
         with database() as conn:
