@@ -17,10 +17,26 @@
 {% if owner_mode %}<p>Owner testing login</p>{% endif %}
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
 {% if notice %}<p role="status">{{ notice }}</p>{% endif %}
-{% if not owner_mode and not reset_view and request.args.get('password_reset') == '1' %}
+{% if not reset_view and request.args.get('password_reset') == '1' %}
 <p role="status">Password updated. Log in with your new password.</p>
 {% endif %}
-{% if reset_view == 'request' %}
+{% if reset_view == 'owner' %}
+<h2>Reset owner password</h2>
+{% if owner_recovery_enabled %}
+<form method="post">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<label>Owner email <input type="email" name="email" autocomplete="username" required maxlength="254"></label>
+<label>Private owner code <input type="password" name="test_code" autocomplete="off" required></label>
+<label>One-time recovery key <input type="password" name="recovery_key" autocomplete="off" required></label>
+<label>New password <input type="password" name="password" autocomplete="new-password" required minlength="12" maxlength="128"></label>
+<label>Confirm password <input type="password" name="confirmation" autocomplete="new-password" required minlength="12" maxlength="128"></label>
+<button>Reset owner password</button>
+</form>
+{% else %}
+<p>Owner recovery is disabled. Set a unique recovery key of at least 32 characters in the PikBot service environment.</p>
+{% endif %}
+<a class="signup" href="/owner/login">Back to owner sign-in</a>
+{% elif reset_view == 'request' %}
 <h2>Forgot your password?</h2>
 <form method="post">
 <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -54,6 +70,7 @@ if (window.location.hash.length > 1) {
 {% if owner_mode %}
 <label>Private owner code <input type="password" name="test_code" autocomplete="off" required></label>
 <button name="action" value="login">Owner sign in</button>
+<a class="signup" href="/owner/reset-password">Reset owner password</a>
 <a class="signup" href="/login">Public login</a>
 {% elif request.args.get('signup') == '1' %}
 <button name="action" value="register">Create account and start free trial</button>

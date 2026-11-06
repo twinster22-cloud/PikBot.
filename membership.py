@@ -75,6 +75,7 @@ def init_accounts(app):
         conn.execute('ALTER TABLE pikbot_accounts ADD COLUMN IF NOT EXISTS billing_checked_at TIMESTAMPTZ')
         conn.execute('ALTER TABLE pikbot_accounts ADD COLUMN IF NOT EXISTS billing_mode BOOLEAN')
         conn.execute('ALTER TABLE pikbot_accounts ADD COLUMN IF NOT EXISTS password_version INTEGER NOT NULL DEFAULT 0')
+        conn.execute('ALTER TABLE pikbot_accounts ADD COLUMN IF NOT EXISTS owner_recovery_used TEXT')
         conn.execute("""CREATE TABLE IF NOT EXISTS pikbot_billing_events (
             event_id TEXT PRIMARY KEY, event_type TEXT NOT NULL,
             received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -273,6 +274,43 @@ def send_password_reset(email, serializer, origin, api_key, sender):
         LOGGER.warning('Password reset email could not be sent.')
     finally:
         RESET_EMAIL_SLOTS.release()
+
+
+@membership.route('/owner/reset-password', methods=['GET', 'POST'])
+def reset_owner_password():
+    recovery_key = os.getenv('PIKBOT_OWNER_RECOVERY_KEY', '')
+    owner_code = os.getenv('PIKBOT_SIGNUP_TEST_CODE', '')
+    enabled = len(recovery_key) >= 32 and bool(owner_code)
+    error = None
+    if request.method == 'POST' and enabled:
+        check_csrf()
+        email = request.form.get('email', '').strip().lower()
+        password = request.form.get('password', '')
+        if not email or len(email) > 254 or not allow_attempt(email, 'owner-recovery'):
+            error = 'Unable to reset the owner password. Check your details or try again later.'
+        elif not (
+            owner_account({'email': email})
+            and secrets.compare_digest(request.form.get('test_code', '').strip().encode(), owner_code.encode())
+            and secrets.compare_digest(request.form.get('recovery_key', '').strip().encode(), recovery_key.encode())
+        ):
+            error = 'Unable to reset the owner password. Check your details or try again later.'
+        elif not 12 <= len(password) <= 128 or password != request.form.get('confirmation'):
+            error = 'Enter matching passwords of 12 to 128 characters.'
+        else:
+            digest = hashlib.sha256(recovery_key.encode()).hexdigest()
+            with database() as conn:
+                changed = conn.execute(
+                    """UPDATE pikbot_accounts SET password_hash=%s, password_version=password_version+1,
+                       owner_recovery_used=%s WHERE email=%s AND owner_recovery_used IS DISTINCT FROM %s
+                       RETURNING email""",
+                    (generate_password_hash(password), digest, email, digest),
+                ).fetchone()
+            if changed:
+                session.clear()
+                return redirect('/owner/login?password_reset=1', code=303)
+            error = 'This recovery key has already been used or the reset could not be completed.'
+    return render_template('login.html', reset_view='owner', csrf=csrf_token(), error=error,
+                           owner_recovery_enabled=enabled)
 
 
 @membership.route('/forgot-password', methods=['GET', 'POST'])
