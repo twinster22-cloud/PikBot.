@@ -40,8 +40,15 @@ class OwnerDashboardTests(unittest.TestCase):
         with patch('owner_dashboard.account', return_value=None):
             self.assertEqual(self.client.get('/owner').headers['Location'], '/owner/login')
         with patch('owner_dashboard.account', return_value={'email':'member@example.com'}), \
-             patch('owner_dashboard.private_paid_test', return_value=False):
-            self.assertEqual(self.client.get('/owner').status_code, 403)
+             patch('owner_dashboard.private_paid_test', return_value=False), \
+             patch('owner_dashboard.owner_account', return_value=False):
+            response = self.client.get('/owner')
+            self.assertEqual(response.status_code, 403)
+            self.assertIn(b'Open member picks', response.data)
+        with patch('owner_dashboard.account', return_value={'email':'owner@example.com'}), \
+             patch('owner_dashboard.private_paid_test', return_value=False), \
+             patch('owner_dashboard.owner_account', return_value=True):
+            self.assertEqual(self.client.get('/owner').headers['Location'], '/owner/login')
         with patch('owner_dashboard.account', return_value={'email':'owner@example.com'}), \
              patch('owner_dashboard.private_paid_test', return_value=True):
             response = self.client.get('/owner')

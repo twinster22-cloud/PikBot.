@@ -13,7 +13,7 @@ import stripe
 from flask import Blueprint, current_app, jsonify, redirect, render_template, request, session
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
-from membership import (account, database, owner_required, private_paid_test, check_csrf,
+from membership import (account, database, owner_account, owner_required, private_paid_test, check_csrf,
                         csrf_token, stripe_client, stripe_data, stripe_id, matches_price,
                         subscription_access)
 
@@ -228,7 +228,9 @@ def owner_page():
     if not record:
         return redirect('/owner/login')
     if not private_paid_test(record):
-        return 'Owner access required.', 403
+        if owner_account(record):
+            return redirect('/owner/login')
+        return '<h1>Owner access required</h1><p><a href="/?view=picks">Open member picks</a></p>', 403
     return render_template('owner.html', csrf=csrf_token())
 
 
