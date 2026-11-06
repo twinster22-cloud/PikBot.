@@ -295,8 +295,9 @@ def reserve_nba_history(offers, now):
     frame['date'] = pd.to_datetime(frame['game_date'], utc=True, errors='coerce')
     frame = frame[(frame['date'] < now.replace(hour=0, minute=0, second=0, microsecond=0))
                   & (frame['date'] >= now - timedelta(days=365))]
+    frame['minutes'] = pd.to_numeric(frame['minutes'], errors='coerce')
     frame = frame[(frame['did_not_play'].astype(str).str.lower() == 'false')
-                  & (pd.to_numeric(frame['minutes'], errors='coerce') > 0)]
+                  & (frame['minutes'] > 0) & (frame['minutes'] < float('inf'))]
     rows, photos = [], {}
     for name in offers['player'].drop_duplicates():
         matches = frame[frame['athlete_display_name'].str.casefold() == str(name).casefold()]
@@ -306,15 +307,15 @@ def reserve_nba_history(offers, now):
         if len(photo):
             photos[name] = str(photo.iloc[-1])
         for field, stat in (('points', 'PTS'), ('rebounds', 'REB'), ('assists', 'AST')):
-            games = matches[['game_id', 'date', field]].copy()
+            games = matches[['game_id', 'date', field, 'minutes']].copy()
             games[field] = pd.to_numeric(games[field], errors='coerce')
-            conflicts = games.groupby('game_id')[field].nunique()
-            games = games[~games['game_id'].isin(conflicts[conflicts > 1].index)]
+            conflicts = games.groupby('game_id')[[field, 'minutes']].nunique().gt(1).any(axis=1)
+            games = games[~games['game_id'].isin(conflicts[conflicts].index)]
             for _, game in games.drop_duplicates('game_id').iterrows():
                 value = game[field]
                 if pd.notna(value) and 0 <= value < float('inf'):
-                    rows.append(('NBA', name, stat, game['date'].isoformat(), float(value)))
-    result = pd.DataFrame(rows, columns=COLUMNS)
+                    rows.append(('NBA', name, stat, game['date'].isoformat(), float(value), float(game['minutes'])))
+    result = pd.DataFrame(rows, columns=[*COLUMNS, 'minutes'])
     result.attrs['source'] = 'SportsDataverse / hoopR (reserve)'
     result.attrs['photos'] = photos
     return result

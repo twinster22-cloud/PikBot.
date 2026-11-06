@@ -6,6 +6,27 @@ from scipy.stats import norm
 
 KEYS=['sport','player','stat']
 
+def weighted_recent(values):
+    return .2 * np.mean(values[-5:]) + .3 * np.mean(values[-10:]) + .5 * np.mean(values)
+
+
+def nba_playing_time(history):
+    if 'minutes' not in history:
+        return None
+    minutes = pd.to_numeric(history['minutes'].tail(50), errors='coerce').to_numpy(dtype=float)
+    if not np.isfinite(minutes).all() or (minutes <= 0).any():
+        return None
+    baseline = weighted_recent(minutes)
+    recent = np.mean(minutes[-3:])
+    projected = .7 * recent + .3 * np.mean(minutes[-10:])
+    return {
+        'baseline': float(baseline),
+        'recent_average': float(recent),
+        'projected': float(projected),
+        'adjusted': bool(abs(recent - baseline) >= 5),
+    }
+
+
 def predict(history, offers, min_games=12, max_age_days=30, *, include_history=False):
     """Baseline predictions. Never use records on/after the offer's as_of timestamp."""
     h=history.copy(); o=offers.copy()
@@ -22,7 +43,11 @@ def predict(history, offers, min_games=12, max_age_days=30, *, include_history=F
         x=s['value'].tail(50).to_numpy(float)
         if len(x)<min_games or np.any(x<0):continue
         if (r['as_of']-s['date'].max()).days>max_age_days:continue
-        mu=.2*np.mean(x[-5:])+.3*np.mean(x[-10:])+.5*np.mean(x)
+        mu = weighted_recent(x)
+        playing_time = nba_playing_time(s) if include_history and r['sport'] == 'NBA' else None
+        if playing_time and playing_time['adjusted']:
+            minutes_adjusted = mu * playing_time['projected'] / playing_time['baseline']
+            mu = (mu + minutes_adjusted) / 2
         sd=max(float(np.std(x,ddof=1)),.2*max(mu,1),1)
         line=float(r['line'])
         integer=np.allclose(x,np.round(x))
@@ -35,7 +60,7 @@ def predict(history, offers, min_games=12, max_age_days=30, *, include_history=F
         recent = ({'recent_games': [
             {'date': date.date().isoformat(), 'value': float(value)}
             for date, value in s[['date', 'value']].tail(10).itertuples(index=False, name=None)
-        ]} if include_history else {})
+        ], 'playing_time': playing_time} if include_history else {})
         for side,p in [('MORE',more),('LESS',less)]:
             output.append({**recent, **{k:r[k] for k in KEYS},'line':line,'as_of':r['as_of'], 'event_id':str(r.get('event_id','')),
                 'side':side,'p_raw':float(p),'p_push':float(push),'projection':float(mu),'games':len(x),
@@ -90,3 +115,4 @@ def wilson_interval(wins,n,z=1.96):
     center=(p+z*z/(2*n))/d
     spread=z*math.sqrt(p*(1-p)/n+z*z/(4*n*n))/d
     return max(0,center-spread),min(1,center+spread)
+

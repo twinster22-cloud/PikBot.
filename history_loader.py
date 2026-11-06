@@ -17,7 +17,10 @@ MAX_JOBS = 12
 
 def cache_key(sport, offers, now):
     players = sorted(str(p) for p in offers['player'].drop_duplicates())
-    return sha256(json.dumps([sport, now.date().isoformat(), players]).encode()).hexdigest()
+    identity = [sport, now.date().isoformat(), players]
+    if sport == 'NBA':
+        identity.append('minutes-v1')
+    return sha256(json.dumps(identity).encode()).hexdigest()
 
 
 def load(sport, offers, now, provider, read_cache=None, write_cache=None):

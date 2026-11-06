@@ -120,7 +120,7 @@ def analyze(h,o,run_backtest, *, trial_live=False, live=False):
             picks = picks.drop_duplicates(['sport', 'event_id', 'player', 'stat', 'line'])
         picks = picks.head(60)
         result={'disclaimer':'Statistical estimates are uncalibrated and not guaranteed. Uploaded offers are not verified live lines.',
-                'picks':records(picks[['sport','player','stat','line','side','p_raw','projection','games'] + (['event_id', 'p_push', 'recent_games'] if live else [])] if not picks.empty else picks),
+                'picks':records(picks[['sport','player','stat','line','side','p_raw','projection','games'] + (['event_id', 'p_push', 'recent_games', 'playing_time'] if live else [])] if not picks.empty else picks),
                 'entries':records(entries[['Pick 1','Pick 2','Estimated all-hit %','Pick 1 %','Pick 2 %']] if not entries.empty else entries),
                 'count':len(pred) if trial_live else len(pred)//2,'backtest':None}
         if run_backtest:
@@ -290,6 +290,12 @@ def pick_reason(pick):
             f"{abs(projection-line):.1f} {comparison} the listed line, using {pick['games']} completed games.")
     if games:
         text += f" In the last {len(games)} games, {hits} finished on this side of that line."
+    playing_time = pick.get('playing_time')
+    if playing_time:
+        text += (f" Playing time averaged {playing_time['recent_average']:.1f} minutes over the last three games. "
+                 f"The model estimates {playing_time['projected']:.1f} minutes.")
+        if playing_time['adjusted']:
+            text += " The stat projection adjusts for the recent change in minutes."
     return text + ' This is a statistical estimate, not a guaranteed result; injuries and lineup changes are not included.'
 
 
