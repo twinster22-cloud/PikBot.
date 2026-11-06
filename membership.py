@@ -1,21 +1,29 @@
 import hashlib
 import json
+import logging
 import os
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from functools import wraps
+from threading import BoundedSemaphore, Thread
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 import time
 
 import psycopg
+import requests
 import stripe
-from flask import Blueprint, abort, g, jsonify, redirect, render_template, request, session
+from flask import Blueprint, abort, current_app, g, jsonify, redirect, render_template, request, session
+from itsdangerous import BadSignature, URLSafeTimedSerializer
 from psycopg.rows import dict_row
 from werkzeug.security import check_password_hash, generate_password_hash
 
 membership = Blueprint('membership', __name__)
 DUMMY_HASH = generate_password_hash(secrets.token_urlsafe(32))
+RESET_EMAIL_SLOTS = BoundedSemaphore(4)
+RESET_LINK_SECONDS = 30 * 60
+LOGGER = logging.getLogger(__name__)
 
 
 def database():
@@ -61,6 +69,7 @@ def init_accounts(app):
         conn.execute('ALTER TABLE pikbot_accounts ADD COLUMN IF NOT EXISTS billing_status TEXT')
         conn.execute('ALTER TABLE pikbot_accounts ADD COLUMN IF NOT EXISTS billing_checked_at TIMESTAMPTZ')
         conn.execute('ALTER TABLE pikbot_accounts ADD COLUMN IF NOT EXISTS billing_mode BOOLEAN')
+        conn.execute('ALTER TABLE pikbot_accounts ADD COLUMN IF NOT EXISTS password_version INTEGER NOT NULL DEFAULT 0')
         conn.execute("""CREATE TABLE IF NOT EXISTS pikbot_billing_events (
             event_id TEXT PRIMARY KEY, event_type TEXT NOT NULL,
             received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -72,7 +81,10 @@ def account():
     email = session.get('email')
     if email:
         with database() as conn:
-            return conn.execute('SELECT * FROM pikbot_accounts WHERE email=%s', (email,)).fetchone()
+            record = conn.execute('SELECT * FROM pikbot_accounts WHERE email=%s', (email,)).fetchone()
+        if record and record.get('password_version', 0) == session.get('password_version', 0):
+            return record
+        session.clear()
     return None
 
 
@@ -159,14 +171,16 @@ def check_csrf():
         abort(400)
 
 
-def allow_attempt(email):
+def allow_attempt(email, purpose='login'):
+    limits = (60, 12) if purpose == 'login' else (30, 3)
+    prefix = '' if purpose == 'login' else purpose + ':'
     with database() as conn:
         conn.execute('DELETE FROM pikbot_login_attempts WHERE expires <= NOW()')
-        for bucket, limit in (('ip:' + str(request.remote_addr), 60), ('email:' + email[:254], 12)):
+        for bucket, limit in (('ip:' + str(request.remote_addr), limits[0]), ('email:' + email[:254], limits[1])):
             row = conn.execute(
                 """INSERT INTO pikbot_login_attempts VALUES (%s, 1, NOW() + INTERVAL '15 minutes')
                    ON CONFLICT (bucket) DO UPDATE SET attempts = pikbot_login_attempts.attempts + 1
-                   RETURNING attempts""", (bucket,),
+                   RETURNING attempts""", (prefix + bucket,),
             ).fetchone()
             if row['attempts'] > limit:
                 return False
@@ -200,23 +214,118 @@ def login():
             error = 'Unable to create an account. Try signing in.'
         else:
             with database() as conn:
-                record = conn.execute('SELECT email, password_hash FROM pikbot_accounts WHERE email=%s', (email,)).fetchone()
+                record = conn.execute('SELECT email, password_hash, password_version FROM pikbot_accounts WHERE email=%s', (email,)).fetchone()
             valid = check_password_hash(record['password_hash'] if record else DUMMY_HASH, password)
             if owner_mode:
                 code = os.getenv('PIKBOT_SIGNUP_TEST_CODE', '')
                 supplied = request.form.get('test_code', '').strip()
                 valid_code = bool(code) and secrets.compare_digest(supplied.encode('utf-8'), code.encode('utf-8'))
                 if record and valid and owner_account(record) and valid_code:
-                    response = sign_in(email)
+                    response = sign_in(email, record.get('password_version', 0))
                     session['owner_test'] = True
                     session['owner_authenticated_at'] = time.time()
                     session['owner_code_digest'] = hashlib.sha256(code.encode('utf-8')).hexdigest()
                     response.headers['Location'] = '/owner'
                     return response
             elif record and valid:
-                return sign_in(email)
+                return sign_in(email, record.get('password_version', 0))
             error = 'Login details were incorrect.'
-    return render_template('login.html', owner_mode=owner_mode, csrf=csrf_token(), error=error), 400 if error else 200
+    return render_template('login.html', owner_mode=owner_mode, csrf=csrf_token(), error=error,
+                           reset_available=bool(reset_email_config())), 400 if error else 200
+
+
+def reset_email_config():
+    origin = os.getenv('PIKBOT_PUBLIC_URL', '').rstrip('/')
+    api_key = os.getenv('PIKBOT_BREVO_API_KEY')
+    sender = os.getenv('PIKBOT_RESET_FROM_EMAIL')
+    parsed = urlsplit(origin)
+    if (api_key and sender and parsed.scheme == 'https' and parsed.hostname
+            and not (parsed.username or parsed.path or parsed.query or parsed.fragment)):
+        return origin, api_key, sender
+    return None
+
+
+def send_password_reset(email, serializer, origin, api_key, sender):
+    try:
+        with database() as conn:
+            record = conn.execute(
+                'SELECT email, password_version FROM pikbot_accounts WHERE email=%s', (email,),
+            ).fetchone()
+        if not record or owner_account(record):
+            return
+        token = serializer.dumps([email, record['password_version']])
+        response = requests.post(
+            'https://api.brevo.com/v3/smtp/email', headers={'api-key': api_key},
+            json={'sender': {'email': sender, 'name': 'PikBot'}, 'to': [{'email': email}],
+                  'subject': 'Reset your PikBot password',
+                  'textContent': f'Reset your PikBot password within 30 minutes:\n\n'
+                                 f'{origin}/reset-password#{token}\n\n'
+                                 'If you did not request this, you can ignore this email.'},
+            timeout=(3, 8),
+        )
+        response.raise_for_status()
+    except (requests.RequestException, psycopg.Error):
+        LOGGER.warning('Password reset email could not be sent.')
+    finally:
+        RESET_EMAIL_SLOTS.release()
+
+
+@membership.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    error = notice = None
+    if request.method == 'POST':
+        check_csrf()
+        email = request.form.get('email', '').strip().lower()
+        config = reset_email_config()
+        if not config:
+            error = 'Password reset email is temporarily unavailable. Please try again later.'
+        else:
+            notice = 'If that email matches a member account, a reset link will be sent.'
+            if (len(email) <= 254 and re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', email)
+                    and allow_attempt(email, 'password-reset') and RESET_EMAIL_SLOTS.acquire(blocking=False)):
+                serializer = URLSafeTimedSerializer(current_app.secret_key, salt='pikbot-password-reset')
+                try:
+                    Thread(target=send_password_reset, args=(email, serializer, *config),
+                           daemon=True).start()
+                except RuntimeError:
+                    RESET_EMAIL_SLOTS.release()
+                    LOGGER.warning('Password reset email worker could not start.')
+    return render_template('login.html', reset_view='request', csrf=csrf_token(), error=error, notice=notice)
+
+
+@membership.route('/reset-password', methods=['GET', 'POST'])
+def reset_password():
+    token = error = None
+    if request.method == 'POST':
+        check_csrf()
+        token = request.form.get('token', '')
+        try:
+            if not token or len(token) > 1024:
+                raise BadSignature('Invalid reset token')
+            serializer = URLSafeTimedSerializer(current_app.secret_key, salt='pikbot-password-reset')
+            email, version = serializer.loads(token, max_age=RESET_LINK_SECONDS)
+            if owner_account({'email': email}):
+                raise BadSignature('Invalid reset account')
+        except BadSignature:
+            error = 'This link is invalid or expired. Request a new reset link.'
+            token = None
+        else:
+            password = request.form.get('password', '')
+            if not 12 <= len(password) <= 128 or password != request.form.get('confirmation'):
+                error = 'Enter matching passwords of 12 to 128 characters.'
+            else:
+                with database() as conn:
+                    changed = conn.execute(
+                        """UPDATE pikbot_accounts SET password_hash=%s, password_version=password_version+1
+                           WHERE email=%s AND password_version=%s RETURNING email""",
+                        (generate_password_hash(password), email, version),
+                    ).fetchone()
+                if changed:
+                    session.clear()
+                    return redirect('/login?password_reset=1', code=303)
+                error = 'This link is invalid or expired. Request a new reset link.'
+                token = None
+    return render_template('login.html', reset_view='change', csrf=csrf_token(), error=error, token=token)
 
 
 @membership.after_request
@@ -225,9 +334,10 @@ def prevent_auth_caching(response):
     return response
 
 
-def sign_in(email):
+def sign_in(email, password_version=0):
     session.clear()
     session['email'] = email
+    session['password_version'] = password_version
     session.permanent = True
     return redirect('/')
 

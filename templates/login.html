@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#050b0a">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<title>Sign in | PikBot</title>
+<title>{{ 'Reset password' if reset_view else 'Sign in' }} | PikBot</title>
 <style>
 *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:20px;background:#050b0a;color:#effff3;font:16px system-ui}main{width:min(100%,420px);padding:28px;border:1px solid #32513d;border-radius:18px;background:#0d1912}h1{margin:0;color:#8aff91}p{line-height:1.45}label{display:block;margin-top:16px}input,button{width:100%;font:inherit;padding:12px;border:1px solid #52745a;border-radius:8px}input{margin-top:6px;background:#050b0a;color:white}button{margin-top:12px;background:#8aff91;color:#07100a;font-weight:700;cursor:pointer}a.signup{display:block;text-align:center;margin-top:12px;padding:12px;border:1px solid #52745a;border-radius:8px;color:#8aff91;text-decoration:none} [role=alert]{color:#ffb7ae}
 .login-options{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:22px 0 16px}.login-options a{display:flex;align-items:center;justify-content:center;min-height:58px;padding:10px;text-align:center;border:1px solid #52745a;border-radius:10px;color:#ccebd3;text-decoration:none;font-weight:700}.login-options a[aria-current=page]{background:#8aff91;color:#07100a;border-color:#8aff91}.login-options a:focus-visible{outline:3px solid #effff3;outline-offset:3px}</style>
@@ -16,6 +16,37 @@
 
 {% if owner_mode %}<p>Owner testing login</p>{% endif %}
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
+{% if notice %}<p role="status">{{ notice }}</p>{% endif %}
+{% if not owner_mode and not reset_view and request.args.get('password_reset') == '1' %}
+<p role="status">Password updated. Log in with your new password.</p>
+{% endif %}
+{% if reset_view == 'request' %}
+<h2>Forgot your password?</h2>
+<form method="post">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<label>Email <input type="email" name="email" autocomplete="email" required maxlength="254"></label>
+<button>Send reset link</button>
+</form>
+<a class="signup" href="/login">Back to login</a>
+{% elif reset_view == 'change' %}
+<h2>Choose a new password</h2>
+<form method="post" id="reset-form" {% if not token %}hidden{% endif %}>
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<input type="hidden" name="token" value="{{ token or '' }}">
+<label>New password <input type="password" name="password" autocomplete="new-password" required minlength="12" maxlength="128"></label>
+<label>Confirm password <input type="password" name="confirmation" autocomplete="new-password" required minlength="12" maxlength="128"></label>
+<button>Update password</button>
+</form>
+<a class="signup" href="/forgot-password">Request a new reset link</a>
+<script>
+const resetForm = document.getElementById('reset-form');
+if (window.location.hash.length > 1) {
+    resetForm.elements.token.value = window.location.hash.slice(1);
+    window.history.replaceState(null, '', window.location.pathname);
+    resetForm.hidden = false;
+}
+</script>
+{% else %}
 <form method="post">
 <input type="hidden" name="csrf" value="{{ csrf }}">
 <label>Email <input type="email" name="email" autocomplete="username" required maxlength="254"></label>
@@ -29,7 +60,10 @@
 <a class="signup" href="/login">Back to login</a>
 {% else %}
 <button name="action" value="login">Log in</button>
+{% if reset_available %}<a class="signup" href="/forgot-password">Forgot your password?</a>{% endif %}
 <a class="signup" href="/login?signup=1">Create account and start free trial</a>
 {% endif %}
 </form>
+{% endif %}
 </main></body></html>
+
