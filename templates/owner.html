@@ -134,8 +134,8 @@ async function loadPickResults(page){
     if(version!==resultsVersion)return;
     resultsPage=page;
     const labels={WIN:'Passed',LOSS:'Failed',PUSH:'Push',PENDING:'Pending'};
-    table('pick-results-table',['Player','Matchup','Start','Pick','Model estimate','Final stat','Result'],result.picks,r=>[
-      r.player+' · '+r.sport,r.matchup,when(r.starts_at),r.side+' '+r.line+' '+r.stat,
+    table('pick-results-table',['Player','Matchup','Start','Source','Pick','Model estimate','Final stat','Result'],result.picks,r=>[
+      r.player+' · '+r.sport,r.matchup,when(r.starts_at),r.bookmaker||'PrizePicks',r.side+' '+r.line+' '+r.stat,
       Number.isFinite(r.p_raw)?Math.round(r.p_raw*100)+'%':'—',r.actual,labels[r.result]
     ],'No saved picks from games that have started.');
     status.textContent='';

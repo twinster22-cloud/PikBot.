@@ -118,7 +118,8 @@ def analyze(h,o,run_backtest, *, trial_live=False, live=False):
         picks = pred.sort_values('p_raw', ascending=False) if not pred.empty else pred
         if live and not picks.empty:
             picks = picks.drop_duplicates(['sport', 'event_id', 'player', 'stat', 'line'])
-        picks = picks.head(60)
+        if not live or trial_live:
+            picks = picks.head(60)
         result={'disclaimer':'Statistical estimates are uncalibrated and not guaranteed. Uploaded offers are not verified live lines.',
                 'picks':records(picks[['sport','player','stat','line','side','p_raw','projection','games'] + (['event_id', 'p_push', 'recent_games', 'playing_time'] if live else [])] if not picks.empty else picks),
                 'entries':records(entries[['Pick 1','Pick 2','Estimated all-hit %','Pick 1 %','Pick 2 %']] if not entries.empty else entries),
@@ -161,14 +162,19 @@ def todays_predictions():
     sport = request.args.get('sport', '')
     if sport not in today.SPORTS:
         return jsonify(error='Choose a supported sport.'), 400
+    bookmaker = (today.DEFAULT_BOOK if g.membership_access == 'trial'
+                 else request.args.get('bookmaker', today.DEFAULT_BOOK))
+    if bookmaker not in today.BOOKMAKERS:
+        return jsonify(error='Choose a supported line source.'), 400
+    book_label = today.BOOKMAKERS[bookmaker]
     directory = os.getenv('PIKBOT_LIVE_HISTORY_DIR')
     key, _ = today.SPORTS[sport]
     path = Path(directory) / (key + '.csv') if directory else None
     try:
         now = datetime.now(timezone.utc)
-        available = today.offers(sport, now, event_id=request.args.get('event_id'))
+        available = today.offers(sport, now, event_id=request.args.get('event_id'), bookmaker=bookmaker)
         if not available:
-            return jsonify(error='No fresh PrizePicks lines are available for the covered game.'), 404
+            return jsonify(error=f'No fresh {book_label} lines are available for the covered game.'), 404
         offers = pd.DataFrame(available)
         history = (pd.read_csv(path) if path and path.is_file()
                    else history_loader.load(sport, offers, now, player_history.load_history,
@@ -203,9 +209,10 @@ def todays_predictions():
         game = matchups.get(pick['event_id'], {})
         pick['matchup'] = ' at '.join(filter(None, (game.get('away_team'), game.get('home_team'))))
         pick['starts_at'] = game.get('commence_time')
+        pick['bookmaker'] = book_label
         pick['reason'] = pick_reason(pick)
-    result['source'] = 'PrizePicks via The Odds API' + (' · Stats: ' + stats_source if stats_source else '')
-    result['disclaimer'] = 'Model estimates for current PrizePicks lines. Only players with enough recent history are shown.'
+    result['source'] = f'{book_label} via The Odds API' + (' · Stats: ' + stats_source if stats_source else '')
+    result['disclaimer'] = f'Model estimates for current {book_label} lines. Only players with enough recent history are shown.'
     if 'SportsDataverse' in stats_source:
         result['disclaimer'] += ' Reserve stats: SportsDataverse contributors, CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Player game records transformed into PikBot estimates.'
     if g.membership_access == 'trial':
@@ -217,20 +224,23 @@ def todays_predictions():
         result = trial_daily_board(trial_public_board(result))
         result = trial_public_board(result)
     else:
-        save_member_pick_board(result['picks'], now)
+        save_member_pick_board(result['picks'], now, bookmaker)
     return jsonify(result)
 
 
 PICK_SNAPSHOT_FIELDS = {'sport', 'player', 'stat', 'line', 'side', 'event_id', 'matchup', 'starts_at'}
 
 
-def save_member_pick_board(picks, now):
+def save_member_pick_board(picks, now, bookmaker=today.DEFAULT_BOOK):
     event_id = picks[0]['event_id']
     if not event_id or not today.timestamp(picks[0].get('starts_at')):
         return
     email = g.member_email
     day = now.astimezone(pick_results.EASTERN).date()
-    fields = PICK_SNAPSHOT_FIELDS | {'p_raw'} if picks[0]['sport'] == 'NBA' else PICK_SNAPSHOT_FIELDS
+    fields = PICK_SNAPSHOT_FIELDS | {'bookmaker'}
+    if picks[0]['sport'] == 'NBA':
+        fields |= {'p_raw'}
+    board_key = event_id if bookmaker == today.DEFAULT_BOOK else f'{event_id}:{bookmaker}'
     payload = {'picks': [{key: value for key, value in pick.items() if key in fields}
                          for pick in picks if pick['event_id'] == event_id]}
     try:
@@ -239,7 +249,7 @@ def save_member_pick_board(picks, now):
                          (email, day - timedelta(days=30)))
             conn.execute("""INSERT INTO pikbot_member_pick_boards (email, pick_day, event_id, payload)
                             VALUES (%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
-                         (email, day, event_id, psycopg.types.json.Jsonb(payload)))
+                         (email, day, board_key, psycopg.types.json.Jsonb(payload)))
     except psycopg.Error:
         app.logger.warning('Could not save the live pick board for results.')
 

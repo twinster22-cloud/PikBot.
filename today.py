@@ -1,4 +1,4 @@
-"""Upcoming PrizePicks offers from The Odds API."""
+"""Upcoming player prop offers from The Odds API."""
 import os
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
@@ -8,6 +8,15 @@ from zoneinfo import ZoneInfo
 import requests
 
 BASE = 'https://api.the-odds-api.com/v4/sports'
+DEFAULT_BOOK = 'prizepicks'
+BOOKMAKERS = {
+    DEFAULT_BOOK: 'PrizePicks',
+    'underdog': 'Underdog Fantasy',
+    'pick6': 'DraftKings Pick6',
+    'draftkings': 'DraftKings Sportsbook',
+    'fanduel': 'FanDuel',
+    'betmgm': 'BetMGM',
+}
 BASKETBALL = {'player_points': 'PTS', 'player_rebounds': 'REB', 'player_assists': 'AST'}
 SPORTS = {
     'NBA': ('basketball_nba', BASKETBALL),
@@ -76,18 +85,19 @@ def today_events(sport, now):
 
 
 @lru_cache(maxsize=100)
-def event_offers(sport, event_id, _window):
+def event_offers(sport, event_id, _window, bookmaker=DEFAULT_BOOK):
     key, markets = SPORTS[sport]
     try:
-        return get(f'/{key}/events/{event_id}/odds', bookmakers='prizepicks',
+        return get(f'/{key}/events/{event_id}/odds', bookmakers=bookmaker,
                    markets=','.join(markets))
     except FeedError as exc:
         return {'error': str(exc)}
 
 
-def offers(sport, now, event_id=None, *, next_slate=False):
+def offers(sport, now, event_id=None, *, next_slate=False, bookmaker=DEFAULT_BOOK):
     _, markets = SPORTS[sport]
     result = {}
+    offered_sides = {}
     slate = events(sport, bucket(30)) if next_slate else today_events(sport, now)
     upcoming = sorted((event for event in slate
                        if (start := timestamp(event.get('commence_time'))) and start > now),
@@ -97,11 +107,12 @@ def offers(sport, now, event_id=None, *, next_slate=False):
     for event in upcoming[:1]:
         event_id = event['id']
         with LOCK:
-            payload = event_offers(sport, event_id, bucket(60))
+            payload = (event_offers(sport, event_id, bucket(60)) if bookmaker == DEFAULT_BOOK
+                       else event_offers(sport, event_id, bucket(60), bookmaker))
         if payload.get('error'):
             raise FeedError(payload['error'])
         for book in payload.get('bookmakers', []):
-            if book.get('key') != 'prizepicks':
+            if book.get('key') != bookmaker:
                 continue
             for market in book.get('markets', []):
                 stat = markets.get(market.get('key'))
@@ -114,7 +125,13 @@ def offers(sport, now, event_id=None, *, next_slate=False):
                     if not player or not isinstance(line, (float, int)) or not 0 <= line < float('inf'):
                         continue
                     offer_id = f'{event_id}:{player}:{stat}:{line}'
+                    offered_sides.setdefault(offer_id, set()).add(str(outcome.get('name', '')).casefold())
                     result[offer_id] = {'sport': sport, 'player': player, 'stat': stat,
                                         'line': line, 'as_of': now, 'offer_id': offer_id,
                                         'event_id': event_id}
-    return list(result.values())
+    if bookmaker == DEFAULT_BOOK:
+        return list(result.values())
+    return [offer for offer_id, offer in result.items()
+            if offered_sides[offer_id] & {'over', 'more'}
+            and offered_sides[offer_id] & {'under', 'less'}]
+
