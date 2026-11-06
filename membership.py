@@ -236,8 +236,7 @@ def login():
             elif record and valid:
                 return sign_in(email, record.get('password_version', 0))
             error = 'Login details were incorrect.'
-    return render_template('login.html', owner_mode=owner_mode, csrf=csrf_token(), error=error,
-                           reset_available=bool(reset_email_config())), 400 if error else 200
+    return render_template('login.html', owner_mode=owner_mode, csrf=csrf_token(), error=error), 400 if error else 200
 
 
 def reset_email_config():
@@ -251,21 +250,22 @@ def reset_email_config():
     return None
 
 
-def send_password_reset(email, serializer, origin, api_key, sender):
+def send_password_reset(email, serializer, origin, api_key, sender, owner_email=False):
     try:
         with database() as conn:
             record = conn.execute(
                 'SELECT email, password_version FROM pikbot_accounts WHERE email=%s', (email,),
             ).fetchone()
-        if not record or owner_account(record):
+        if not record or owner_account(record) != owner_email:
             return
         token = serializer.dumps([email, record['password_version']])
+        reset_path = '/owner/reset-password/email' if owner_email else '/reset-password'
         response = requests.post(
             'https://api.brevo.com/v3/smtp/email', headers={'api-key': api_key},
             json={'sender': {'email': sender, 'name': 'PikBot'}, 'to': [{'email': email}],
                   'subject': 'Reset your PikBot password',
                   'textContent': f'Reset your PikBot password within 30 minutes:\n\n'
-                                 f'{origin}/reset-password#{token}\n\n'
+                                 f'{origin}{reset_path}#{token}\n\n'
                                  'If you did not request this, you can ignore this email.'},
             timeout=(3, 8),
         )
@@ -314,7 +314,9 @@ def reset_owner_password():
 
 
 @membership.route('/forgot-password', methods=['GET', 'POST'])
+@membership.route('/owner/forgot-password', methods=['GET', 'POST'])
 def forgot_password():
+    owner_email = request.path.startswith('/owner/')
     error = notice = None
     if request.method == 'POST':
         check_csrf()
@@ -323,21 +325,29 @@ def forgot_password():
         if not config:
             error = 'Password reset email is temporarily unavailable. Please try again later.'
         else:
-            notice = 'If that email matches a member account, a reset link will be sent.'
+            notice = 'If that email matches an eligible account, a reset link will be sent.'
             if (len(email) <= 254 and re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', email)
                     and allow_attempt(email, 'password-reset') and RESET_EMAIL_SLOTS.acquire(blocking=False)):
-                serializer = URLSafeTimedSerializer(current_app.secret_key, salt='pikbot-password-reset')
+                serializer = password_reset_serializer(owner_email)
                 try:
-                    Thread(target=send_password_reset, args=(email, serializer, *config),
+                    Thread(target=send_password_reset, args=(email, serializer, *config, owner_email),
                            daemon=True).start()
                 except RuntimeError:
                     RESET_EMAIL_SLOTS.release()
                     LOGGER.warning('Password reset email worker could not start.')
-    return render_template('login.html', reset_view='request', csrf=csrf_token(), error=error, notice=notice)
+    return render_template('login.html', reset_view='request', csrf=csrf_token(), error=error,
+                           notice=notice, owner_email_reset=owner_email)
+
+
+def password_reset_serializer(owner_email):
+    salt = 'pikbot-owner-email-reset' if owner_email else 'pikbot-password-reset'
+    return URLSafeTimedSerializer(current_app.secret_key, salt=salt)
 
 
 @membership.route('/reset-password', methods=['GET', 'POST'])
+@membership.route('/owner/reset-password/email', methods=['GET', 'POST'])
 def reset_password():
+    owner_email = request.path.startswith('/owner/')
     token = error = None
     if request.method == 'POST':
         check_csrf()
@@ -345,16 +355,22 @@ def reset_password():
         try:
             if not token or len(token) > 1024:
                 raise BadSignature('Invalid reset token')
-            serializer = URLSafeTimedSerializer(current_app.secret_key, salt='pikbot-password-reset')
+            serializer = password_reset_serializer(owner_email)
             email, version = serializer.loads(token, max_age=RESET_LINK_SECONDS)
-            if owner_account({'email': email}):
+            if owner_account({'email': email}) != owner_email:
                 raise BadSignature('Invalid reset account')
         except BadSignature:
             error = 'This link is invalid or expired. Request a new reset link.'
             token = None
         else:
             password = request.form.get('password', '')
-            if not 12 <= len(password) <= 128 or password != request.form.get('confirmation'):
+            owner_code = os.getenv('PIKBOT_SIGNUP_TEST_CODE', '')
+            if owner_email and not (
+                allow_attempt(email, 'owner-email-reset') and owner_code
+                and secrets.compare_digest(request.form.get('test_code', '').strip().encode(), owner_code.encode())
+            ):
+                error = 'Unable to verify the owner code. Check it or try again later.'
+            elif not 12 <= len(password) <= 128 or password != request.form.get('confirmation'):
                 error = 'Enter matching passwords of 12 to 128 characters.'
             else:
                 with database() as conn:
@@ -365,10 +381,12 @@ def reset_password():
                     ).fetchone()
                 if changed:
                     session.clear()
-                    return redirect('/login?password_reset=1', code=303)
+                    login_path = '/owner/login' if owner_email else '/login'
+                    return redirect(f'{login_path}?password_reset=1', code=303)
                 error = 'This link is invalid or expired. Request a new reset link.'
                 token = None
-    return render_template('login.html', reset_view='change', csrf=csrf_token(), error=error, token=token)
+    return render_template('login.html', reset_view='change', csrf=csrf_token(), error=error,
+                           token=token, owner_email_reset=owner_email)
 
 
 @membership.after_request

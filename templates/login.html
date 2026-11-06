@@ -36,24 +36,28 @@
 <p>Owner recovery is disabled. Set a unique recovery key of at least 32 characters in the PikBot service environment.</p>
 {% endif %}
 <a class="signup" href="/owner/login">Back to owner sign-in</a>
+<a class="signup" href="/owner/forgot-password">Email me a reset link</a>
 {% elif reset_view == 'request' %}
-<h2>Forgot your password?</h2>
+<h2>{{ 'Reset owner password by email' if owner_email_reset else 'Forgot your password?' }}</h2>
 <form method="post">
 <input type="hidden" name="csrf" value="{{ csrf }}">
 <label>Email <input type="email" name="email" autocomplete="email" required maxlength="254"></label>
 <button>Send reset link</button>
 </form>
-<a class="signup" href="/login">Back to login</a>
+<a class="signup" href="{{ '/owner/login' if owner_email_reset else '/login' }}">Back to login</a>
 {% elif reset_view == 'change' %}
 <h2>Choose a new password</h2>
 <form method="post" id="reset-form" {% if not token %}hidden{% endif %}>
 <input type="hidden" name="csrf" value="{{ csrf }}">
 <input type="hidden" name="token" value="{{ token or '' }}">
+{% if owner_email_reset %}
+<label>Private owner code <input type="password" name="test_code" autocomplete="off" required></label>
+{% endif %}
 <label>New password <input type="password" name="password" autocomplete="new-password" required minlength="12" maxlength="128"></label>
 <label>Confirm password <input type="password" name="confirmation" autocomplete="new-password" required minlength="12" maxlength="128"></label>
 <button>Update password</button>
 </form>
-<a class="signup" href="/forgot-password">Request a new reset link</a>
+<a class="signup" href="{{ '/owner/forgot-password' if owner_email_reset else '/forgot-password' }}">Request a new reset link</a>
 <script>
 const resetForm = document.getElementById('reset-form');
 if (window.location.hash.length > 1) {
@@ -70,14 +74,15 @@ if (window.location.hash.length > 1) {
 {% if owner_mode %}
 <label>Private owner code <input type="password" name="test_code" autocomplete="off" required></label>
 <button name="action" value="login">Owner sign in</button>
-<a class="signup" href="/owner/reset-password">Reset owner password</a>
+<a class="signup" href="/owner/forgot-password">Forgot owner password?</a>
+<a class="signup" href="/owner/reset-password">Use a recovery key</a>
 <a class="signup" href="/login">Public login</a>
 {% elif request.args.get('signup') == '1' %}
 <button name="action" value="register">Create account and start free trial</button>
 <a class="signup" href="/login">Back to login</a>
 {% else %}
 <button name="action" value="login">Log in</button>
-{% if reset_available %}<a class="signup" href="/forgot-password">Forgot your password?</a>{% endif %}
+<a class="signup" href="/forgot-password">Forgot your password?</a>
 <a class="signup" href="/login?signup=1">Create account and start free trial</a>
 {% endif %}
 </form>
