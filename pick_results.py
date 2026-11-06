@@ -12,6 +12,7 @@ from today import bucket, timestamp
 
 BASE = 'https://site.api.espn.com/apis/site/v2/sports/'
 EASTERN = ZoneInfo('America/New_York')
+PAGE_SIZE = 8
 BASKETBALL = {'PTS': ((), ('points',)), 'REB': ((), ('rebounds',)), 'AST': ((), ('assists',))}
 FOOTBALL = {'PASS_YDS': (('passing',), ('passingYards',)), 'RUSH_YDS': (('rushing',), ('rushingYards',))}
 SKATERS = ('forwards', 'defenses', 'skaters')
@@ -31,7 +32,7 @@ def name_key(value):
 
 
 def fetch(league, resource, **params):
-    response = requests.get(f'{BASE}{league}/{resource}', params=params, timeout=(1.5, 2.5))
+    response = requests.get(f'{BASE}{league}/{resource}', params=params, timeout=(5, 7))
     response.raise_for_status()
     return response.json()
 
@@ -115,7 +116,7 @@ def grade(picks, now):
         except (requests.RequestException, ValueError, KeyError, TypeError, AttributeError):
             return []
 
-    with ThreadPoolExecutor(max_workers=4) as workers:
+    with ThreadPoolExecutor(max_workers=PAGE_SIZE) as workers:
         boxscores = dict(zip(games, workers.map(lookup, games)))
     for pick in picks:
         game = (pick['sport'], pick.get('matchup') or '', pick.get('starts_at'))

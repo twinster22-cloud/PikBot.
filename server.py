@@ -264,8 +264,10 @@ def previous_pick_results():
             CROSS JOIN LATERAL jsonb_array_elements(payload->'picks') WITH ORDINALITY AS saved(pick, pick_order)
             WHERE NULLIF(pick->>'starts_at', '')::timestamptz <= %s
             ORDER BY pick_day DESC, (pick->>'starts_at')::timestamptz DESC, board_key, pick_order
-            LIMIT 13 OFFSET %s""", (email, cutoff, email, cutoff, now, page * 12)).fetchall()
-    return jsonify(picks=pick_results.grade([row['pick'] for row in rows[:12]], now), has_more=len(rows) > 12)
+            LIMIT %s OFFSET %s""", (email, cutoff, email, cutoff, now,
+                                    pick_results.PAGE_SIZE + 1, page * pick_results.PAGE_SIZE)).fetchall()
+    picks = [row['pick'] for row in rows[:pick_results.PAGE_SIZE]]
+    return jsonify(picks=pick_results.grade(picks, now), has_more=len(rows) > pick_results.PAGE_SIZE)
 
 
 def trial_public_board(board):
