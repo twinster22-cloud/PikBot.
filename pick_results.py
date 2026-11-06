@@ -1,6 +1,6 @@
 """Grade saved PikBot selections against completed player box scores."""
 import math
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from functools import lru_cache
 from unicodedata import normalize
 from zoneinfo import ZoneInfo
@@ -13,6 +13,7 @@ from today import bucket, timestamp
 BASE = 'https://site.api.espn.com/apis/site/v2/sports/'
 EASTERN = ZoneInfo('America/New_York')
 PAGE_SIZE = 8
+RESULT_WORKERS = ThreadPoolExecutor(max_workers=PAGE_SIZE)
 BASKETBALL = {'PTS': ((), ('points',)), 'REB': ((), ('rebounds',)), 'AST': ((), ('assists',))}
 FOOTBALL = {'PASS_YDS': (('passing',), ('passingYards',)), 'RUSH_YDS': (('rushing',), ('rushingYards',))}
 SKATERS = ('forwards', 'defenses', 'skaters')
@@ -32,7 +33,7 @@ def name_key(value):
 
 
 def fetch(league, resource, **params):
-    response = requests.get(f'{BASE}{league}/{resource}', params=params, timeout=(5, 7))
+    response = requests.get(f'{BASE}{league}/{resource}', params=params, timeout=12)
     response.raise_for_status()
     return response.json()
 
@@ -116,11 +117,15 @@ def grade(picks, now):
         except (requests.RequestException, ValueError, KeyError, TypeError, AttributeError):
             return []
 
-    with ThreadPoolExecutor(max_workers=PAGE_SIZE) as workers:
-        boxscores = dict(zip(games, workers.map(lookup, games)))
+    lookups = {RESULT_WORKERS.submit(lookup, game): game for game in games}
+    completed, waiting = wait(lookups, timeout=24)
+    boxscores = {lookups[future]: future.result() for future in completed}
+    for future in waiting:
+        future.cancel()
     for pick in picks:
         game = (pick['sport'], pick.get('matchup') or '', pick.get('starts_at'))
-        actual = actual_stat(pick, boxscores[game]) if boxscores[game] else None
+        teams = boxscores.get(game)
+        actual = actual_stat(pick, teams) if teams else None
         pick['actual'] = actual
         pick['result'] = outcome(actual, pick['line'], pick['side']) if actual is not None else 'PENDING'
     return picks
