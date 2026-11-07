@@ -364,7 +364,17 @@ def live_gamecast():
             text_value = play.get('text') or play.get('shortText') or ''
             if not text_value:
                 continue
-            plays.append({'id': str(play.get('id', ''))[:80],
+            # Coordinates are optional provider facts, never estimated from play text.
+            coord = play.get('coordinate') or play.get('coordinates') or {}
+            point = None
+            if isinstance(coord, dict):
+                try:
+                    x, y = float(coord.get('x')), float(coord.get('y'))
+                    if 0 <= x <= 100 and 0 <= y <= 100:
+                        point = {'x': x, 'y': y}
+                except (TypeError, ValueError):
+                    pass
+            plays.append({'coordinate': point, 'id': str(play.get('id', ''))[:80],
                           'text': str(text_value)[:450],
                           'clock': clock.get('displayValue') if isinstance(clock, dict) else '',
                           'period': period.get('number') if isinstance(period, dict) else period,
@@ -373,7 +383,7 @@ def live_gamecast():
                        status=status.get('type', {}).get('description', 'Unknown') if isinstance(status.get('type'), dict) else status.get('displayClock', 'Unknown'),
                        clock=status.get('displayClock'), period=status.get('period'),
                        plays=plays[::-1], observed_at=datetime.now(timezone.utc).isoformat(),
-                       note='Provider-reported updates; timing and coverage vary. No video or location tracking.')
+                       note='Provider-reported updates; timing and coverage vary. Coordinates shown only when explicitly supplied by provider.')
     except (requests.RequestException, ValueError, KeyError, TypeError, AttributeError, IndexError):
         return jsonify(error='GameCast provider is temporarily unavailable.'), 503
 
