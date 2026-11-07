@@ -32,11 +32,29 @@
 [data-owner-only][hidden],[data-tab="betting-sites"][hidden],#open-unlimited-picks[hidden],#betting-sites[hidden]{display:none!important}
 #betting-site-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(136px,1fr));gap:8px}
 #betting-site-options .btn{min-height:44px}
-#player-props{margin-top:12px;scroll-margin-top:12px}
-#player-props h4{margin:0}#player-props-source{margin:5px 0 10px}
-#player-prop-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,145px),1fr));gap:8px}
-.player-prop-option{display:grid;gap:4px;min-height:60px;text-align:left;white-space:normal}
-.player-prop-option small{color:inherit;font-size:11px}.player-prop-option[aria-pressed="true"]{border-color:#a4ff52;background:#263c1e;color:#eaffdc}</style></head><body><div class="shell"><header class="top"><div class="identity"><img src="/icon-192.png" alt="PikBot logo"><div><b>Pik<span>Bot</span></b><div class="eyebrow">SPORTS INTELLIGENCE</div></div></div><div class="status"><i></i>RESEARCH MODE</div></header><section class="panel" aria-label="Membership">
+#player-props{width:min(calc(100% - 24px),480px);max-height:calc(100dvh - 24px);padding:0;border:1px solid #426156;border-radius:18px;background:#111d23;color:#effff3;overflow:auto;overscroll-behavior:contain}
+#player-props::backdrop{background:#040909cc}
+.player-sheet-body{padding:16px}
+.player-sheet-top{display:flex;align-items:center;justify-content:space-between;gap:14px}
+.player-sheet-top h2{font-size:clamp(21px,6vw,30px);margin:0;overflow-wrap:anywhere}
+.player-sheet-top .player-portrait{width:72px;height:78px;flex:0 0 72px}
+.player-sheet-close{display:flex;justify-content:flex-end;margin-bottom:5px}
+.player-sheet-close .btn{min-width:44px;min-height:44px}
+#player-props-source,#player-sheet-sport{margin:5px 0;font-size:12px}
+.player-sheet-matchup,.player-sheet-chart{margin-top:12px;padding:12px;border:1px solid #354e4b;border-radius:12px;background:#17272e}
+.player-sheet-matchup strong,.player-sheet-matchup small{display:block}.player-sheet-matchup small{margin-top:4px}
+.player-sheet-chart h3{margin:0 0 5px;font-size:15px}
+.player-sheet-chart svg{display:block;width:100%;height:auto;margin:4px 0}
+.player-sheet-chart p{margin:5px 0 0;font-size:12px}
+#player-prop-options{display:grid;gap:8px;margin-top:12px}
+.player-prop-option{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;align-items:center;width:100%;min-height:60px;text-align:left;white-space:normal;background:#192a32;border-color:#3a5152}
+.player-prop-option strong{font-size:16px}
+.player-prop-option small{display:block;color:#b5c9c4;font-size:11px}
+.player-prop-option .prop-lean{grid-column:2;grid-row:1 / span 2;padding:6px 8px;border:1px solid #547267;border-radius:8px;font-size:12px}
+.player-prop-option[aria-pressed="true"]{border-color:#a4ff52;background:#263c1e;color:#eaffdc}
+#player-sheet-details{width:100%;min-height:44px;margin-top:12px}
+@media(max-width:520px){#player-props{margin:auto 0 0;width:100%;max-width:100%;max-height:92dvh;border-radius:18px 18px 0 0}.player-sheet-body{padding-bottom:max(16px,env(safe-area-inset-bottom))}}
+</style></head><body><div class="shell"><header class="top"><div class="identity"><img src="/icon-192.png" alt="PikBot logo"><div><b>Pik<span>Bot</span></b><div class="eyebrow">SPORTS INTELLIGENCE</div></div></div><div class="status"><i></i>RESEARCH MODE</div></header><section class="panel" aria-label="Membership">
 <div id="paid-preview-notice" class="notice" hidden>PAID LAYOUT PREVIEW · Your account is still on its current plan. Trial limits apply. <a href="/" style="color:#b5ff5d">Exit preview</a></div><div id="paid-member-banner" hidden><span class="chip">PAID MEMBERSHIP</span><h2>PikBot Unlimited</h2><p>Unlimited daily pick views · All supported sports · Player photos and analysis</p></div><p id="membership-status" role="status">Checking membership…</p>
 <div style="display:flex;gap:8px;flex-wrap:wrap">
 <button type="button" class="btn primary" id="open-unlimited-picks" hidden>Open Unlimited Picks</button>
@@ -70,11 +88,21 @@
 <p id="today-status" role="status"></p>
 <div id="today-matchups"></div></div>
 </div><p class="notice"><strong>Pick disclaimer.</strong> PikBot provides independent sports analysis. Picks are estimates. Lines and availability can change. PikBot does not accept wagers or guarantee results.</p><section id="live-player-picks" aria-live="polite" hidden><div class="feature-head"><h3>TOP PLAYER PICKS</h3><span class="tag">TAP FOR ALL PROPS</span></div><div id="live-player-cards"></div></section><div id="selected-prop-content" hidden><div class="analysis-top"><div class="player-monogram" id="player-monogram">PB</div><div class="player-identity"><h3 id="player-heading">Player Intelligence</h3><p id="player-matchup" class="muted">Choose an upcoming matchup</p></div><span class="chip" id="data-label">AWAITING DATA</span></div>
-<section id="player-props" class="chartbox" aria-labelledby="player-props-title" hidden>
-<h4 id="player-props-title">Player props</h4>
-<p id="player-props-source" class="muted"></p>
+<p class="muted" id="status" role="status">Select a matchup, then tap a player pick to open its analysis.</p><div class="grid3" id="metrics"><div class="statbox"><div class="tag">OFFERS ANALYZED</div><div class="num">—</div></div><div class="statbox"><div class="tag">2-PICK CANDIDATES</div><div class="num">—</div></div><div class="statbox"><div class="tag">MODEL STATUS</div><div class="num" style="font-size:18px">UNVALIDATED</div></div></div><section class="chartbox"><strong>WHY PIKBOT CHOSE THIS PICK</strong><p id="pick-reason" class="muted">Select a pick to read its explanation.</p></section><div class="player-summary" id="player-summary"></div><div class="gauge-row"><div class="gauge"><div class="gauge-kicker"><span class="ai-badge">AI</span> MORE/LESS PLAYER PROPS</div><h4 id="more-title">↑ MORE</h4><div class="ring" id="more-ring"><div class="ring-inner"><small>EST. PROBABILITY</small><b id="more-val">—</b></div></div><p id="more-sub">Awaiting a projection</p></div><div class="gauge red"><div class="gauge-kicker"><span class="ai-badge">AI</span> MORE/LESS PLAYER PROPS</div><h4 id="less-title">↓ LESS</h4><div class="ring" id="less-ring"><div class="ring-inner"><small>EST. PROBABILITY</small><b id="less-val">—</b></div></div><p id="less-sub">Awaiting a projection</p></div></div><div class="chartbox"><div class="feature-head"><strong>HISTORICAL TRENDS</strong><span class="tag" id="trend-tag">NO DATA LOADED</span></div><svg viewBox="0 0 600 115" preserveAspectRatio="none" role="img" id="history-chart" aria-label="Recent completed games"><path class="chartgrid" d="M0 28H600 M0 57H600 M0 86H600 M100 0V115 M200 0V115 M300 0V115 M400 0V115 M500 0V115"/><path class="trend-area" id="trend-area" d=""/><line id="trend-threshold" x1="10" x2="590" visibility="hidden"/><path class="trendline" id="trendline" d=""/></svg><p class="muted" id="trend-note">Game-by-game history appears when a live player pick is selected.</p><div id="game-strip" class="game-strip"></div><div id="trend-summary" class="player-summary"></div></div><div class="prop-detail-grid"><section class="chartbox"><div class="feature-head"><strong>HEAD-TO-HEAD MATCHUP</strong></div><p id="detail-matchup" class="detail-value">—</p><p id="detail-opponent" class="muted">Choose a player pick.</p></section><section class="chartbox"><div class="feature-head"><strong>AI CONFIDENCE</strong></div><p id="detail-lean" class="detail-value">—</p><p id="confidence-note" class="muted">Uncalibrated model probability, not a validated win rate.</p><p id="detail-sample" class="muted">Choose a player pick.</p></section></div></div></div><div class="section-head"><h2>RESEARCH RESULTS</h2><span class="tag">ESTIMATES, NOT GUARANTEES</span></div><div class="panel"><div class="feature-head"><h3>Ranked Two-Pick Candidates</h3><span class="chip">MODEL OUTPUT</span></div><div class="scroll" id="entries"><div class="empty">No results yet. Upload history and offers to see results.</div></div></div><div class="panel"><h3>Individual Player Projections</h3><div class="scroll" id="picks"><div class="empty">No player projections loaded.</div></div></div><div class="panel"><h3>Walk-Forward Backtest</h3><div id="backtest" class="muted">Upload historical offers with actual outcomes and enable backtesting to see results.</div></div></section><section class="hero"><div class="hero-copy"><div class="eyebrow">THE NEXT LEVEL OF SPORTS ANALYSIS</div><h1>ALL SPORTS.<br><span>ONE EDGE.</span></h1><p>A bold new way to explore player projections, historical trends and research-driven selections.</p><span class="chip">POWERED BY YOUR PIKBOT ENGINE</span></div><div class="hero-graphic"><img src="/icon-512.png" alt="PikBot emblem"></div></section><div class="section-head sports-heading"><h2>SPORTS CATEGORIES</h2><small>Choose a sport</small></div><div class="sports" id="sports"><button class="sport selected" data-sport="NBA"><span class="emoji">🏀</span><strong>NBA</strong></button><button class="sport" data-sport="NFL"><span class="emoji">🏈</span><strong>NFL</strong></button><button class="sport" data-sport="MLB"><span class="emoji">⚾</span><strong>MLB</strong></button><button class="sport" data-sport="NHL"><span class="emoji">🏒</span><strong>NHL</strong></button><button class="sport" data-sport="WNBA"><span class="emoji">🏀</span><strong>WNBA</strong></button><button class="sport" data-sport="COLLEGE FOOTBALL"><span class="emoji">🏈</span><strong>COLLEGE FB</strong></button><button class="sport" data-sport="COLLEGE BASKETBALL"><span class="emoji">🏀</span><strong>COLLEGE BB</strong></button></div><div class="notice">Research preview · Lines from the selected source are displayed where available. Model probabilities are uncalibrated estimates.</div><section id="data" class="hidden" data-owner-only hidden><div class="section-head"><h2>OWNER TOOLS</h2></div><div class="panel"><h3>Payment launch status</h3><p id="owner-launch-status" class="muted" role="status">Checking payment configuration…</p></div><div class="panel"><h3>Analyze Player Offers</h3><p class="muted">Use your existing PikBot analysis engine. CSV uploads are processed in memory and are not verified as live lines.</p><form id="upload" class="upload"><input type="hidden" name="csrf" value=""><label>Historical results CSV · sport, player, stat, date, value<input name="history" type="file" accept=".csv,text/csv" required></label><label>Player offers CSV · sport, player, stat, line, as_of, offer_id, event_id<input name="offers" type="file" accept=".csv,text/csv" required></label><label><input name="backtest" type="checkbox" value="true"> Include walk-forward backtest (requires actual column)</label><button class="btn primary" type="submit">ANALYZE UPLOADED DATA</button></form><p class="muted">Maximum 4 MB request and 25,000 rows per file. Only upload data you have permission to use.</p></div><div class="panel"><h3>Results</h3><button class="btn" id="clear">CLEAR RESULTS</button></div></section><section id="about" class="hidden"><div class="section-head"><h2>ABOUT PIKBOT</h2></div><div class="panel"><h3>Research, not promises</h3><p class="muted">The existing engine uses weighted recent results, a simple normal approximation, minimum history thresholds and candidate enumeration. The probabilities are uncalibrated and should not be interpreted as a validated winning edge.</p><p class="muted">The sports category selector filters displayed results; it does not create missing sports data. Current lines are shown when the data provider supplies them. PikBot does not place entries or guarantee results.</p><h3>Send private feedback</h3><p class="muted">Your review or comment goes only to the PikBot owner.</p><form id="member-feedback"><label>Type<select name="kind"><option value="comment">Comment</option><option value="review">Review</option></select></label><label>Rating (optional)<select name="rating"><option value="">No rating</option><option value="5">5 / 5</option><option value="4">4 / 5</option><option value="3">3 / 5</option><option value="2">2 / 5</option><option value="1">1 / 5</option></select></label><label>Message<textarea name="body" required maxlength="2000" rows="4"></textarea></label><button class="btn" type="submit">Send to PikBot</button><p id="feedback-status" role="status"></p></form><h3>Install on iPhone</h3><p class="muted">Open the hosted HTTPS site in Safari, choose Share, then Add to Home Screen. Predictions still require the backend online.</p></div></section><div class="spark"></div><footer class="footer">PIKBOT · INDEPENDENT SPORTS RESEARCH · NOT AFFILIATED WITH PRIZEPICKS</footer></div><dialog id="player-props" aria-labelledby="player-props-title">
+<div class="player-sheet-body">
+<form method="dialog" class="player-sheet-close"><button class="btn" aria-label="Close player details" autofocus>Close</button></form>
+<header class="player-sheet-top">
+<div><h2 id="player-props-title">Player props</h2><p id="player-sheet-sport" class="muted"></p><p id="player-props-source" class="muted"></p></div>
+<div id="player-sheet-portrait"></div>
+</header>
+<div class="player-sheet-matchup"><strong id="player-sheet-matchup"></strong><small id="player-sheet-time" class="muted"></small></div>
+<section class="player-sheet-chart" aria-labelledby="player-chart-title">
+<h3 id="player-chart-title">Recent games</h3><div id="player-chart" aria-live="polite"></div>
+</section>
 <div id="player-prop-options" role="group" aria-label="Choose a prop to analyze"></div>
-</section><p class="muted" id="status" role="status">Select a matchup, then tap a player pick to open its analysis.</p><div class="grid3" id="metrics"><div class="statbox"><div class="tag">OFFERS ANALYZED</div><div class="num">—</div></div><div class="statbox"><div class="tag">2-PICK CANDIDATES</div><div class="num">—</div></div><div class="statbox"><div class="tag">MODEL STATUS</div><div class="num" style="font-size:18px">UNVALIDATED</div></div></div><section class="chartbox"><strong>WHY PIKBOT CHOSE THIS PICK</strong><p id="pick-reason" class="muted">Select a pick to read its explanation.</p></section><div class="player-summary" id="player-summary"></div><div class="gauge-row"><div class="gauge"><div class="gauge-kicker"><span class="ai-badge">AI</span> MORE/LESS PLAYER PROPS</div><h4 id="more-title">↑ MORE</h4><div class="ring" id="more-ring"><div class="ring-inner"><small>EST. PROBABILITY</small><b id="more-val">—</b></div></div><p id="more-sub">Awaiting a projection</p></div><div class="gauge red"><div class="gauge-kicker"><span class="ai-badge">AI</span> MORE/LESS PLAYER PROPS</div><h4 id="less-title">↓ LESS</h4><div class="ring" id="less-ring"><div class="ring-inner"><small>EST. PROBABILITY</small><b id="less-val">—</b></div></div><p id="less-sub">Awaiting a projection</p></div></div><div class="chartbox"><div class="feature-head"><strong>HISTORICAL TRENDS</strong><span class="tag" id="trend-tag">NO DATA LOADED</span></div><svg viewBox="0 0 600 115" preserveAspectRatio="none" role="img" id="history-chart" aria-label="Recent completed games"><path class="chartgrid" d="M0 28H600 M0 57H600 M0 86H600 M100 0V115 M200 0V115 M300 0V115 M400 0V115 M500 0V115"/><path class="trend-area" id="trend-area" d=""/><line id="trend-threshold" x1="10" x2="590" visibility="hidden"/><path class="trendline" id="trendline" d=""/></svg><p class="muted" id="trend-note">Game-by-game history appears when a live player pick is selected.</p><div id="game-strip" class="game-strip"></div><div id="trend-summary" class="player-summary"></div></div><div class="prop-detail-grid"><section class="chartbox"><div class="feature-head"><strong>HEAD-TO-HEAD MATCHUP</strong></div><p id="detail-matchup" class="detail-value">—</p><p id="detail-opponent" class="muted">Choose a player pick.</p></section><section class="chartbox"><div class="feature-head"><strong>AI CONFIDENCE</strong></div><p id="detail-lean" class="detail-value">—</p><p id="confidence-note" class="muted">Uncalibrated model probability, not a validated win rate.</p><p id="detail-sample" class="muted">Choose a player pick.</p></section></div></div></div><div class="section-head"><h2>RESEARCH RESULTS</h2><span class="tag">ESTIMATES, NOT GUARANTEES</span></div><div class="panel"><div class="feature-head"><h3>Ranked Two-Pick Candidates</h3><span class="chip">MODEL OUTPUT</span></div><div class="scroll" id="entries"><div class="empty">No results yet. Upload history and offers to see results.</div></div></div><div class="panel"><h3>Individual Player Projections</h3><div class="scroll" id="picks"><div class="empty">No player projections loaded.</div></div></div><div class="panel"><h3>Walk-Forward Backtest</h3><div id="backtest" class="muted">Upload historical offers with actual outcomes and enable backtesting to see results.</div></div></section><section class="hero"><div class="hero-copy"><div class="eyebrow">THE NEXT LEVEL OF SPORTS ANALYSIS</div><h1>ALL SPORTS.<br><span>ONE EDGE.</span></h1><p>A bold new way to explore player projections, historical trends and research-driven selections.</p><span class="chip">POWERED BY YOUR PIKBOT ENGINE</span></div><div class="hero-graphic"><img src="/icon-512.png" alt="PikBot emblem"></div></section><div class="section-head sports-heading"><h2>SPORTS CATEGORIES</h2><small>Choose a sport</small></div><div class="sports" id="sports"><button class="sport selected" data-sport="NBA"><span class="emoji">🏀</span><strong>NBA</strong></button><button class="sport" data-sport="NFL"><span class="emoji">🏈</span><strong>NFL</strong></button><button class="sport" data-sport="MLB"><span class="emoji">⚾</span><strong>MLB</strong></button><button class="sport" data-sport="NHL"><span class="emoji">🏒</span><strong>NHL</strong></button><button class="sport" data-sport="WNBA"><span class="emoji">🏀</span><strong>WNBA</strong></button><button class="sport" data-sport="COLLEGE FOOTBALL"><span class="emoji">🏈</span><strong>COLLEGE FB</strong></button><button class="sport" data-sport="COLLEGE BASKETBALL"><span class="emoji">🏀</span><strong>COLLEGE BB</strong></button></div><div class="notice">Research preview · Lines from the selected source are displayed where available. Model probabilities are uncalibrated estimates.</div><section id="data" class="hidden" data-owner-only hidden><div class="section-head"><h2>OWNER TOOLS</h2></div><div class="panel"><h3>Payment launch status</h3><p id="owner-launch-status" class="muted" role="status">Checking payment configuration…</p></div><div class="panel"><h3>Analyze Player Offers</h3><p class="muted">Use your existing PikBot analysis engine. CSV uploads are processed in memory and are not verified as live lines.</p><form id="upload" class="upload"><input type="hidden" name="csrf" value=""><label>Historical results CSV · sport, player, stat, date, value<input name="history" type="file" accept=".csv,text/csv" required></label><label>Player offers CSV · sport, player, stat, line, as_of, offer_id, event_id<input name="offers" type="file" accept=".csv,text/csv" required></label><label><input name="backtest" type="checkbox" value="true"> Include walk-forward backtest (requires actual column)</label><button class="btn primary" type="submit">ANALYZE UPLOADED DATA</button></form><p class="muted">Maximum 4 MB request and 25,000 rows per file. Only upload data you have permission to use.</p></div><div class="panel"><h3>Results</h3><button class="btn" id="clear">CLEAR RESULTS</button></div></section><section id="about" class="hidden"><div class="section-head"><h2>ABOUT PIKBOT</h2></div><div class="panel"><h3>Research, not promises</h3><p class="muted">The existing engine uses weighted recent results, a simple normal approximation, minimum history thresholds and candidate enumeration. The probabilities are uncalibrated and should not be interpreted as a validated winning edge.</p><p class="muted">The sports category selector filters displayed results; it does not create missing sports data. Current lines are shown when the data provider supplies them. PikBot does not place entries or guarantee results.</p><h3>Send private feedback</h3><p class="muted">Your review or comment goes only to the PikBot owner.</p><form id="member-feedback"><label>Type<select name="kind"><option value="comment">Comment</option><option value="review">Review</option></select></label><label>Rating (optional)<select name="rating"><option value="">No rating</option><option value="5">5 / 5</option><option value="4">4 / 5</option><option value="3">3 / 5</option><option value="2">2 / 5</option><option value="1">1 / 5</option></select></label><label>Message<textarea name="body" required maxlength="2000" rows="4"></textarea></label><button class="btn" type="submit">Send to PikBot</button><p id="feedback-status" role="status"></p></form><h3>Install on iPhone</h3><p class="muted">Open the hosted HTTPS site in Safari, choose Share, then Add to Home Screen. Predictions still require the backend online.</p></div></section><div class="spark"></div><footer class="footer">PIKBOT · INDEPENDENT SPORTS RESEARCH · NOT AFFILIATED WITH PRIZEPICKS</footer></div><script>
+<button type="button" id="player-sheet-details" class="btn">View detailed analysis</button>
+</div>
+</dialog><script>
 const $=id=>document.getElementById(id);let dataset=null,selected='NBA';const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));const fmt=n=>Number.isFinite(Number(n))?Number(n).toFixed(1):'—';
 const ownerPicksPage=window.location.pathname==='/owner/picks';
 let openPicksOnLoad=ownerPicksPage||new URLSearchParams(window.location.search).get('view')==='picks';
@@ -161,9 +189,40 @@ const propLabels={
   PTS:'Points',REB:'Rebounds',AST:'Assists',PASS_YDS:'Passing yards',
   RUSH_YDS:'Rushing yards',REC_YDS:'Receiving yards',H:'Hits',SO:'Strikeouts',SOG:'Shots on goal'
 };
+function paintPlayerChart(pick){
+  const chart=$('player-chart');
+  const stat=propLabels[pick.stat]||pick.stat;
+  const games=(pick.recent_games||[]).filter(game=>Number.isFinite(game.value)&&game.value>=0).slice(-5);
+  const line=Number(pick.line);
+  $('player-chart-title').textContent=stat+' · Recent games';
+  if(!games.length){
+    chart.textContent='Recent game results are unavailable for this prop.';
+    return;
+  }
+  const maximum=Math.max(line,1,...games.map(game=>game.value));
+  const baseline=95;
+  const y=value=>baseline-68*(value/maximum);
+  const column=340/games.length;
+  const width=Math.min(36,column*.58);
+  const bars=games.map((game,index)=>{
+    const x=10+column*(index+.5);
+    const valueY=y(game.value);
+    const height=Math.max(2,baseline-valueY);
+    const date=String(game.date||'').slice(5,10).replace('-','/');
+    const color=game.value===line?'#9eb3af':game.value>line?'#a4ef5a':'#ff7979';
+    return '<rect x="'+(x-width/2)+'" y="'+(baseline-height)+'" width="'+width+'" height="'+height+'" rx="4" fill="'+color+'"/>'+
+      '<text x="'+x+'" y="'+(valueY-5)+'" text-anchor="middle" fill="#effff3" font-size="12">'+esc(game.value)+'</text>'+
+      '<text x="'+x+'" y="113" text-anchor="middle" fill="#bdd0c8" font-size="10">'+esc(date)+'</text>';
+  }).join('');
+  const average=games.reduce((sum,game)=>sum+game.value,0)/games.length;
+  chart.innerHTML='<svg viewBox="0 0 360 120" role="img" aria-label="'+esc(stat+' in recent games: '+games.map(game=>game.value).join(', '))+'">'+
+    '<path d="M10 95 H350" stroke="#6c837d"/>'+bars+
+    '<path d="M10 '+y(line)+' H350" stroke="#effff3" stroke-dasharray="4 4" opacity=".7"/></svg>'+
+    '<p>Last '+games.length+' average <strong>'+esc(fmt(average))+'</strong> · Dashed line <strong>'+esc(line)+'</strong></p>';
+}
 function focusLivePick(data,index){
   const pick=data.picks[index];
-  const refreshProps=dataset!==data||focusedPick?.player!==pick.player||$('player-props').hidden;
+  const refreshProps=dataset!==data||focusedPick?.player!==pick.player;
   dataset=data;focusedPick=pick;
   showUploadedSports(data.picks);selectSport(focusedPick.sport);
   $('status').textContent=data.disclaimer;
@@ -175,15 +234,21 @@ function focusLivePick(data,index){
   if(trialOnly||data.daily_board)return;
   const options=$('player-prop-options');
   if(refreshProps){
-    $('player-props-title').textContent=pick.player+' · All available props';
-    $('player-props-source').textContent='Line source · '+pick.bookmaker;
+    $('player-props-title').textContent=pick.player;
+    $('player-sheet-sport').textContent=pick.sport;
+    $('player-props-source').textContent='Line source · '+(pick.bookmaker||data.source);
+    $('player-sheet-matchup').textContent=pick.matchup;
+    $('player-sheet-time').textContent=pick.starts_at?'Scheduled '+gameTime(pick.starts_at):'';
+    $('player-sheet-portrait').innerHTML=portraitMarkup(pick,'');
+    bindPortraitFallbacks($('player-sheet-portrait'));
     options.innerHTML=data.picks.map((prop,i)=>prop.player!==pick.player?'':(
       '<button type="button" class="btn player-prop-option" data-prop-index="'+i+'" aria-pressed="false">'+
-      '<strong>'+esc(propLabels[prop.stat]||prop.stat)+' · '+esc(prop.line)+'</strong>'+
-      '<small>'+esc(prop.side)+' · Projected '+esc(fmt(prop.projection))+'</small></button>'
+      '<strong>'+esc(prop.line)+' · '+esc(propLabels[prop.stat]||prop.stat)+'</strong>'+
+      '<small>Projected '+esc(fmt(prop.projection))+'</small>'+
+      '<span class="prop-lean">'+(prop.side==='LESS'?'↓ Less':'↑ More')+'</span></button>'
     )).join('');
-    $('player-props').hidden=false;
   }
+  paintPlayerChart(pick);
   options.querySelectorAll('[data-prop-index]').forEach(button=>{
     button.setAttribute('aria-pressed',String(Number(button.dataset.propIndex)===index));
   });
@@ -193,10 +258,14 @@ $('player-prop-options').onclick=event=>{
   if(!button||trialOnly||accessBlocked||!dataset?.source||Date.now()>=picksExpire)return;
   focusLivePick(dataset,Number(button.dataset.propIndex));
 };
+$('player-sheet-details').onclick=()=>{
+  $('player-props').close();
+  $('selected-prop-content').scrollIntoView({block:'start'});
+};
 function paintPlayer(p){
   $('pick-reason').textContent=p?.reason||'A pick explanation will appear when current analysis is available.';
   $('selected-prop-content').hidden=!p||trialOnly;
-  if(!p||trialOnly||!dataset?.source)$('player-props').hidden=true;
+  if((!p||trialOnly||!dataset?.source)&&$('player-props').open)$('player-props').close();
   paintSummary(p);
   $('player-monogram').innerHTML=portraitMarkup(p,'selected-portrait');
   bindPortraitFallbacks($('player-monogram'));
@@ -269,6 +338,7 @@ async function showMembership(){
     trialOnly=info.access==='trial';
     const canChooseSite=info.access==='subscriber';
     $('betting-sites').hidden=!canChooseSite;
+    if(!canChooseSite&&$('player-props').open)$('player-props').close();
     document.querySelector('[data-tab="betting-sites"]').hidden=!canChooseSite;
     $('open-unlimited-picks').hidden=!canChooseSite;
     if(canChooseSite&&(openPicksOnLoad||wasBlocked||wasTrial))showTab('betting-sites');
@@ -497,10 +567,11 @@ async function openMatchup(button,automatic=false){
       const button=event.target.closest('[data-pick-index]');
       if(!button||Date.now()>=picksExpire)return;
       focusLivePick(data,Number(button.dataset.pickIndex));
-      $('player-props').scrollIntoView({block:'start'});
+      const sheet=$('player-props');
+      if(!sheet.open){sheet.scrollTop=0;sheet.showModal();}
     };
     cards.innerHTML='<p class="muted pick-game">'+esc(data.picks[0].matchup)+' · '+esc(gameTime(data.picks[0].starts_at))+'</p><div class="top-pick-rail">'+
-      [...players.values()].map(({pick:p,index,count},rank)=>'<button type="button" class="top-pick-card" data-pick-index="'+index+'" aria-pressed="false" aria-controls="player-props">'+
+      [...players.values()].map(({pick:p,index,count},rank)=>'<button type="button" class="top-pick-card" data-pick-index="'+index+'" aria-pressed="false" aria-controls="player-props" aria-haspopup="dialog">'+
         '<span class="pick-rank">TOP '+(rank+1)+'</span>'+portraitMarkup(p,'pick-avatar')+
         '<strong>'+esc(p.player)+'</strong><span class="pick-line '+(p.side==='LESS'?'pick-less':'')+'">'+(p.side==='LESS'?'↓':'↑')+' '+esc(p.side)+' '+esc(p.line)+' '+esc(p.stat)+'</span>'+
         '<span class="pick-estimate">'+Math.round(100*Number(p.p_raw))+'% <small>MODEL EST.</small></span><span class="pick-projection">'+count+' '+(count===1?'prop':'props')+' · View all</span></button>').join('')+'</div><p class="muted">'+esc(data.source)+' · Uncalibrated estimates</p>';
