@@ -14,7 +14,7 @@ import history_loader
 import pick_results
 import psycopg
 from player_photos import attach_photos
-from membership import trial_daily_board, account, daily_trial_picks, init_accounts, premium_required, owner_required, check_csrf, database, private_paid_test
+from membership import trial_daily_board, account, daily_trial_picks, init_accounts, premium_required, owner_required, check_csrf, database, private_paid_test, broadcast_entitlement
 from flask import Flask, g, request, jsonify, send_from_directory, redirect, session
 import pandas as pd
 import numpy as np
@@ -286,8 +286,22 @@ def optional_edge_screen():
 
 
 
+def gamecast_plus_required(fn):
+    """GameCast is limited to verified owner and paid Plus accounts."""
+    from functools import wraps
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        record = account()
+        if not record:
+            return jsonify(error='Sign in required.'), 401
+        if not broadcast_entitlement(record):
+            return jsonify(error='GameCast requires PikBot Plus or owner access.'), 403
+        return fn(*args, **kwargs)
+    return wrapped
+
+
 @app.get('/api/live/games')
-@premium_required
+@gamecast_plus_required
 def live_games_browser():
     """Observed ESPN schedule and scores, including yesterday's finished games."""
     from zoneinfo import ZoneInfo
@@ -322,7 +336,7 @@ def live_games_browser():
 
 
 @app.get('/api/live/gamecast')
-@premium_required
+@gamecast_plus_required
 def live_gamecast():
     """Observed game events from ESPN summary; no video or inferred tracking coordinates."""
     sport = request.args.get('sport', '').upper()
@@ -365,7 +379,7 @@ def live_gamecast():
 
 
 @app.get('/api/live/game-stats')
-@premium_required
+@gamecast_plus_required
 def live_game_stats_browser():
     sport = request.args.get('sport','').upper()
     event_id = request.args.get('event_id','')
