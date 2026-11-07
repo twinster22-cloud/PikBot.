@@ -74,6 +74,7 @@
   <button type="button" data-tab="about">About PikBot</button>
 </nav>
 <section id="dashboard"><details class="panel" id="member-edge"><summary><strong>Optional Edge Guardrails · Research add-on</strong></summary><p class="muted">Separate from the original model, existing picks, historical records and membership. No automatic wagers or claims of calibrated EV.</p><form id="member-edge-form"><label>Calibrated net EV (%) <input name="net_ev_percent" type="number" step="0.1" placeholder="3.0"></label><label>Two-sided market hold (%) <input name="market_hold_percent" type="number" step="0.1" placeholder="6.0"></label><label>American odds <input name="american_odds" type="number" placeholder="-110"></label><label>Independent books <input name="independent_books" type="number" min="0" step="1" placeholder="2"></label><label>Official lineup / injury verification <select name="availability_confirmed"><option value="">Unknown</option><option value="true">Confirmed</option><option value="false">Not confirmed</option></select></label><label>Prospective calibration verified <select name="calibration_verified"><option value="">Unknown</option><option value="true">Verified</option><option value="false">Not verified</option></select></label><button class="btn" type="submit">Run optional edge screen</button></form><p id="member-edge-status" role="status"></p><div id="member-edge-checks"></div><p class="muted">Track CLV, sport/market losses and 250–500 settled picks before changing the underlying model. Fantasy entry payout math differs from sportsbook odds.</p></details>
+<section class="panel" id="trial-live-access" hidden><h2>Free Trial · Live Sports Center</h2><p>Explore today's games, switch sports, view available player stats, expand the Game Center, and open yesterday's official recaps during your 7-day trial.</p><p class="muted">Your free trial still includes up to 3 daily AI picks. Unlimited picks require the $15/month membership. Broadcast streams require separate authorized access.</p><button type="button" class="btn primary" id="trial-live-open">Explore live games</button></section>
 <section class="panel" id="pikbot-live" aria-label="PikBot Live Game Center">
 <h2>🔴 PIKBOT LIVE · GAME CENTER</h2>
 <p class="muted">Live schedules, available scores and observed player box scores. Data depends on your authorized providers; unavailable stats are never estimated as live facts.</p>
@@ -392,6 +393,8 @@ async function showMembership(){
       if(delay>0&&delay<2147483647)trialExpiryTimer=setTimeout(showMembership,delay+100);
     }
     document.body.classList.toggle('trial-plan',trialOnly);
+    $('trial-live-access').hidden=!trialOnly;
+    $('pikbot-live').hidden=accessBlocked;
     document.querySelector('#live-player-picks .tag').textContent=trialOnly?'3 PICKS DAILY':'TAP FOR ALL PROPS';
     document.querySelectorAll('[data-sport]').forEach(button=>button.disabled=trialOnly||accessBlocked);
     document.querySelector('.analysis-controls').hidden=trialOnly||accessBlocked;
@@ -772,5 +775,11 @@ document.getElementById('live-center-fullscreen').onclick=()=>{
  if(document.fullscreenElement){document.exitFullscreen?.();return;}
  if(panel.requestFullscreen)panel.requestFullscreen().catch(()=>{document.getElementById('live-center-browser-status').textContent='Full screen is not supported in this browser. Try landscape orientation.';});
  else document.getElementById('live-center-browser-status').textContent='Full screen is unavailable in this browser. Try landscape orientation.';
+};
+
+document.getElementById('trial-live-open').onclick=()=>{
+ document.getElementById('pikbot-live').scrollIntoView({behavior:'smooth',block:'start'});
+ document.getElementById('live-center-day').value='today';
+ browseMemberGames();
 };
 </script></body></html>
