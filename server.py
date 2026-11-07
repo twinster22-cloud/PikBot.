@@ -285,6 +285,77 @@ def optional_edge_screen():
     return jsonify(edge_guardrails.screen(payload))
 
 
+
+@app.get('/api/live/games')
+@premium_required
+def live_games_browser():
+    """Observed ESPN schedule and scores, including yesterday's finished games."""
+    from zoneinfo import ZoneInfo
+    from datetime import date as date_type
+    sport = request.args.get('sport', 'NBA').upper()
+    if sport not in pick_results.LEAGUES:
+        return jsonify(error='Unsupported sport.'), 400
+    day = request.args.get('day', 'today')
+    if day not in ('today', 'yesterday'):
+        return jsonify(error='Choose today or yesterday.'), 400
+    local = datetime.now(ZoneInfo('America/New_York')).date()
+    if day == 'yesterday':
+        local -= timedelta(days=1)
+    try:
+        league = pick_results.LEAGUES[sport][0]
+        events = pick_results.scoreboard(league, local.strftime('%Y%m%d'), int(datetime.now(timezone.utc).timestamp())//60)
+        games = []
+        for event in events:
+            competition = (event.get('competitions') or [{}])[0]
+            competitors = competition.get('competitors') or []
+            teams = [{'name': c.get('team',{}).get('displayName','Unknown'), 'score':c.get('score'),
+                      'home_away':c.get('homeAway')} for c in competitors]
+            state = event.get('status',{}).get('type',{})
+            games.append({'id':str(event.get('id','')), 'name':event.get('name','Game'),
+                          'starts_at':event.get('date'), 'status':state.get('description','Scheduled'),
+                          'state':state.get('state','pre'), 'teams':teams,
+                          'official_recap':next((link.get('href') for link in event.get('links',[])
+                             if str(link.get('href','')).startswith('https://www.espn.com/')),None)})
+        return jsonify(sport=sport,day=day,games=games)
+    except (requests.RequestException,ValueError,KeyError,TypeError,AttributeError):
+        return jsonify(error='Live scoreboard provider is temporarily unavailable.'), 503
+
+
+@app.get('/api/live/game-stats')
+@premium_required
+def live_game_stats_browser():
+    sport = request.args.get('sport','').upper()
+    event_id = request.args.get('event_id','')
+    if sport not in pick_results.LEAGUES or not event_id.isdigit() or len(event_id)>20:
+        return jsonify(error='Invalid game selection.'),400
+    try:
+        league, supported = pick_results.LEAGUES[sport]
+        summary = pick_results.fetch(league,'summary',event=event_id)
+        competitions = summary.get('header',{}).get('competitions',[])
+        if len(competitions)!=1:
+            return jsonify(error='Box score not available.'),404
+        game = competitions[0]
+        box = summary.get('boxscore',{}).get('players',[])
+        names = sorted({r.get('athlete',{}).get('displayName') for team in box
+                        for group in team.get('statistics',[])
+                        for r in group.get('athletes',[])
+                        if r.get('athlete',{}).get('displayName')})
+        players = []
+        for name in names:
+            stats = {stat:pick_results.actual_stat({'sport':sport,'stat':stat,'player':name},box)
+                     for stat in supported}
+            stats = {key:value for key,value in stats.items() if value is not None}
+            if stats:
+                players.append({'player':name,'stats':stats})
+        competitors=game.get('competitors',[])
+        return jsonify(status=game.get('status',{}).get('type',{}).get('description','Unknown'),
+                       teams=[{'team':t.get('team',{}).get('displayName','Team'),'score':t.get('score')} for t in competitors],
+                       players=players,observed_at=datetime.now(timezone.utc).isoformat(),
+                       note='Verified provider box score. Stats may lag live play.')
+    except (requests.RequestException,ValueError,KeyError,TypeError,AttributeError):
+        return jsonify(error='Box score provider unavailable.'),503
+
+
 @app.get('/api/today/performance')
 @premium_required
 def current_performance():
