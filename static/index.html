@@ -1010,7 +1010,7 @@ function configureBroadcastControls(prefix){
  };
  cast.onclick=()=>{
   const frame=player.querySelector('iframe');if(!frame)return;
-  const id=(frame.src.match(/\\/embed\\/([a-zA-Z0-9_-]{11})/)||[])[1];
+  const id=new URL(frame.src).pathname.split('/').filter(Boolean).pop();
   if(!id)return;
   // YouTube owns its native casting / AirPlay controls. Never imply a web iframe can initiate casting.
   window.open('https://www.youtube.com/watch?v='+encodeURIComponent(id),'_blank','noopener,noreferrer');
