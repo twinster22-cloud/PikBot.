@@ -1,5 +1,6 @@
 """Grade saved PikBot selections against completed player box scores."""
 import math
+from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor, wait
 from functools import lru_cache
 from unicodedata import normalize
@@ -137,3 +138,51 @@ def grade(picks, now):
         pick['actual'] = actual
         pick['result'] = outcome(actual, pick['line'], pick['side']) if actual is not None else 'PENDING'
     return picks
+
+
+@lru_cache(maxsize=50)
+def live_performance(sport, matchup, starts_at, window):
+    """Observed game facts only. No remaining-game or in-play probability model."""
+    start = timestamp(starts_at)
+    sides = matchup.split(' at ', 1)
+    if sport not in LEAGUES or not start or len(sides) != 2:
+        return None
+    league, stats = LEAGUES[sport]
+    expected = dict(zip(('away','home'), map(name_key, sides)))
+    matches = []
+    for event in scoreboard(league, start.astimezone(EASTERN).strftime('%Y%m%d'), window):
+        games = event.get('competitions', [])
+        kickoff = timestamp(event.get('date'))
+        if len(games) != 1 or not kickoff or abs((kickoff-start).total_seconds()) > 3600:
+            continue
+        teams = {r.get('homeAway'):name_key(r.get('team',{}).get('displayName'))
+                 for r in games[0].get('competitors',[])}
+        if teams == expected:
+            matches.append(event)
+    if len(matches) != 1:
+        return None
+    event = matches[0]
+    summary = fetch(league, 'summary', event=event['id'])
+    competitions = summary.get('header',{}).get('competitions',[])
+    if len(competitions) != 1:
+        return None
+    game = competitions[0]
+    status = game.get('status',{})
+    box = summary.get('boxscore',{}).get('players',[])
+    names = sorted({r.get('athlete',{}).get('displayName') for team in box
+                    for group in team.get('statistics',[]) for r in group.get('athletes',[])
+                    if r.get('athlete',{}).get('displayName')})
+    players = []
+    for name in names:
+        values = {stat:actual_stat({'sport':sport,'stat':stat,'player':name},box) for stat in stats}
+        values = {k:v for k,v in values.items() if v is not None}
+        if values:
+            players.append({'player':name,'stats':values})
+    return {'matchup':matchup,'state':status.get('type',{}).get('state'),
+            'status':status.get('type',{}).get('detail'),
+            'period':status.get('period'),'clock':status.get('displayClock'),
+            'teams':[{'team':r.get('team',{}).get('displayName'),'score':r.get('score')}
+                     for r in game.get('competitors',[])],
+            'players':players,'observed_at':datetime.now(timezone.utc).isoformat(),
+            'source':'ESPN public scoreboard / box score',
+            'note':'Provider snapshot, possibly delayed. These are observed stats, not live betting predictions. No in-play recommendation is approved.'}

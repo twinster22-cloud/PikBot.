@@ -18,7 +18,8 @@ def configure_test_app(app):
     app.register_blueprint(membership.membership)
 
 with patch('membership.init_accounts', configure_test_app), \
-     patch('owner_dashboard.init_owner', lambda app: app.register_blueprint(owner_dashboard.owner)):
+     patch('owner_dashboard.init_owner', lambda app: app.register_blueprint(owner_dashboard.owner)), \
+     patch('prediction_audit.init_audit', lambda app: app.register_blueprint(__import__('prediction_audit').audit)):
     server = importlib.import_module('server')
 
 class SecurityTests(unittest.TestCase):

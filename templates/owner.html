@@ -12,7 +12,7 @@
 <p class="muted">Members cannot view this dashboard. Refunds require an owner sign-in within the last 15 minutes.</p>
 <div class="toolbar"><label>Reporting month (UTC)<input id="month" type="month"></label><button id="refresh" class="primary" disabled>Sync payments from Stripe</button><button id="reload">Refresh dashboard</button></div>
 <div class="panel setup"><p id="sync-status" role="status">Loading your records…</p><a class="button" id="stripe-setup" href="https://dashboard.stripe.com/" hidden>Open Stripe Dashboard</a></div><p id="notice" class="notice" role="status" hidden></p>
-<nav class="tabs" aria-label="Owner dashboard sections"><button data-tab="overview" aria-pressed="true">Overview</button><button data-tab="members">Members</button><button data-tab="payments">Payments & refunds</button><button data-tab="pick-results">Previous Pick Results</button><button data-tab="feedback">Reviews & comments</button><button data-tab="bills">Bills</button></nav>
+<nav class="tabs" aria-label="Owner dashboard sections"><button data-tab="overview" aria-pressed="true">Overview</button><button data-tab="members">Members</button><button data-tab="payments">Payments & refunds</button><button data-tab="pick-results">Previous Pick Results</button><button data-tab="accuracy">Accuracy & specialist team</button><button data-tab="feedback">Reviews & comments</button><button data-tab="bills">Bills</button></nav>
 <section id="overview"><div class="cards"><div class="card"><small>Money collected</small><div class="value" id="collected">—</div><small>Recorded Stripe payments · USD</small></div><div class="card"><small>Successful refunds</small><div class="value" id="refunded">—</div><small>By refund date</small></div><div class="card"><small>Recorded Stripe fees</small><div class="value" id="fees">—</div><small>Processing / refund transactions</small></div><div class="card"><small>After recorded Stripe fees</small><div class="value" id="net">—</div><small>Before taxes and other bills</small></div></div>
 <p id="coverage" class="muted totals-note"></p><div class="cards"><div class="card"><small>Total accounts</small><div class="value" id="count-total">—</div></div><div class="card"><small>Active trials</small><div class="value" id="count-trial">—</div></div><div class="card"><small>Paid members (last sync)</small><div class="value" id="count-paid">—</div></div><div class="card"><small>Bills due now</small><div class="value" id="due">—</div><small>Unpaid bills you entered</small></div><div class="card"><small>All outstanding bills</small><div class="value" id="outstanding">—</div></div></div>
 <div class="panel"><h2>Stripe account balance · USD</h2><p class="muted">This is the whole Stripe account, including any business activity outside PikBot. Balances are not extra revenue.</p><div id="balances" class="balance-row"></div><h3 style="margin-top:24px">Recent account payouts</h3><div id="payouts" class="scroll"></div></div><div class="panel"><h3>After recorded fees and paid bills</h3><div class="value" id="after-bills">—</div><p class="muted">Based on imported Stripe activity and bills recorded as paid in the selected month, before taxes.</p><h3>Bills paid in selected month</h3><div class="value" id="expense-paid">—</div><p class="muted">Owner-entered bookkeeping only. Taxes and unrecorded expenses are not calculated. This dashboard does not pay bills or transfer payouts.</p></div></section>
@@ -27,6 +27,7 @@
 <div id="pick-results-table" class="scroll"></div>
 <div class="pages"><button id="pick-results-newer" disabled>Newer picks</button><button id="pick-results-refresh">Refresh results</button><button id="pick-results-older" disabled>Older picks</button></div>
 </div></section>
+<section id="accuracy" hidden><div class="panel"><h2>Accuracy & specialist team</h2><p class="notice warning">Research mode. No 75% win-rate claim is validated. Specialist checks share historical data; agreement does not guarantee an outcome. Lineup/injury verification and live prediction modeling remain incomplete.</p><p>Data reviewer · Projection reviewer · Trend reviewer · Playing-time reviewer · Sport-specific availability reviewer · Market-pricing reviewer · Validation reviewer</p><p>New projections are recorded before game time with model version, source timestamp, history fingerprint, score, and review evidence. Repeated views count once. Old predictions remain in Previous Pick Results for 48 hours; this separate private audit starts with this release.</p><button id="accuracy-sync" class="primary">Check recorded predictions against final stats</button> <button id="accuracy-refresh">Refresh accuracy report</button><p id="accuracy-status" role="status"></p><div id="accuracy-summary" class="scroll"></div><h3>Raw score vs actual results</h3><div id="accuracy-bands" class="scroll"></div><h3>Results by sport</h3><div id="accuracy-sports" class="scroll"></div><h3>Results by model version</h3><div id="accuracy-versions" class="scroll"></div><p id="accuracy-note" class="muted"></p><h3>Entry EV calculator · research only</h3><p>Enter decimal probabilities and the exact total-return multipliers shown for your entry. Assumes independent picks, no pushes or voids, and correct probabilities. Correlated selections invalidate this calculation. A market estimate is not a verified probability.</p><label>Probabilities, separated by commas<input id="ev-probabilities" placeholder="0.5, 0.5"></label><label>Payout table as JSON (number correct: total return)<input id="ev-payouts" placeholder='{"2":3}'></label><button id="ev-calculate">Calculate hypothetical entry EV</button><p id="ev-result" role="status"></p></div></section>
 <dialog id="refund-dialog"><h2>Review a refund</h2><p class="notice warning">This can return real money. Refunding a payment does not cancel the member's subscription.</p><form id="refund-review"><label>Invoice<input name="invoice_id" id="refund-invoice" readonly required></label><label>Refund amount (USD)<input name="amount" id="refund-amount" type="number" min="0.01" step="0.01" required></label><button class="primary">Verify refund details</button></form><div id="refund-confirmation" hidden><p id="refund-details"></p><label>Type REFUND to confirm<input id="refund-word" autocomplete="off" spellcheck="false"></label><button id="refund-confirm" class="danger">Confirm refund</button></div><p id="refund-status" role="status"></p><button id="refund-close" style="margin-top:16px">Close</button></dialog>
 </main><script>
 const csrf={{ csrf|tojson }}, $=id=>document.getElementById(id), pages={members:0,payments:0,feedback:0,bills:0};
@@ -151,12 +152,56 @@ $('pick-results-refresh').onclick=()=>loadPickResults(resultsPage);
 $('pick-results-newer').onclick=()=>loadPickResults(resultsPage-1);
 $('pick-results-older').onclick=()=>loadPickResults(resultsPage+1);
 
+
+let accuracyBusy=false;
+async function loadAccuracy(){
+  try{
+    const d=await api('/api/owner/accuracy');
+    const headers=['Record group','Logged','Passed','Failed','Pending','Push / void','Win rate','95% interval','Brier'];
+    const build=r=>[r.label||r.sport||r.version||'All new research predictions',r.logged,r.wins,r.losses,r.pending,r.pushes+' / '+r.voids,r.win_rate===null?'Not yet available':r.win_rate+'%',r.interval?r.interval.join('–')+'%':'—',r.brier];
+    table('accuracy-summary',headers,[d.overall],build);
+    table('accuracy-bands',headers,d.score_bands,build);
+    table('accuracy-sports',headers,d.sports,build,'No new predictions recorded yet.');
+    table('accuracy-versions',headers,d.versions,build,'No model records yet.');
+    $('accuracy-note').textContent=d.note+' Tracking started '+(d.tracking_started?when(d.tracking_started):'when the first new projection is viewed')+'.';
+  }catch(error){$('accuracy-status').textContent=error.message;}
+}
+$('accuracy-refresh').onclick=loadAccuracy;
+$('accuracy-sync').onclick=async()=>{
+  if(accuracyBusy)return;accuracyBusy=true;$('accuracy-sync').disabled=true;
+  let total=0, settled=0;
+  try{
+    for(let batch=0;batch<50;batch++){
+      $('accuracy-status').textContent='Checking final box scores… '+total+' records checked, '+settled+' settled.';
+      const d=await api('/api/owner/accuracy/settle',new FormData());
+      total+=d.checked;settled+=d.settled;
+      await loadAccuracy();
+      if(d.checked<8)break;
+    }
+    $('accuracy-status').textContent=total+' checked; '+settled+' settled. Missing or unfinished results stay pending and can be retried after 30 minutes. Each click checks up to 400 due records.';
+  }catch(error){$('accuracy-status').textContent=error.message;}
+  finally{accuracyBusy=false;$('accuracy-sync').disabled=false;}
+};
+
+$('ev-calculate').onclick=()=>{
+  try{
+    const probabilities=$('ev-probabilities').value.split(',').map(v=>{if(!v.trim())throw Error('Enter each probability.');return Number(v)});
+    if(probabilities.length<1||probabilities.length>6||probabilities.some(p=>!Number.isFinite(p)||p<0||p>1))throw Error('Enter 1–6 decimal probabilities between 0 and 1.');
+    const payouts=JSON.parse($('ev-payouts').value);
+    if(!payouts||Array.isArray(payouts)||typeof payouts!=='object'||Object.entries(payouts).some(([k,v])=>!/^\d+$/.test(k)||Number(k)>probabilities.length||typeof v!=='number'||!Number.isFinite(v)||v<0||v>10000))throw Error('Enter a valid payout table with total returns.');
+    let distribution=[1];
+    for(const p of probabilities){const next=Array(distribution.length+1).fill(0);distribution.forEach((mass,k)=>{next[k]+=mass*(1-p);next[k+1]+=mass*p});distribution=next;}
+    const ev=distribution.reduce((sum,mass,k)=>sum+mass*(payouts[k]||0),0)-1;
+    $('ev-result').textContent='Hypothetical net EV per unit: '+(100*ev).toFixed(2)+'%. This is a payout calculation, not measured PikBot accuracy or a recommendation.';
+  }catch(error){$('ev-result').textContent=error.message;}
+};
 function switchTab(tab){
   activeTab=tab;
   document.querySelectorAll('[data-tab]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.tab===tab)));
-  for(const id of ['overview','pick-results',...Object.keys(pages)])$(id).hidden=id!==tab;
+  for(const id of ['overview','pick-results','accuracy',...Object.keys(pages)])$(id).hidden=id!==tab;
   if(tab in pages)list(tab);
   if(tab==='pick-results')loadPickResults(0);
+  if(tab==='accuracy')loadAccuracy();
 }
 document.querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>switchTab(button.dataset.tab));
 for(const kind of Object.keys(pages)){

@@ -25,6 +25,17 @@ BDL = 'https://api.balldontlie.io/v1'
 NFLVERSE = 'https://github.com/nflverse/nflverse-data/releases/download'
 
 
+def parse_minutes(value):
+    try:
+        parts = str(value).split(':')
+        if len(parts) not in {1, 2}:
+            return None
+        minutes = float(parts[0]) + (float(parts[1]) / 60 if len(parts) == 2 else 0)
+        return minutes if 0 < minutes <= 80 else None
+    except (ValueError, TypeError):
+        return None
+
+
 def download(url, **kwargs):
     try:
         response = requests.get(url, timeout=(5, 25), **kwargs)
@@ -66,14 +77,14 @@ def nba_player(player, day, _window):
         page = nba_get('/stats', **params)
         for row in page.get('data', []):
             game = row.get('game') or {}
-            minutes = str(row.get('min') or '0').split(':')
-            if str(game.get('status', '')).lower() != 'final' or not any(part.isdigit() and int(part) for part in minutes):
+            minutes = parse_minutes(row.get('min'))
+            if str(game.get('status', '')).lower() != 'final' or minutes is None:
                 continue
             for field, stat in (('pts', 'PTS'), ('reb', 'REB'), ('ast', 'AST'), ('fg3m', '3PM'),
                                 ('blk', 'BLK'), ('stl', 'STL')):
                 value = row.get(field)
                 if isinstance(value, (int, float)) and 0 <= value < float('inf'):
-                    rows.append(('NBA', player, stat, game.get('date'), value))
+                    rows.append(('NBA', player, stat, game.get('date'), value, minutes))
         cursor = page.get('meta', {}).get('next_cursor')
         if not cursor:
             break
@@ -195,7 +206,7 @@ def dunk_history(sport, offers, now):
         valid = completed(games)
         if len(valid) < 12:
             valid = {**completed(dunk_games(league, player_id, season - 1, day)), **valid}
-        return [(sport, player, stat, row['date'], row[field])
+        return [(sport, player, stat, row['date'], row[field], parse_minutes(row.get('min', row.get('minutes'))))
                 for row in valid.values()
                 for field, stat in (('pts', 'PTS'), ('reb', 'REB'), ('ast', 'AST'), ('tpm', '3PM'),
                                     ('blk', 'BLK'), ('stl', 'STL'))
@@ -203,7 +214,7 @@ def dunk_history(sport, offers, now):
     players = offers['player'].drop_duplicates().head(3)
     with ThreadPoolExecutor(max_workers=3) as pool:
         rows = list(pool.map(player_rows, players))
-    return pd.DataFrame([row for player in rows for row in player], columns=COLUMNS).drop_duplicates()
+    return pd.DataFrame([row for player in rows for row in player], columns=[*COLUMNS, 'minutes']).drop_duplicates()
 
 
 ADDITIONAL_FEEDS = {
@@ -352,7 +363,7 @@ def _primary_history(sport, offers, now):
         players = offers['player'].drop_duplicates().head(8)
         with ThreadPoolExecutor(max_workers=8) as pool:
             logs = list(pool.map(lambda name: nba_player(name, now.date(), bucket(60)), players))
-        return pd.DataFrame([row for log in logs for row in log], columns=COLUMNS).drop_duplicates()
+        return pd.DataFrame([row for log in logs for row in log], columns=[*COLUMNS, 'minutes']).drop_duplicates()
     if sport == 'NFL':
         season = now.year - (now.month < 3)
         return nfl_history(season, bucket(360))

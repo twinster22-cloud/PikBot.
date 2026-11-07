@@ -25,6 +25,8 @@ def nba_playing_time(history):
         'recent_average': float(recent),
         'projected': float(projected),
         'adjusted': bool(abs(recent - baseline) >= 5),
+        'stable': bool(np.std(minutes[-5:]) / max(np.mean(minutes[-5:]), 1) <= .25
+                       and abs(recent - baseline) / max(baseline, 1) <= .2),
     }
 
 
@@ -76,7 +78,10 @@ def predict(history, offers, min_games=12, max_age_days=30, *, include_history=F
         if pd.isna(r['as_of']) or pd.isna(r['line']) or r['line']<0: continue
         s=h.copy()
         for k in KEYS:s=s[s[k]==r[k]]
-        s=s[(s['date']<r['as_of']) & (s['date']>=r['as_of']-pd.Timedelta(days=365))].dropna(subset=['value','date']).sort_values('date')
+        # Date-only box scores lack completion timestamps. Exclude the entire offer day.
+        s=s[(s['date']<r['as_of'].normalize()) & (s['date']>=r['as_of']-pd.Timedelta(days=365))].dropna(subset=['value','date']).sort_values('date')
+        s=s.drop_duplicates(['date','value'])
+        if s['date'].duplicated().any():continue
         x=s['value'].tail(50).to_numpy(float)
         if len(x)<min_games or np.any(x<0):continue
         if (r['as_of']-s['date'].max()).days>max_age_days:continue
@@ -130,15 +135,17 @@ def evaluate(picks, min_prob=.75, max_entries=5, max_picks=18):
         prob=float(a.p_raw*b.p_raw)
         rows.append({'Pick 1':f'{a.player} {a.stat} {a.side} {a.line:g}', 'Pick 2':f'{b.player} {b.stat} {b.side} {b.line:g}',
                      'Estimated all-hit %':round(prob*100,2),'Pick 1 %':round(a.p_raw*100,2),'Pick 2 %':round(b.p_raw*100,2),
-                     'offer_id_1':a.offer_id,'offer_id_2':b.offer_id})
+                     'offer_id_1':a.offer_id,'offer_id_2':b.offer_id,'side_1':a.side,'side_2':b.side})
     return pd.DataFrame(rows).sort_values('Estimated all-hit %',ascending=False).head(max_entries) if rows else pd.DataFrame()
 
 def backtest(history,offers,min_games=12,min_prob=.75):
     """Walk-forward: each prediction uses only historical observations before as_of. Offers require actual outcomes."""
     o=offers.copy()
     if 'actual' not in o.columns:raise ValueError('Historical offers require actual column')
-    pred=predict(history,o,min_games=min_games)
+    pred=predict(history,o,min_games=min_games,include_history=True)
     if pred.empty:return pd.DataFrame(),pd.DataFrame()
+    # Select the side before looking at actual results; never score both sides as picks.
+    pred=pred.sort_values('p_raw',ascending=False).drop_duplicates(['offer_id','as_of'])
     pred['result']=[outcome(r.actual,r.line,r.side) for _,r in pred.iterrows()]
     pred=pred[pred.result.isin(['WIN','LOSS'])].copy()
     pred['hit']=(pred.result=='WIN').astype(int)
@@ -149,7 +156,8 @@ def backtest(history,offers,min_games=12,min_prob=.75):
         candidates=evaluate(g,min_prob=min_prob,max_entries=1)
         if candidates.empty:continue
         c=candidates.iloc[0]
-        a=g[g.offer_id==c.offer_id_1].iloc[0];b=g[g.offer_id==c.offer_id_2].iloc[0]
+        a=g[(g.offer_id==c.offer_id_1)&(g.side==c.side_1)].iloc[0]
+        b=g[(g.offer_id==c.offer_id_2)&(g.side==c.side_2)].iloc[0]
         entries.append({'as_of':stamp,'entry_win':int(a.hit==1 and b.hit==1),'estimated_probability':c['Estimated all-hit %']/100,
                         'pick_1':c['Pick 1'],'pick_2':c['Pick 2']})
     return pred,pd.DataFrame(entries)

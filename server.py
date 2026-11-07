@@ -1,6 +1,10 @@
 from functools import lru_cache
 import requests
 import secrets
+from hashlib import sha256
+import prediction_team
+import prediction_audit
+import market_math
 import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -23,6 +27,7 @@ ROOT=Path(__file__).parent
 app=Flask(__name__, static_folder=None)
 init_accounts(app)
 init_owner(app)
+prediction_audit.init_audit(app)
 
 @app.get('/<asset>')
 def public_asset(asset):
@@ -169,7 +174,7 @@ def todays_predictions():
     if g.membership_access == 'trial':
         board = trial_daily_board()
         if board:
-            return jsonify(trial_public_board(board))
+            return jsonify(error='Today’s saved trial selections were issued by the earlier unvalidated model. No team-approved replacements are available.'), 404
     sport = request.args.get('sport', '')
     if sport not in today.SPORTS:
         return jsonify(error='Choose a supported sport.'), 400
@@ -199,7 +204,8 @@ def todays_predictions():
         return jsonify(error='Recent player stats could not be read.'), 503
     if offers.empty:
         return jsonify(error='No current lines match the available player stats.'), 404
-    response = app.make_response(analyze(history, offers, False, trial_live=g.membership_access == 'trial', live=True))
+    # Review the complete board before spending trial allowance or publishing selections.
+    response = app.make_response(analyze(history, offers, False, live=True))
     if response.status_code != 200:
         return response
     if not response.is_json or not response.json.get('picks'):
@@ -217,18 +223,39 @@ def todays_predictions():
         if not pick.get('photo_url'):
             pick['photo_url'] = history.attrs.get('photos', {}).get(pick['player'])
     matchups = {game['id']: game for game in today.today_events(sport, now)}
+    history_digest = sha256(history.to_csv(index=False).encode()).hexdigest()
+    benchmarks = today.benchmark_lines(sport,result['picks'][0]['event_id'],now,
+                                      expanded=g.membership_access != 'trial')
     for pick in result['picks']:
         game = matchups.get(pick['event_id'], {})
         pick['matchup'] = ' at '.join(filter(None, (game.get('away_team'), game.get('home_team'))))
         pick['starts_at'] = game.get('commence_time')
         pick['bookmaker'] = book_label
+        offer = next((row for row in available if row['event_id'] == pick['event_id']
+                      and row['player'] == pick['player'] and row['stat'] == pick['stat']
+                      and row['line'] == pick['line']), {})
+        pick['line_updated_at'] = offer.get('line_updated_at')
+        pick['stats_source'] = stats_source
+        pick['history_digest'] = history_digest
+        pick['team_review'] = prediction_team.review(pick, offer, now)
+        pick['market_review'] = market_math.comparison(pick,offer,
+            benchmarks.get((pick['player'],pick['stat'],pick['line']),{}),now)
         pick['reason'] = pick_reason(pick)
+    result['entries'] = []  # Unvalidated independence-based entries are research, not recommendations.
+    result['team_version'] = prediction_team.MODEL_VERSION
+    result['approved_count'] = sum(p['team_review']['approved'] for p in result['picks'])
+    try:
+        prediction_audit.archive(result['picks'], datetime.now(timezone.utc))
+    except (psycopg.Error, ValueError):
+        return jsonify(error='Predictions could not be recorded before game time. Please refresh the matchup.'), 503
     result['source'] = f'{book_label} via The Odds API' + (' · Stats: ' + stats_source if stats_source else '')
-    result['disclaimer'] = f'Model estimates for current {book_label} lines. Only players with enough recent history are shown.'
+    result['disclaimer'] = f'Research projections for {book_label} lines. Team review is active; no picks are approved as validated recommendations. Raw scores are not verified win probabilities.'
     if 'SportsDataverse' in stats_source:
         result['disclaimer'] += ' Reserve stats: SportsDataverse contributors, CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Player game records transformed into PikBot estimates.'
     if g.membership_access == 'trial':
-        result['picks'] = result['picks'][:3]
+        result['picks'] = [p for p in result['picks'] if p['team_review']['approved']][:3]
+        if not result['picks']:
+            return jsonify(error='No team-approved picks are available. PikBot will not force daily recommendations while lineup checks and accuracy validation are incomplete.'), 404
         result['entries'] = []
         result['daily_board'] = True
         result['selected_at'] = now.isoformat()
@@ -242,6 +269,29 @@ def todays_predictions():
             app.logger.warning('Could not save the live pick board for results.')
             return jsonify(error='Pick history is temporarily unavailable. Please try again shortly.'), 503
     return jsonify(result)
+
+
+@app.get('/api/today/performance')
+@premium_required
+def current_performance():
+    if g.membership_access == 'trial':
+        return jsonify(error='Live performance research requires paid membership.'), 403
+    sport = request.args.get('sport', '')
+    if sport not in today.SPORTS:
+        return jsonify(error='Choose a supported sport.'), 400
+    try:
+        now = datetime.now(timezone.utc)
+        game = next((r for r in today.today_events(sport,now)
+                     if r['id'] == request.args.get('event_id')), None)
+        if not game:
+            return jsonify(error='Choose a matchup from today’s schedule.'), 404
+        matchup = ' at '.join((game['away_team'],game['home_team']))
+        data = pick_results.live_performance(sport,matchup,game['commence_time'],int(now.timestamp())//30)
+        if not data:
+            return jsonify(error='A unique current box score is not available for this matchup.'), 404
+        return jsonify(data)
+    except (today.FeedError,requests.RequestException,ValueError,KeyError,TypeError):
+        return jsonify(error='Current performance data is unavailable. No live pick has been generated.'), 503
 
 
 PICK_SNAPSHOT_FIELDS = {'sport', 'player', 'stat', 'line', 'side', 'event_id', 'matchup', 'starts_at'}
@@ -258,7 +308,7 @@ def save_member_pick_board(picks, now, bookmaker=today.DEFAULT_BOOK):
         return
     email = g.member_email
     day = now.astimezone(pick_results.EASTERN).date()
-    fields = PICK_SNAPSHOT_FIELDS | {'bookmaker', 'p_raw'}
+    fields = PICK_SNAPSHOT_FIELDS | {'bookmaker', 'p_raw', 'team_review', 'line_updated_at', 'market_review'}
     board_key = event_id if bookmaker == today.DEFAULT_BOOK else f'{event_id}:{bookmaker}'
     payload = {'picks': [{key: value for key, value in pick.items() if key in fields}
                          for pick in picks if pick['event_id'] == event_id]}
@@ -339,7 +389,7 @@ def pick_reason(pick):
                  f"The model estimates {playing_time['projected']:.1f} minutes.")
         if playing_time['adjusted']:
             text += " The stat projection adjusts for the recent change in minutes."
-    return text + ' This is a statistical estimate, not a guaranteed result; injuries and lineup changes are not included.'
+    return text + ' Research only. Team review withholds recommendation approval because confirmed injuries, lineups, and forward accuracy validation are missing.'
 
 
 @app.get('/api/odds-feed-check')

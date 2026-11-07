@@ -96,7 +96,7 @@ def event_offers(sport, event_id, _window, bookmaker=DEFAULT_BOOK, expanded=Fals
         markets = {**markets, **NBA_EXTRA}
     try:
         return get(f'/{key}/events/{event_id}/odds', bookmakers=bookmaker,
-                   markets=','.join(markets))
+                   markets=','.join(markets), oddsFormat='decimal')
     except FeedError as exc:
         return {'error': str(exc)}
 
@@ -117,7 +117,7 @@ def offers(sport, now, event_id=None, *, next_slate=False, bookmaker=DEFAULT_BOO
     for event in upcoming[:1]:
         event_id = event['id']
         with LOCK:
-            window = bucket(60)
+            window = bucket(5)
             if expanded:
                 payload = event_offers(sport, event_id, window, bookmaker, True)
             elif bookmaker == DEFAULT_BOOK:
@@ -141,12 +141,45 @@ def offers(sport, now, event_id=None, *, next_slate=False, bookmaker=DEFAULT_BOO
                         continue
                     offer_id = f'{event_id}:{player}:{stat}:{line}'
                     offered_sides.setdefault(offer_id, set()).add(str(outcome.get('name', '')).casefold())
+                    prices = result.get(offer_id, {}).get('prices', {})
+                    side = str(outcome.get('name', '')).casefold()
+                    if side in {'over','more','under','less'}:
+                        prices['MORE' if side in {'over','more'} else 'LESS'] = outcome.get('price')
                     result[offer_id] = {'sport': sport, 'player': player, 'stat': stat,
                                         'line': line, 'as_of': now, 'offer_id': offer_id,
-                                        'event_id': event_id}
+                                        'event_id': event_id, 'starts_at': event['commence_time'],
+                                        'line_updated_at': updated.isoformat(), 'prices':prices}
     if bookmaker == DEFAULT_BOOK:
         return list(result.values())
     return [offer for offer_id, offer in result.items()
             if offered_sides[offer_id] & {'over', 'more'}
             and offered_sides[offer_id] & {'under', 'less'}]
+
+
+def benchmark_lines(sport, event_id, now, expanded=False):
+    """Optional exact-line reference from existing API entitlement; absence is explicit."""
+    _, markets = SPORTS[sport]
+    if expanded and sport == 'NBA':
+        markets = {**markets, **NBA_EXTRA}
+    with LOCK:
+        payload = event_offers(sport,event_id,bucket(5),'pinnacle',expanded)
+    if payload.get('error') or payload.get('id') != event_id:
+        return {}
+    result = {}
+    for book in payload.get('bookmakers',[]):
+        if book.get('key') != 'pinnacle':continue
+        for market in book.get('markets',[]):
+            stat = markets.get(market.get('key'))
+            updated = market.get('last_update') or book.get('last_update')
+            if not stat:continue
+            for outcome in market.get('outcomes',[]):
+                side = str(outcome.get('name','')).casefold()
+                if side not in {'over','under'}:continue
+                key = (outcome.get('description'),stat,outcome.get('point'))
+                row = result.setdefault(key,{'last_update':updated})
+                label = 'MORE' if side == 'over' else 'LESS'
+                if label in row:  # Ambiguous duplicate market: never choose arbitrarily.
+                    row['ambiguous'] = True
+                row[label] = outcome.get('price')
+    return {key:row for key,row in result.items() if not row.get('ambiguous')}
 
