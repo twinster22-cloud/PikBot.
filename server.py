@@ -99,6 +99,14 @@ def index():
         return redirect('/owner')
     return send_from_directory(ROOT/'static','index.html')
 
+@app.get('/owner/picks')
+def owner_picks():
+    record = account()
+    if not record or not private_paid_test(record):
+        return redirect('/owner/login')
+    return send_from_directory(ROOT/'static', 'index.html')
+
+
 @app.post('/api/analyze')
 @owner_required
 def analyze_endpoint():
