@@ -70,6 +70,8 @@ document.addEventListener('DOMContentLoaded',()=>{
  const shell=document.querySelector('.shell'), membership=document.querySelector('section[aria-label="Membership"]');
  const video=document.getElementById('member-broadcast-monitor'), plans=document.getElementById('upgrade-plan');
  if(shell&&membership&&video) shell.insertBefore(video,membership);
+ const dashboard=document.getElementById('dashboard');
+ if(shell&&video&&dashboard) shell.insertBefore(dashboard,membership);
  if(shell&&plans) shell.appendChild(plans);
 });
 </script><script>document.getElementById('pikbot-app-refresh').addEventListener('click',function(){this.disabled=true;this.textContent='Refreshing…';window.location.reload();});</script><div class="shell"><header class="top"><div class="identity"><img src="/icon-192.png" alt="PikBot logo"><div><b>Pik<span>Bot</span></b><div class="eyebrow">SPORTS INTELLIGENCE</div></div></div><div class="status"><i></i>RESEARCH MODE</div></header><section class="panel" aria-label="Membership">
