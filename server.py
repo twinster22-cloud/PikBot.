@@ -236,11 +236,20 @@ def todays_predictions():
         result = trial_daily_board(trial_public_board(result))
         result = trial_public_board(result)
     else:
-        save_member_pick_board(result['picks'], now, bookmaker)
+        try:
+            save_member_pick_board(result['picks'], now, bookmaker)
+        except psycopg.Error:
+            app.logger.warning('Could not save the live pick board for results.')
+            return jsonify(error='Pick history is temporarily unavailable. Please try again shortly.'), 503
     return jsonify(result)
 
 
 PICK_SNAPSHOT_FIELDS = {'sport', 'player', 'stat', 'line', 'side', 'event_id', 'matchup', 'starts_at'}
+# Repeated views of an identical prediction share one result.
+PICK_IDENTITY_SQL = """jsonb_build_array(
+    pick->>'sport', pick->>'event_id', COALESCE(pick->>'bookmaker', 'PrizePicks'),
+    pick->>'player', pick->>'stat', pick->'line', pick->>'side'
+)"""
 
 
 def save_member_pick_board(picks, now, bookmaker=today.DEFAULT_BOOK):
@@ -249,45 +258,56 @@ def save_member_pick_board(picks, now, bookmaker=today.DEFAULT_BOOK):
         return
     email = g.member_email
     day = now.astimezone(pick_results.EASTERN).date()
-    fields = PICK_SNAPSHOT_FIELDS | {'bookmaker'}
-    if picks[0]['sport'] == 'NBA':
-        fields |= {'p_raw'}
+    fields = PICK_SNAPSHOT_FIELDS | {'bookmaker', 'p_raw'}
     board_key = event_id if bookmaker == today.DEFAULT_BOOK else f'{event_id}:{bookmaker}'
     payload = {'picks': [{key: value for key, value in pick.items() if key in fields}
                          for pick in picks if pick['event_id'] == event_id]}
-    try:
-        with database() as conn:
-            conn.execute('DELETE FROM pikbot_member_pick_boards WHERE email=%s AND pick_day<%s',
-                         (email, day - timedelta(days=30)))
-            conn.execute("""INSERT INTO pikbot_member_pick_boards (email, pick_day, event_id, payload)
-                            VALUES (%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
-                         (email, day, board_key, psycopg.types.json.Jsonb(payload)))
-    except psycopg.Error:
-        app.logger.warning('Could not save the live pick board for results.')
+    with database() as conn:
+        conn.execute('DELETE FROM pikbot_member_pick_boards WHERE email=%s AND pick_day<%s',
+                     (email, day - timedelta(days=30)))
+        conn.execute(f"""INSERT INTO pikbot_member_pick_boards AS board (email, pick_day, event_id, payload)
+            VALUES (%s,%s,%s,%s)
+            ON CONFLICT (email, pick_day, event_id) DO UPDATE
+            SET payload = jsonb_set(board.payload, '{{picks}}', (
+                SELECT jsonb_agg(pick ORDER BY pick_order)
+                FROM (
+                    SELECT DISTINCT ON ({PICK_IDENTITY_SQL}) pick, pick_order
+                    FROM jsonb_array_elements((board.payload->'picks') || (EXCLUDED.payload->'picks'))
+                    WITH ORDINALITY AS saved(pick, pick_order)
+                    ORDER BY {PICK_IDENTITY_SQL}, (pick ? 'p_raw') DESC, pick_order
+                ) unique_picks
+            ))
+            WHERE NOT ((board.payload->'picks') @> (EXCLUDED.payload->'picks'))""",
+                     (email, day, board_key, psycopg.types.json.Jsonb(payload)))
 
 
 @app.get('/api/owner/pick-results')
 @owner_required
 def previous_pick_results():
     page = request.args.get('page', 0, type=int)
-    if not 0 <= page <= 500:
+    if not 0 <= page <= (2**63 - 1) // pick_results.PAGE_SIZE:
         return jsonify(error='Invalid results page.'), 400
     now = datetime.now(timezone.utc)
-    cutoff = now.astimezone(pick_results.EASTERN).date() - timedelta(days=30)
-    email = session['email']
+    cutoff = now - timedelta(days=2)
+    first_day = cutoff.astimezone(pick_results.EASTERN).date()
     with database() as conn:
-        rows = conn.execute("""WITH boards AS (
-                SELECT pick_day, '' AS board_key, payload FROM pikbot_trial_daily_board
-                WHERE email=%s AND pick_day >= %s
+        rows = conn.execute(f"""WITH boards AS (
+                SELECT pick_day, payload FROM pikbot_trial_daily_board WHERE pick_day >= %s
                 UNION ALL
-                SELECT pick_day, event_id AS board_key, payload FROM pikbot_member_pick_boards
-                WHERE email=%s AND pick_day >= %s
+                SELECT pick_day, payload FROM pikbot_member_pick_boards WHERE pick_day >= %s
+            ), candidates AS (
+                SELECT pick, pick_day, pick_order, {PICK_IDENTITY_SQL} AS identity,
+                       NULLIF(pick->>'starts_at', '')::timestamptz AS starts_at
+                FROM boards
+                CROSS JOIN LATERAL jsonb_array_elements(payload->'picks')
+                    WITH ORDINALITY AS saved(pick, pick_order)
+            ), unique_picks AS (
+                SELECT DISTINCT ON (identity) pick, identity, starts_at
+                FROM candidates WHERE starts_at BETWEEN %s AND %s
+                ORDER BY identity, (pick ? 'p_raw') DESC, pick_day, pick_order, pick
             )
-            SELECT pick FROM boards
-            CROSS JOIN LATERAL jsonb_array_elements(payload->'picks') WITH ORDINALITY AS saved(pick, pick_order)
-            WHERE NULLIF(pick->>'starts_at', '')::timestamptz <= %s
-            ORDER BY pick_day DESC, (pick->>'starts_at')::timestamptz DESC, board_key, pick_order
-            LIMIT %s OFFSET %s""", (email, cutoff, email, cutoff, now,
+            SELECT pick FROM unique_picks ORDER BY starts_at DESC, identity
+            LIMIT %s OFFSET %s""", (first_day, first_day, cutoff, now,
                                     pick_results.PAGE_SIZE + 1, page * pick_results.PAGE_SIZE)).fetchall()
     picks = [row['pick'] for row in rows[:pick_results.PAGE_SIZE]]
     return jsonify(picks=pick_results.grade(picks, now), has_more=len(rows) > pick_results.PAGE_SIZE)
