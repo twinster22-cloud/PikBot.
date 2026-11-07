@@ -74,6 +74,23 @@
   <button type="button" data-tab="about">About PikBot</button>
 </nav>
 <section id="dashboard">
+<section class="panel" id="pikbot-live" aria-label="PikBot Live Game Center">
+<h2>🔴 PIKBOT LIVE · GAME CENTER</h2>
+<p class="muted">Live schedules, available scores and observed player box scores. Data depends on your authorized providers; unavailable stats are never estimated as live facts.</p>
+<button class="btn primary" type="button" id="live-center-refresh">Refresh games</button>
+<p class="muted" id="live-center-status" role="status">Tap Refresh games to load today's matchups.</p>
+<div id="live-center-games" class="grid3"></div>
+<div id="live-center-detail" class="chartbox" hidden><h3 id="live-center-title">Game details</h3><p id="live-center-score"></p><div id="live-center-stats" class="scroll"></div>
+<p class="muted">Prop tracking: compare verified live stats against your saved pick line and side. This does not represent a recalculated win probability.</p>
+<label for="live-prop-player">Player</label><input id="live-prop-player" placeholder="Exact player name">
+<label for="live-prop-stat">Stat key</label><input id="live-prop-stat" placeholder="e.g. points">
+<label for="live-prop-line">Prop line</label><input id="live-prop-line" type="number" step="0.5" min="0">
+<select id="live-prop-side" aria-label="Prop side"><option value="MORE">MORE</option><option value="LESS">LESS</option></select>
+<button class="btn" type="button" id="live-prop-check">Track observed progress</button><p id="live-prop-result" role="status"></p></div>
+<h3>Watch live · Official providers</h3><p class="muted">Broadcast rights are not included with PikBot. These links open official services; subscriptions, regional restrictions and game availability may apply. In-app video is enabled only for licensed embeddable streams.</p>
+<p><a href="https://www.nba.com/watch" target="_blank" rel="noopener noreferrer">NBA Watch</a> · <a href="https://www.espn.com/watch/" target="_blank" rel="noopener noreferrer">ESPN Watch</a> · <a href="https://www.nfl.com/watch/" target="_blank" rel="noopener noreferrer">NFL Watch</a> · <a href="https://www.mlb.com/live-stream-games" target="_blank" rel="noopener noreferrer">MLB.TV</a></p>
+</section>
+
 <section id="betting-sites" class="panel" aria-labelledby="betting-sites-title" hidden>
   <h2 id="betting-sites-title">Unlimited Picks</h2>
   <h3>Line sources</h3>
@@ -664,4 +681,53 @@ setInterval(checkSlateAge,60000);
 $('member-feedback').onsubmit=async event=>{event.preventDefault();const form=new FormData(event.target);form.set('csrf',feedbackCsrf);try{const response=await fetch('/api/feedback',{method:'POST',body:form});const result=await response.json();if(!response.ok)throw Error(result.error);$('feedback-status').textContent=result.message;event.target.reset()}catch(error){$('feedback-status').textContent=error.message}};
 showMembership();
 setInterval(showMembership,60000);
+
+let liveObserved=null;
+function liveNode(tag,textValue){const n=document.createElement(tag);n.textContent=String(textValue??'—');return n;}
+async function loadLiveCenter(){
+ const status=document.getElementById('live-center-status'),grid=document.getElementById('live-center-games');
+ status.textContent='Loading authorized game schedule…';grid.replaceChildren();
+ try{
+  const response=await fetch('/api/today',{cache:'no-store'}),body=await response.json();
+  if(!response.ok)throw Error(body.error||'Schedule unavailable');
+  const sports=body.sports||[];let count=0;
+  for(const sport of sports)for(const game of sport.matchups||[]){
+   count++;const card=document.createElement('div');card.className='statbox';
+   card.append(liveNode('strong',sport.name+' · '+game.away+' at '+game.home),liveNode('p',game.started?'Started · live data may be available':'Scheduled · '+new Date(game.starts_at).toLocaleString()));
+   const btn=liveNode('button','View live stats');btn.type='button';btn.className='btn';
+   btn.onclick=()=>openLiveGame(sport.name,game);card.append(btn);grid.append(card);
+  }
+  status.textContent=count?count+' matchups found · Refresh for updates':'No matchups currently returned by the provider.';
+ }catch(e){status.textContent=e.message;}
+}
+async function openLiveGame(sport,game){
+ const panel=document.getElementById('live-center-detail');panel.hidden=false;
+ document.getElementById('live-center-title').textContent=game.away+' at '+game.home;
+ const score=document.getElementById('live-center-score'),stats=document.getElementById('live-center-stats');
+ score.textContent='Checking observed box score…';stats.replaceChildren();liveObserved=null;
+ try{
+ const query=new URLSearchParams({sport,event_id:game.id});
+ const response=await fetch('/api/today/performance?'+query,{cache:'no-store'}),body=await response.json();
+ if(!response.ok)throw Error(body.error||'Stats unavailable');
+ liveObserved=body;
+ score.textContent=(body.status||'Status unavailable')+' · '+(body.teams||[]).map(t=>t.team+' '+(t.score??'—')).join(' / ')+' · Observed '+new Date(body.observed_at).toLocaleTimeString();
+ for(const player of body.players||[]){const row=liveNode('p',player.player+' · '+Object.entries(player.stats||{}).map(([k,v])=>k+': '+v).join(' · '));stats.append(row);}
+ }catch(e){score.textContent=e.message;}
+ panel.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+document.getElementById('live-center-refresh').onclick=loadLiveCenter;
+document.getElementById('live-prop-check').onclick=()=>{
+ const out=document.getElementById('live-prop-result');
+ const name=document.getElementById('live-prop-player').value.trim().toLowerCase();
+ const key=document.getElementById('live-prop-stat').value.trim().toLowerCase();
+ const line=Number(document.getElementById('live-prop-line').value);
+ const side=document.getElementById('live-prop-side').value;
+ if(!liveObserved){out.textContent='Load verified game stats first.';return;}
+ if(!name||!key||!document.getElementById('live-prop-line').value||!Number.isFinite(line)){out.textContent='Enter player, stat and valid line.';return;}
+ const player=(liveObserved.players||[]).find(p=>p.player.toLowerCase()===name);
+ const entry=player&&Object.entries(player.stats||{}).find(([k])=>k.toLowerCase()===key);
+ if(!entry||!Number.isFinite(Number(entry[1]))){out.textContent='No verified matching stat available.';return;}
+ const current=Number(entry[1]);
+ out.textContent=player.player+' · '+key+': '+current+' / '+line+' · '+side+' · '+(side==='MORE'?(current>line?'Currently above line':'Not above line'):(current<line?'Currently below line':'Not below line'))+'. Game not necessarily final.';
+};
 </script></body></html>
