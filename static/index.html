@@ -28,7 +28,7 @@
 /* Put current player analysis first on every screen. */
 #dashboard>.section-head:first-child{display:none}.props-console{margin-top:18px}.analysis-controls{padding:12px;border:1px solid #344b42;background:#0c151b;border-radius:7px;margin-bottom:16px}.analysis-controls label{font-size:11px;color:#a9c9b4;font-weight:800;letter-spacing:.06em}.analysis-controls select{display:block;width:100%;margin-top:7px;padding:12px;background:#18252b;color:#ecfff0;border:1px solid #4b6a54;border-radius:6px;font:inherit}.analysis-controls #today-status{font-size:12px;line-height:1.5;color:#a9c9b4}.analysis-controls #today-matchups{max-height:180px;overflow:auto;border-top:1px solid #263f34}.analysis-controls #today-matchups ul{list-style:none;margin:0;padding:0}.analysis-controls #today-matchups h3{font-size:10px;letter-spacing:.1em}.analysis-controls .matchup-button{width:100%;font-size:11px;line-height:1.5}.hero,.sports,#sports+.nav{margin-top:20px}#dashboard>.panel:not(.props-console),#dashboard>.section-head{display:none}.notice{margin-bottom:20px}.props-console .ring{box-shadow:0 0 22px #7fff3220}.props-console .red .ring{box-shadow:0 0 22px #ff794520}
 .player-portrait{position:relative;display:inline-grid;place-items:center;overflow:hidden;border:1px solid #547760;border-radius:7px;background:radial-gradient(ellipse at top,#385f43,#15232c);isolation:isolate}.portrait-initials{color:#c8ff9c;font-weight:900}.player-portrait img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center top;background:#19272c}.player-portrait.pick-avatar{width:88px;height:94px}.selected-portrait{width:100%;height:100%;border:0;border-radius:4px}.player-monogram{padding:0;width:96px;height:110px;flex-basis:96px}@media(max-width:480px){.player-monogram{width:78px;height:92px;flex-basis:78px}.player-portrait.pick-avatar{width:76px;height:84px}}
-.trial-plan #selected-prop-content,.trial-plan .hero,.trial-plan #sports,.trial-plan .sports-heading{display:none!important}.trial-plan .top-pick-card{cursor:default}
+.trial-plan #selected-prop-content,.trial-plan .hero,.trial-plan #sports,.trial-plan .sports-heading,.trial-plan .nav{display:none!important}.trial-plan .top-pick-card{cursor:default}
 [data-owner-only][hidden],[data-tab="betting-sites"][hidden],#open-unlimited-picks[hidden],#betting-sites[hidden]{display:none!important}
 #betting-site-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(136px,1fr));gap:8px}
 #betting-site-options .btn{min-height:44px}
@@ -59,6 +59,12 @@
 .player-prop-row:has([aria-expanded="true"]){border-color:#a4ff52}.player-prop-option[aria-expanded="true"]{background:#263c1e;color:#eaffdc}
 #player-sheet-details{width:100%;min-height:44px;margin-top:12px}
 @media(max-width:520px){#player-props{margin:auto 0 0;width:100%;max-width:100%;max-height:92dvh;border-radius:18px 18px 0 0}.player-sheet-body{padding-bottom:max(16px,env(safe-area-inset-bottom))}}
+
+/* Paid dashboard is distinct; free trial retains its previous presentation. */
+#pikbot-game-hub{display:none!important}.paid-dashboard #pikbot-game-hub{display:block!important}
+.paid-dashboard #paid-member-banner{border:1px solid #a4ff59;border-radius:16px;padding:18px;background:linear-gradient(135deg,#102a1c,#09171a);box-shadow:0 0 18px #a4ff5922}
+.paid-dashboard #subscribe,.paid-dashboard #upgrade-plan{display:none!important}
+.paid-dashboard .nav{display:flex!important}
 </style></head><body><div class="shell"><header class="top"><div class="identity"><img src="/icon-192.png" alt="PikBot logo"><div><b>Pik<span>Bot</span></b><div class="eyebrow">SPORTS INTELLIGENCE</div></div></div><div class="status"><i></i>RESEARCH MODE</div></header><section class="panel" aria-label="Membership">
 <div id="paid-preview-notice" class="notice" hidden>PAID LAYOUT PREVIEW · Your account is still on its current plan. Trial limits apply. <a href="/" style="color:#b5ff5d">Exit preview</a></div><div id="paid-member-banner" hidden><span class="chip">PAID MEMBERSHIP</span><h2>PikBot Unlimited</h2><p>Unlimited daily pick views · All supported sports · Player photos and analysis</p></div><p id="membership-status" role="status">Checking membership…</p>
 <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -394,6 +400,7 @@ async function showMembership(){
       if(delay>0&&delay<2147483647)trialExpiryTimer=setTimeout(showMembership,delay+100);
     }
     document.body.classList.toggle('trial-plan',trialOnly);
+    document.body.classList.toggle('paid-dashboard',info.access==='subscriber'||paidPreview);
     $('trial-live-access').hidden=!trialOnly;
     $('pikbot-live').hidden=accessBlocked;
     document.querySelector('#live-player-picks .tag').textContent=trialOnly?'3 PICKS DAILY':'TAP FOR ALL PROPS';
@@ -409,7 +416,7 @@ async function showMembership(){
       $('paid-member-banner').innerHTML='<span class="chip">PAID MEMBERSHIP · PREVIEW</span><h2>PikBot</h2><p>Unlimited daily pick views with a paid membership</p><div class="grid3"><div class="statbox"><div class="tag">PAID PLAN</div><div class="num">$15/mo</div></div><div class="statbox"><div class="tag">DAILY VIEW LIMIT</div><div class="num">Unlimited</div></div><div class="statbox"><div class="tag">SPORTS</div><div class="num">All supported</div></div></div><p class="muted">Player photos · Current prop lines · MORE/LESS estimates · Recent game history · Switch sports and matchups</p>';
     }
     $('plan-checkout-status').textContent=info.billing_ready?'Use Subscribe for $15/month above to upgrade.':'Paid checkout is being configured. Your trial remains available until its end date.';
-    $('subscribe').hidden=!info.billing_ready||info.access==='subscriber';
+    $('subscribe').hidden=paidPreview||info.access==='subscriber'||!info.billing_ready;
     $('portal').hidden=!info.billing_ready||!info.has_customer;
     const trial=new Date(info.trial_ends).toLocaleDateString();
     status.textContent={trial:'Free trial through '+trial+' · 3 live picks per day across all sports · Resets at midnight Eastern',subscriber:'PikBot paid membership · Unlimited daily pick views',expired:'No picks available. Your 7-day trial has ended. Subscribe for $15/month to unlock unlimited picks.',payment_required:'No picks available. Your payment has not completed. Update your payment method to restore unlimited picks.',unavailable:'Subscription verification is temporarily unavailable'}[info.access];
