@@ -120,23 +120,6 @@ def complimentary_plus(record):
                             (record['email'],)).fetchone() is not None
 
 
-@membership.post('/api/owner/complimentary-plus')
-@owner_required
-def grant_complimentary_plus():
-    """Owner-authorized complimentary Plus grant; never grants owner privileges."""
-    if not request.is_json:
-        return jsonify(error='JSON body required'), 415
-    email = str((request.get_json(silent=True) or {}).get('email', '')).strip().lower()
-    if not re.fullmatch(r'[^@\\s]+@[^@\\s]+\\.[^@\\s]+', email):
-        return jsonify(error='Valid email required'), 400
-    with database() as conn:
-        row = conn.execute('SELECT 1 FROM pikbot_accounts WHERE email=%s', (email,)).fetchone()
-        if not row:
-            return jsonify(error='User must create a PikBot account first'), 404
-        conn.execute('INSERT INTO pikbot_complimentary_plus(email) VALUES (%s) ON CONFLICT DO NOTHING', (email,))
-    return jsonify(ok=True, email=email, membership_tier='plus', complimentary=True)
-
-
 def access(record):
     if complimentary_plus(record):
         return 'subscriber'
@@ -727,4 +710,23 @@ def trial_daily_board(payload=None):
         row = conn.execute('SELECT payload FROM pikbot_trial_daily_board WHERE email=%s AND pick_day=%s',
                            (email, day)).fetchone()
     return row['payload'] if row else None
+
+
+
+@membership.post('/api/owner/complimentary-plus')
+@owner_required
+def grant_complimentary_plus():
+    """Owner-authorized complimentary Plus grant; never grants owner privileges."""
+    if not request.is_json:
+        return jsonify(error='JSON body required'), 415
+    email = str((request.get_json(silent=True) or {}).get('email', '')).strip().lower()
+    if not re.fullmatch(r'[^@\\s]+@[^@\\s]+\\.[^@\\s]+', email):
+        return jsonify(error='Valid email required'), 400
+    with database() as conn:
+        row = conn.execute('SELECT 1 FROM pikbot_accounts WHERE email=%s', (email,)).fetchone()
+        if not row:
+            return jsonify(error='User must create a PikBot account first'), 404
+        conn.execute('INSERT INTO pikbot_complimentary_plus(email) VALUES (%s) ON CONFLICT DO NOTHING', (email,))
+    return jsonify(ok=True, email=email, membership_tier='plus', complimentary=True)
+
 
