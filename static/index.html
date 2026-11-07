@@ -63,11 +63,11 @@
 <div id="paid-preview-notice" class="notice" hidden>PAID LAYOUT PREVIEW · Your account is still on its current plan. Trial limits apply. <a href="/" style="color:#b5ff5d">Exit preview</a></div><div id="paid-member-banner" hidden><span class="chip">PAID MEMBERSHIP</span><h2>PikBot Unlimited</h2><p>Unlimited daily pick views · All supported sports · Player photos and analysis</p></div><p id="membership-status" role="status">Checking membership…</p>
 <div style="display:flex;gap:8px;flex-wrap:wrap">
 <button type="button" class="btn primary" id="open-unlimited-picks" hidden>Open Unlimited Picks</button>
-<form method="post" action="/billing/checkout" id="subscribe" hidden><input type="hidden" name="csrf"><button class="btn primary">Subscribe for $20/month</button></form>
+<form method="post" action="/billing/checkout" id="subscribe" hidden><input type="hidden" name="csrf"><button class="btn primary">Subscribe for $15/month</button></form>
 <form method="post" action="/billing/portal" id="portal" hidden><input type="hidden" name="csrf"><button class="btn">Manage subscription</button></form>
 <a class="btn primary" href="/owner" data-owner-only hidden style="text-decoration:none">Owner dashboard</a><form method="post" action="/logout" id="logout" hidden><input type="hidden" name="csrf"><button class="btn">Sign out</button></form>
 </div>
-<section id="upgrade-plan" class="panel"><span class="chip">$20 / MONTH</span><h2>PikBot Paid Membership</h2><a class="btn primary" href="/?preview=paid" style="display:inline-block;text-decoration:none">Preview paid dashboard</a><p>Unlimited daily pick views across all supported sports, player photos, MORE/LESS estimates, and recent game history.</p><p class="muted">The 7-day free trial includes 3 picks per day total. Paid members have no daily viewing cap. Available picks depend on current lines, sufficient player history, and data-provider availability.</p><p id="plan-checkout-status" class="muted"></p></section></section><nav class="nav" aria-label="PikBot sections">
+<section id="upgrade-plan" class="panel"><span class="chip">$15 / MONTH</span><h2>PikBot Paid Membership</h2><a class="btn primary" href="/?preview=paid" style="display:inline-block;text-decoration:none">Preview paid dashboard</a><p>Unlimited daily pick views across all supported sports, player photos, MORE/LESS estimates, and recent game history.</p><p class="muted">The 7-day free trial includes 3 picks per day total. Paid members have no daily viewing cap. Available picks depend on current lines, sufficient player history, and data-provider availability.</p><p id="plan-checkout-status" class="muted"></p></section></section><nav class="nav" aria-label="PikBot sections">
   <button type="button" class="active" data-tab="dashboard" aria-current="page">Overview</button>
   <button type="button" data-tab="betting-sites" hidden>Unlimited Picks</button>
   <button type="button" data-tab="data" data-owner-only hidden>Owner tools</button>
@@ -385,13 +385,13 @@ async function showMembership(){
     $('paid-member-banner').hidden=info.access!=='subscriber'&&!paidPreview;
     $('upgrade-plan').hidden=info.access==='subscriber'||paidPreview;
     if(paidPreview){
-      $('paid-member-banner').innerHTML='<span class="chip">PAID MEMBERSHIP · PREVIEW</span><h2>PikBot</h2><p>Unlimited daily pick views with a paid membership</p><div class="grid3"><div class="statbox"><div class="tag">PAID PLAN</div><div class="num">$20/mo</div></div><div class="statbox"><div class="tag">DAILY VIEW LIMIT</div><div class="num">Unlimited</div></div><div class="statbox"><div class="tag">SPORTS</div><div class="num">All supported</div></div></div><p class="muted">Player photos · Current prop lines · MORE/LESS estimates · Recent game history · Switch sports and matchups</p>';
+      $('paid-member-banner').innerHTML='<span class="chip">PAID MEMBERSHIP · PREVIEW</span><h2>PikBot</h2><p>Unlimited daily pick views with a paid membership</p><div class="grid3"><div class="statbox"><div class="tag">PAID PLAN</div><div class="num">$15/mo</div></div><div class="statbox"><div class="tag">DAILY VIEW LIMIT</div><div class="num">Unlimited</div></div><div class="statbox"><div class="tag">SPORTS</div><div class="num">All supported</div></div></div><p class="muted">Player photos · Current prop lines · MORE/LESS estimates · Recent game history · Switch sports and matchups</p>';
     }
-    $('plan-checkout-status').textContent=info.billing_ready?'Use Subscribe for $20/month above to upgrade.':'Paid checkout is being configured. Your trial remains available until its end date.';
+    $('plan-checkout-status').textContent=info.billing_ready?'Use Subscribe for $15/month above to upgrade.':'Paid checkout is being configured. Your trial remains available until its end date.';
     $('subscribe').hidden=!info.billing_ready||info.access==='subscriber';
     $('portal').hidden=!info.billing_ready||!info.has_customer;
     const trial=new Date(info.trial_ends).toLocaleDateString();
-    status.textContent={trial:'Free trial through '+trial+' · 3 live picks per day across all sports · Resets at midnight Eastern',subscriber:'PikBot paid membership · Unlimited daily pick views',expired:'No picks available. Your 7-day trial has ended. Subscribe for $20/month to unlock unlimited picks.',payment_required:'No picks available. Your payment has not completed. Update your payment method to restore unlimited picks.',unavailable:'Subscription verification is temporarily unavailable'}[info.access];
+    status.textContent={trial:'Free trial through '+trial+' · 3 live picks per day across all sports · Resets at midnight Eastern',subscriber:'PikBot paid membership · Unlimited daily pick views',expired:'No picks available. Your 7-day trial has ended. Subscribe for $15/month to unlock unlimited picks.',payment_required:'No picks available. Your payment has not completed. Update your payment method to restore unlimited picks.',unavailable:'Subscription verification is temporarily unavailable'}[info.access];
     const upload = $('upload');
     for(const field of upload.elements)field.disabled=!ownerMode;
     if(ownerMode){
