@@ -416,6 +416,37 @@ def logout():
     return redirect('/owner/login' if request.path == '/owner/logout' else '/login')
 
 
+def broadcast_entitlement(record):
+    """Broadcast access is owner-only or backed by a paid Plus price."""
+    if private_paid_test(record):
+        return 'owner'
+    price_id = os.getenv('STRIPE_PLUS_PRICE_ID', '').strip()
+    customer_id = record.get('customer_id')
+    if not price_id or not customer_id or not os.getenv('STRIPE_SECRET_KEY'):
+        return None
+    try:
+        client = stripe_client()
+        subscriptions = client.v1.subscriptions.list({
+            'customer': customer_id, 'status': 'all',
+            'expand': ['data.latest_invoice'],
+        })
+        for item in subscriptions.auto_paging_iter():
+            sub = stripe_data(item)
+            if sub.get('status') != 'active' or sub.get('pause_collection'):
+                continue
+            items = sub.get('items', {}).get('data', [])
+            if not any((stripe_data(i.get('price')).get('id') == price_id) for i in items):
+                continue
+            invoice = sub.get('latest_invoice')
+            if isinstance(invoice, str):
+                invoice = stripe_data(client.v1.invoices.retrieve(invoice))
+            if invoice and invoice.get('status') == 'paid':
+                return 'plus'
+    except (stripe.StripeError, KeyError, TypeError, AttributeError):
+        return None
+    return None
+
+
 @membership.get('/api/account')
 def account_status():
     record = account()
@@ -427,6 +458,8 @@ def account_status():
         permissions={'owner_tools': is_owner, 'view_members': is_owner,
                      'view_finances': is_owner, 'issue_refunds': is_owner},
         private_paid_test=is_owner,
+        broadcast_access=bool(broadcast_entitlement(record)),
+        membership_tier='owner' if is_owner else ('plus' if broadcast_entitlement(record) == 'plus' else 'regular_or_trial'),
         access=access(record), csrf=csrf_token(), trial_ends=record['trial_ends'].isoformat(),
         billing_ready=billing_ready(),
         has_customer=bool(record['customer_id']),
