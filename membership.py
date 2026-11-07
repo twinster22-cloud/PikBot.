@@ -74,6 +74,11 @@ def init_accounts(app):
             email TEXT PRIMARY KEY REFERENCES pikbot_accounts(email) ON DELETE CASCADE,
             granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )""")
+        # One-time owner-requested complimentary Plus grant; no charge or owner privileges.
+        conn.execute("""INSERT INTO pikbot_complimentary_plus(email)
+            SELECT email FROM pikbot_accounts
+            WHERE lower(email) = %s
+            ON CONFLICT (email) DO NOTHING""", ('ddburley@icloud.com',))
         conn.execute('ALTER TABLE pikbot_accounts ADD COLUMN IF NOT EXISTS billing_hold TEXT')
         conn.execute('ALTER TABLE pikbot_accounts ADD COLUMN IF NOT EXISTS billing_status TEXT')
         conn.execute('ALTER TABLE pikbot_accounts ADD COLUMN IF NOT EXISTS billing_checked_at TIMESTAMPTZ')
