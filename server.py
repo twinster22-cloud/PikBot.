@@ -271,6 +271,20 @@ def todays_predictions():
     return jsonify(result)
 
 
+
+@app.post('/api/research/edge-screen')
+@premium_required
+def optional_edge_screen():
+    """Separate, non-persistent manual research check; does not issue picks."""
+    import edge_guardrails
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify(error='Provide a JSON object.'), 400
+    if len(str(payload)) > 4096:
+        return jsonify(error='Input too large.'), 400
+    return jsonify(edge_guardrails.screen(payload))
+
+
 @app.get('/api/today/performance')
 @premium_required
 def current_performance():
