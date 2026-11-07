@@ -79,7 +79,7 @@
 <p class="muted">Live schedules, available scores and observed player box scores. Data depends on your authorized providers; unavailable stats are never estimated as live facts.</p>
 <button class="btn primary" type="button" id="live-center-refresh">Refresh games</button>
 <p class="muted" id="live-center-status" role="status">Tap Refresh games to load today's matchups.</p>
-<div id="live-center-games" class="grid3"></div>
+<div class="panel" id="live-center-browser"><h3>Switch games · Live scores · Yesterday's recaps</h3><label for="live-center-sport">Sport</label><select id="live-center-sport"><option>NBA</option><option>WNBA</option><option>NFL</option><option>MLB</option><option>NHL</option><option>COLLEGE BASKETBALL</option><option>COLLEGE FOOTBALL</option></select><label for="live-center-day">Games</label><select id="live-center-day"><option value="today">Today's games</option><option value="yesterday">Yesterday's games and highlights</option></select><button type="button" class="btn" id="live-center-load">Switch / Refresh games</button><button type="button" class="btn" id="live-center-fullscreen">Full screen game center</button><p class="muted" id="live-center-browser-status">Choose a sport to view games.</p><div id="live-center-browser-games"></div><div id="live-center-browser-stats" class="scroll"></div><p class="muted">Official recap links may include highlights, subject to provider availability. Full screen expands the game center, not a licensed video stream.</p></div><div id="live-center-games" class="grid3"></div>
 <div id="live-center-detail" class="chartbox" hidden><h3 id="live-center-title">Game details</h3><p id="live-center-score"></p><div id="live-center-stats" class="scroll"></div>
 <p class="muted">Prop tracking: compare verified live stats against your saved pick line and side. This does not represent a recalculated win probability.</p>
 <label for="live-prop-player">Player</label><input id="live-prop-player" placeholder="Exact player name">
@@ -741,4 +741,36 @@ document.getElementById('member-edge-form').addEventListener('submit',async even
  for(const c of d.checks||[]){const row=document.createElement('p');row.textContent=c.name+' · '+c.status.toUpperCase()+' · '+c.detail;checks.append(row);}
  }catch(e){status.textContent=e.message;}
 });
+
+let memberBrowseRequest=0;
+async function browseMemberGames(){
+ const root=document.getElementById('live-center-browser'),sport=document.getElementById('live-center-sport').value,day=document.getElementById('live-center-day').value,status=document.getElementById('live-center-browser-status'),games=document.getElementById('live-center-browser-games'),stats=document.getElementById('live-center-browser-stats');
+ const version=++memberBrowseRequest;status.textContent='Loading '+sport+' games…';games.replaceChildren();stats.replaceChildren();
+ try{const response=await fetch('/api/live/games?'+new URLSearchParams({sport,day}),{cache:'no-store'}),d=await response.json();if(version!==memberBrowseRequest)return;if(!response.ok)throw Error(d.error||'Schedule unavailable');
+ const entries=d.games||[];const active=entries.filter(g=>g.state==='in');
+ status.textContent=entries.length+' games · '+active.length+' in progress'+(!active.length?' · choose yesterday for completed games and official recaps':'');
+ for(const game of entries){const row=document.createElement('div');row.className='statbox';const title=document.createElement('p');title.textContent=game.name+' · '+game.status+' · '+(game.teams||[]).map(t=>t.name+' '+(t.score??'—')).join(' / ');row.append(title);
+ const btn=document.createElement('button');btn.type='button';btn.className='btn';btn.textContent='Player stats';btn.onclick=()=>browseMemberStats(sport,game.id);row.append(btn);
+ if(game.official_recap){const link=document.createElement('a');link.href=game.official_recap;link.target='_blank';link.rel='noopener noreferrer';link.textContent=day==='yesterday'?'Official recap / possible highlights':'Official game page';row.append(document.createTextNode(' · '),link);}
+ games.append(row);}
+ if(!entries.length)status.textContent='No '+sport+' games returned for '+day+'. Try another sport or day.';
+ }catch(e){status.textContent=e.message;}
+}
+async function browseMemberStats(sport,id){
+ const out=document.getElementById('live-center-browser-stats');out.replaceChildren();const loading=document.createElement('p');loading.textContent='Loading player box scores…';out.append(loading);
+ try{const response=await fetch('/api/live/game-stats?'+new URLSearchParams({sport,event_id:id}),{cache:'no-store'}),d=await response.json();if(!response.ok)throw Error(d.error||'Stats unavailable');out.replaceChildren();
+ const head=document.createElement('h4');head.textContent=(d.status||'Game')+' · '+(d.teams||[]).map(t=>t.team+' '+(t.score??'—')).join(' / ');out.append(head);
+ if(!(d.players||[]).length){const p=document.createElement('p');p.textContent='No supported player box score has been published for this game yet.';out.append(p);}
+ for(const player of d.players||[]){const p=document.createElement('p');p.textContent=player.player+' · '+Object.entries(player.stats||{}).map(([k,v])=>k+': '+v).join(' · ');out.append(p);}
+ }catch(e){loading.textContent=e.message;}
+}
+document.getElementById('live-center-load').onclick=browseMemberGames;
+document.getElementById('live-center-sport').onchange=browseMemberGames;
+document.getElementById('live-center-day').onchange=browseMemberGames;
+document.getElementById('live-center-fullscreen').onclick=()=>{
+ const panel=document.getElementById('live-center-browser');
+ if(document.fullscreenElement){document.exitFullscreen?.();return;}
+ if(panel.requestFullscreen)panel.requestFullscreen().catch(()=>{document.getElementById('live-center-browser-status').textContent='Full screen is not supported in this browser. Try landscape orientation.';});
+ else document.getElementById('live-center-browser-status').textContent='Full screen is unavailable in this browser. Try landscape orientation.';
+};
 </script></body></html>
