@@ -73,7 +73,7 @@
   <button type="button" data-tab="data" data-owner-only hidden>Owner tools</button>
   <button type="button" data-tab="about">About PikBot</button>
 </nav>
-<section id="dashboard">
+<section id="dashboard"><details class="panel" id="member-edge"><summary><strong>Optional Edge Guardrails · Research add-on</strong></summary><p class="muted">Separate from the original model, existing picks, historical records and membership. No automatic wagers or claims of calibrated EV.</p><form id="member-edge-form"><label>Calibrated net EV (%) <input name="net_ev_percent" type="number" step="0.1" placeholder="3.0"></label><label>Two-sided market hold (%) <input name="market_hold_percent" type="number" step="0.1" placeholder="6.0"></label><label>American odds <input name="american_odds" type="number" placeholder="-110"></label><label>Independent books <input name="independent_books" type="number" min="0" step="1" placeholder="2"></label><label>Official lineup / injury verification <select name="availability_confirmed"><option value="">Unknown</option><option value="true">Confirmed</option><option value="false">Not confirmed</option></select></label><label>Prospective calibration verified <select name="calibration_verified"><option value="">Unknown</option><option value="true">Verified</option><option value="false">Not verified</option></select></label><button class="btn" type="submit">Run optional edge screen</button></form><p id="member-edge-status" role="status"></p><div id="member-edge-checks"></div><p class="muted">Track CLV, sport/market losses and 250–500 settled picks before changing the underlying model. Fantasy entry payout math differs from sportsbook odds.</p></details>
 <section class="panel" id="pikbot-live" aria-label="PikBot Live Game Center">
 <h2>🔴 PIKBOT LIVE · GAME CENTER</h2>
 <p class="muted">Live schedules, available scores and observed player box scores. Data depends on your authorized providers; unavailable stats are never estimated as live facts.</p>
@@ -730,4 +730,15 @@ document.getElementById('live-prop-check').onclick=()=>{
  const current=Number(entry[1]);
  out.textContent=player.player+' · '+key+': '+current+' / '+line+' · '+side+' · '+(side==='MORE'?(current>line?'Currently above line':'Not above line'):(current<line?'Currently below line':'Not below line'))+'. Game not necessarily final.';
 };
+
+document.getElementById('member-edge-form').addEventListener('submit',async event=>{
+ event.preventDefault();
+ const form=new FormData(event.currentTarget),payload={};
+ for(const key of ['net_ev_percent','market_hold_percent','american_odds','independent_books'])if(form.get(key)!=='')payload[key]=Number(form.get(key));
+ for(const key of ['availability_confirmed','calibration_verified'])if(form.get(key)!=='')payload[key]=form.get(key)==='true';
+ const status=document.getElementById('member-edge-status'),checks=document.getElementById('member-edge-checks');status.textContent='Checking…';checks.replaceChildren();
+ try{const response=await fetch('/api/research/edge-screen',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}),d=await response.json();if(!response.ok)throw Error(d.error||'Research check unavailable');status.textContent=d.status==='screen_passed'?'All optional checks passed (not a pick approval)':'Withheld · optional checks incomplete or failed';
+ for(const c of d.checks||[]){const row=document.createElement('p');row.textContent=c.name+' · '+c.status.toUpperCase()+' · '+c.detail;checks.append(row);}
+ }catch(e){status.textContent=e.message;}
+});
 </script></body></html>
