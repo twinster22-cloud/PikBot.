@@ -70,6 +70,10 @@ def init_accounts(app):
             cache_key TEXT PRIMARY KEY, payload JSONB NOT NULL,
             expires TIMESTAMPTZ NOT NULL
         )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS pikbot_complimentary_plus (
+            email TEXT PRIMARY KEY REFERENCES pikbot_accounts(email) ON DELETE CASCADE,
+            granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )""")
         conn.execute('ALTER TABLE pikbot_accounts ADD COLUMN IF NOT EXISTS billing_hold TEXT')
         conn.execute('ALTER TABLE pikbot_accounts ADD COLUMN IF NOT EXISTS billing_status TEXT')
         conn.execute('ALTER TABLE pikbot_accounts ADD COLUMN IF NOT EXISTS billing_checked_at TIMESTAMPTZ')
@@ -110,7 +114,32 @@ def private_paid_test(record):
                 bound_code, hashlib.sha256(code.encode('utf-8')).hexdigest()))
 
 
+def complimentary_plus(record):
+    with database() as conn:
+        return conn.execute('SELECT 1 FROM pikbot_complimentary_plus WHERE email=%s',
+                            (record['email'],)).fetchone() is not None
+
+
+@membership.post('/api/owner/complimentary-plus')
+@owner_required
+def grant_complimentary_plus():
+    """Owner-authorized complimentary Plus grant; never grants owner privileges."""
+    if not request.is_json:
+        return jsonify(error='JSON body required'), 415
+    email = str((request.get_json(silent=True) or {}).get('email', '')).strip().lower()
+    if not re.fullmatch(r'[^@\\s]+@[^@\\s]+\\.[^@\\s]+', email):
+        return jsonify(error='Valid email required'), 400
+    with database() as conn:
+        row = conn.execute('SELECT 1 FROM pikbot_accounts WHERE email=%s', (email,)).fetchone()
+        if not row:
+            return jsonify(error='User must create a PikBot account first'), 404
+        conn.execute('INSERT INTO pikbot_complimentary_plus(email) VALUES (%s) ON CONFLICT DO NOTHING', (email,))
+    return jsonify(ok=True, email=email, membership_tier='plus', complimentary=True)
+
+
 def access(record):
+    if complimentary_plus(record):
+        return 'subscriber'
     # Private, explicitly authorized complimentary subscriber account.
     configured = os.getenv('PIKBOT_COMPLIMENTARY_EMAIL_SHA256', '').strip().lower()
     digest = hashlib.sha256(record['email'].strip().lower().encode()).hexdigest()
@@ -417,6 +446,8 @@ def logout():
 
 
 def broadcast_entitlement(record):
+    if complimentary_plus(record):
+        return 'plus'
     """Broadcast access is owner-only or backed by a paid Plus price."""
     if private_paid_test(record):
         return 'owner'
