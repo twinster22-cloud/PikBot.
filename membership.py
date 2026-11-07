@@ -404,10 +404,11 @@ def sign_in(email, password_version=0):
 
 
 @membership.post('/logout')
+@membership.post('/owner/logout')
 def logout():
     check_csrf()
     session.clear()
-    return redirect('/login')
+    return redirect('/owner/login' if request.path == '/owner/logout' else '/login')
 
 
 @membership.get('/api/account')

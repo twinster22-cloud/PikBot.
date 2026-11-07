@@ -26,13 +26,16 @@ init_owner(app)
 
 @app.get('/<asset>')
 def public_asset(asset):
-    if asset not in {'sw.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'splash.png', 'icon.svg'}:
+    if asset not in {
+        'sw.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png',
+        'splash.png', 'icon.svg', 'owner.webmanifest', 'owner-icon-192.png', 'owner-icon-512.png',
+    }:
         return jsonify(error='Not found'), 404
     return send_from_directory(ROOT/'static', asset)
 
 @app.after_request
 def prevent_private_caching(response):
-    if request.path == '/' or request.path.startswith(('/api/', '/login', '/owner/', '/billing/', '/logout')):
+    if request.path in ('/', '/owner') or request.path.startswith(('/api/', '/login', '/owner/', '/billing/', '/logout')):
         response.headers['Cache-Control'] = 'no-store, private'
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
