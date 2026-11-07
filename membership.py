@@ -490,12 +490,15 @@ def billing(action):
         return jsonify(error='Sign in required'), 401
     if action not in {'checkout', 'portal'}:
         abort(404)
-    if os.getenv('PIKBOT_CHECKOUT_ENABLED') != '1':
+    if action == 'checkout' and os.getenv('PIKBOT_CHECKOUT_ENABLED') != '1':
         return jsonify(error='Checkout is closed during launch testing.'), 503
-    if not billing_ready():
+    if action == 'checkout' and not billing_ready():
         return jsonify(error='Verified payment configuration is required before checkout opens.'), 503
-    if not all(os.getenv(key) for key in ('STRIPE_SECRET_KEY', 'STRIPE_PRICE_ID', 'STRIPE_WEBHOOK_SECRET', 'PIKBOT_PUBLIC_URL')):
-        return jsonify(error='Billing is not configured.'), 503
+    # Existing customers must be able to manage or cancel even when new checkout is disabled.
+    required = ('STRIPE_SECRET_KEY', 'PIKBOT_PUBLIC_URL') if action == 'portal' else (
+        'STRIPE_SECRET_KEY', 'STRIPE_PRICE_ID', 'STRIPE_WEBHOOK_SECRET', 'PIKBOT_PUBLIC_URL')
+    if not all(os.getenv(key) for key in required):
+        return jsonify(error='Billing management is not configured.'), 503
     client = stripe_client()
     origin = os.environ['PIKBOT_PUBLIC_URL'].rstrip('/')
     try:
