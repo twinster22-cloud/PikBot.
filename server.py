@@ -300,6 +300,36 @@ def gamecast_plus_required(fn):
     return wrapped
 
 
+@app.get('/api/providers/basketball/status')
+@owner_required
+def basketball_provider_status():
+    """Check BasketballAPI credentials without exposing the secret or consuming game quota."""
+    key = os.getenv('BASKETBALL_API_KEY', '').strip()
+    if not key:
+        return jsonify(configured=False, connected=False,
+                       message='BASKETBALL_API_KEY is missing in Render.'), 503
+    try:
+        response = requests.get(
+            'https://api.basketballapi.net/v1/usage',
+            headers={'Authorization': 'Bearer ' + key, 'Accept': 'application/json'},
+            timeout=8,
+        )
+        if response.status_code in (401, 403):
+            return jsonify(configured=True, connected=False,
+                           message='Provider rejected the API key.'), 502
+        if not response.ok:
+            return jsonify(configured=True, connected=False,
+                           message='Provider returned HTTP ' + str(response.status_code)), 502
+        payload = response.json().get('data') or {}
+        return jsonify(configured=True, connected=True,
+                       plan=payload.get('plan'), remaining=payload.get('remaining'),
+                       calls_today=payload.get('calls_today'),
+                       message='BasketballAPI authentication succeeded.')
+    except (requests.RequestException, ValueError, TypeError, AttributeError):
+        return jsonify(configured=True, connected=False,
+                       message='BasketballAPI is temporarily unreachable.'), 503
+
+
 @app.get('/api/live/games')
 @gamecast_plus_required
 def live_games_browser():
