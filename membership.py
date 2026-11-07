@@ -111,6 +111,11 @@ def private_paid_test(record):
 
 
 def access(record):
+    # Private, explicitly authorized complimentary subscriber account.
+    configured = os.getenv('PIKBOT_COMPLIMENTARY_EMAIL_SHA256', '').strip().lower()
+    digest = hashlib.sha256(record['email'].strip().lower().encode()).hexdigest()
+    if len(configured) == 64 and secrets.compare_digest(configured, digest):
+        return 'subscriber'
     if private_paid_test(record):
         return 'subscriber'
     if record.get('billing_hold'):
