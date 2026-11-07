@@ -321,6 +321,49 @@ def live_games_browser():
         return jsonify(error='Live scoreboard provider is temporarily unavailable.'), 503
 
 
+@app.get('/api/live/gamecast')
+@premium_required
+def live_gamecast():
+    """Observed game events from ESPN summary; no video or inferred tracking coordinates."""
+    sport = request.args.get('sport', '').upper()
+    event_id = request.args.get('event_id', '')
+    if sport not in pick_results.LEAGUES or not event_id.isdigit() or len(event_id) > 20:
+        return jsonify(error='Invalid GameCast selection.'), 400
+    try:
+        league = pick_results.LEAGUES[sport][0]
+        summary = pick_results.fetch(league, 'summary', event=event_id)
+        header = (summary.get('header', {}).get('competitions') or [{}])[0]
+        status = header.get('status', {})
+        competitors = header.get('competitors') or []
+        teams = [{'name': t.get('team', {}).get('displayName', 'Team'),
+                  'score': t.get('score'), 'home_away': t.get('homeAway')}
+                 for t in competitors]
+        raw = summary.get('plays') or []
+        if isinstance(raw, dict):
+            raw = raw.get('items') or raw.get('plays') or []
+        plays = []
+        for play in raw[-80:]:
+            if not isinstance(play, dict):
+                continue
+            clock = play.get('clock') or {}
+            period = play.get('period') or {}
+            text_value = play.get('text') or play.get('shortText') or ''
+            if not text_value:
+                continue
+            plays.append({'id': str(play.get('id', ''))[:80],
+                          'text': str(text_value)[:450],
+                          'clock': clock.get('displayValue') if isinstance(clock, dict) else '',
+                          'period': period.get('number') if isinstance(period, dict) else period,
+                          'scoring': bool(play.get('scoringPlay'))})
+        return jsonify(sport=sport, event_id=event_id, teams=teams,
+                       status=status.get('type', {}).get('description', 'Unknown') if isinstance(status.get('type'), dict) else status.get('displayClock', 'Unknown'),
+                       clock=status.get('displayClock'), period=status.get('period'),
+                       plays=plays[::-1], observed_at=datetime.now(timezone.utc).isoformat(),
+                       note='Provider-reported updates; timing and coverage vary. No video or location tracking.')
+    except (requests.RequestException, ValueError, KeyError, TypeError, AttributeError, IndexError):
+        return jsonify(error='GameCast provider is temporarily unavailable.'), 503
+
+
 @app.get('/api/live/game-stats')
 @premium_required
 def live_game_stats_browser():
