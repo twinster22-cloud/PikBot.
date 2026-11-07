@@ -396,12 +396,29 @@ $('betting-site-options').onclick=event=>{
   const button=event.target.closest('[data-bookmaker]');
   if(!button||button===selectedBookmaker||trialOnly||accessBlocked)return;
   selectBookmaker(button);
-  loadSportPicks(selected);
+  const league=todaysSlate.find(item=>item.name===selected);
+  const game=league?.matchups.find(item=>item.id===lastSportMatchup.get(selected)
+    &&!item.started&&Date.parse(item.starts_at)>Date.now());
+  if(game){
+    const generation=++autoPickGeneration;
+    $('today-status').textContent='Checking '+button.textContent+' for this matchup…';
+    openMatchup({dataset:{league:selected,game:game.id}},true).then(loaded=>{
+      if(generation!==autoPickGeneration)return;
+      $('today-status').textContent=loaded
+        ?button.textContent+' picks loaded · Tap a player card to view its analysis.'
+        :'No '+button.textContent+' picks loaded for this matchup. See the feed message below.';
+    });
+  }else{
+    loadSportPicks(selected);
+  }
 };
 async function openMatchup(button,automatic=false){
   if(accessBlocked)return false;
   if(!button||button.disabled)return false;
-  if(!automatic)autoPickGeneration++;
+  if(!automatic){
+    autoPickGeneration++;
+    lastSportMatchup.set(button.dataset.league,button.dataset.game);
+  }
   clearLiveAnalysis();
   const section=$('live-player-picks'), cards=$('live-player-cards'), request=++liveRequest;
   section.hidden=false;
