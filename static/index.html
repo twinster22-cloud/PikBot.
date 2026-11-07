@@ -399,6 +399,7 @@ async function showMembership(){
       const delay=Date.parse(info.trial_ends)-Date.now();
       if(delay>0&&delay<2147483647)trialExpiryTimer=setTimeout(showMembership,delay+100);
     }
+    const paidPreview=new URLSearchParams(window.location.search).get('preview')==='paid';
     document.body.classList.toggle('trial-plan',trialOnly);
     document.body.classList.toggle('paid-dashboard',info.access==='subscriber'||paidPreview);
     $('trial-live-access').hidden=!trialOnly;
@@ -408,7 +409,6 @@ async function showMembership(){
     document.querySelector('.analysis-controls').hidden=trialOnly||accessBlocked;
     for(const id of ['subscribe','portal','logout','upload']) $(id).elements.csrf.value=info.csrf;
     $('logout').hidden=false;
-    const paidPreview=new URLSearchParams(window.location.search).get('preview')==='paid';
     $('paid-preview-notice').hidden=!paidPreview;
     $('paid-member-banner').hidden=info.access!=='subscriber'&&!paidPreview;
     $('upgrade-plan').hidden=info.access==='subscriber'||paidPreview;
