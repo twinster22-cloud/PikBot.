@@ -44,6 +44,11 @@
 .player-sheet-matchup,.player-sheet-chart{margin-top:12px;padding:12px;border:1px solid #354e4b;border-radius:12px;background:#17272e}
 .player-sheet-matchup strong,.player-sheet-matchup small{display:block}.player-sheet-matchup small{margin-top:4px}
 .player-sheet-chart h3{margin:0 0 5px;font-size:15px}
+.player-prop-row{border:1px solid #3a5152;border-radius:12px;overflow:hidden;background:#192a32}
+.player-prop-row .player-prop-option{border:0;border-radius:0}
+.player-prop-row .player-sheet-chart{margin:0;border:0;border-top:1px solid #354e4b;border-radius:0}
+.player-prop-option .prop-name::before{content:'▾';margin-right:6px;color:#b5c9c4}
+.player-prop-option[aria-expanded="true"] .prop-name::before{content:'▴'}
 .player-sheet-chart svg{display:block;width:100%;height:auto;margin:4px 0}
 .player-sheet-chart p{margin:5px 0 0;font-size:12px}
 #player-prop-options{display:grid;gap:8px;margin-top:12px}
@@ -51,7 +56,7 @@
 .player-prop-option strong{font-size:16px}
 .player-prop-option small{display:block;color:#b5c9c4;font-size:11px}
 .player-prop-option .prop-lean{grid-column:2;grid-row:1 / span 2;padding:6px 8px;border:1px solid #547267;border-radius:8px;font-size:12px}
-.player-prop-option[aria-pressed="true"]{border-color:#a4ff52;background:#263c1e;color:#eaffdc}
+.player-prop-row:has([aria-expanded="true"]){border-color:#a4ff52}.player-prop-option[aria-expanded="true"]{background:#263c1e;color:#eaffdc}
 #player-sheet-details{width:100%;min-height:44px;margin-top:12px}
 @media(max-width:520px){#player-props{margin:auto 0 0;width:100%;max-width:100%;max-height:92dvh;border-radius:18px 18px 0 0}.player-sheet-body{padding-bottom:max(16px,env(safe-area-inset-bottom))}}
 </style></head><body><div class="shell"><header class="top"><div class="identity"><img src="/icon-192.png" alt="PikBot logo"><div><b>Pik<span>Bot</span></b><div class="eyebrow">SPORTS INTELLIGENCE</div></div></div><div class="status"><i></i>RESEARCH MODE</div></header><section class="panel" aria-label="Membership">
@@ -96,7 +101,7 @@
 <div id="player-sheet-portrait"></div>
 </header>
 <div class="player-sheet-matchup"><strong id="player-sheet-matchup"></strong><small id="player-sheet-time" class="muted"></small></div>
-<section class="player-sheet-chart" aria-labelledby="player-chart-title">
+<section id="player-sheet-chart" class="player-sheet-chart" aria-labelledby="player-chart-title" hidden>
 <h3 id="player-chart-title">Recent games</h3><div id="player-chart" aria-live="polite"></div>
 </section>
 <div id="player-prop-options" role="group" aria-label="Choose a prop to analyze"></div>
@@ -186,7 +191,9 @@ function paintSummary(p){
   $('player-summary').innerHTML=[['LAST 5 AVG',average(5)],['LAST 10 AVG',average(10)],['SELECTED STAT',p?.stat||'—']].map(([k,v])=>'<div><small>'+esc(k)+'</small><b>'+esc(v)+'</b></div>').join('');
 }
 const propLabels={
-  PTS:'Points',REB:'Rebounds',AST:'Assists',PASS_YDS:'Passing yards',
+  PTS:'Points',REB:'Rebounds',AST:'Assists',PRA:'Points + rebounds + assists',
+  PR:'Points + rebounds',PA:'Points + assists',RA:'Rebounds + assists',
+  '3PM':'3-pointers made',BLK:'Blocked shots',STL:'Steals',PASS_YDS:'Passing yards',
   RUSH_YDS:'Rushing yards',REC_YDS:'Receiving yards',H:'Hits',SO:'Strikeouts',SOG:'Shots on goal'
 };
 function paintPlayerChart(pick){
@@ -232,8 +239,9 @@ function focusLivePick(data,index){
     b.classList.toggle('is-active',active);b.setAttribute('aria-pressed',String(active));
   });
   if(trialOnly||data.daily_board)return;
-  const options=$('player-prop-options');
+  const options=$('player-prop-options'), chart=$('player-sheet-chart');
   if(refreshProps){
+    options.before(chart);
     $('player-props-title').textContent=pick.player;
     $('player-sheet-sport').textContent=pick.sport;
     $('player-props-source').textContent='Line source · '+(pick.bookmaker||data.source);
@@ -242,20 +250,31 @@ function focusLivePick(data,index){
     $('player-sheet-portrait').innerHTML=portraitMarkup(pick,'');
     bindPortraitFallbacks($('player-sheet-portrait'));
     options.innerHTML=data.picks.map((prop,i)=>prop.player!==pick.player?'':(
-      '<button type="button" class="btn player-prop-option" data-prop-index="'+i+'" aria-pressed="false">'+
-      '<strong>'+esc(prop.line)+' · '+esc(propLabels[prop.stat]||prop.stat)+'</strong>'+
+      '<div class="player-prop-row"><button type="button" class="btn player-prop-option" data-prop-index="'+i+'" aria-expanded="false">'+
+      '<strong class="prop-name">'+esc(prop.line)+' · '+esc(propLabels[prop.stat]||prop.stat)+'</strong>'+
       '<small>Projected '+esc(fmt(prop.projection))+'</small>'+
-      '<span class="prop-lean">'+(prop.side==='LESS'?'↓ Less':'↑ More')+'</span></button>'
+      '<span class="prop-lean">Model · '+(prop.side==='LESS'?'↓ Less':'↑ More')+'</span></button></div>'
     )).join('');
   }
   paintPlayerChart(pick);
   options.querySelectorAll('[data-prop-index]').forEach(button=>{
-    button.setAttribute('aria-pressed',String(Number(button.dataset.propIndex)===index));
+    const expanded=Number(button.dataset.propIndex)===index;
+    button.setAttribute('aria-expanded',String(expanded));
+    if(expanded){
+      button.setAttribute('aria-controls',chart.id);
+      button.after(chart);
+    }else button.removeAttribute('aria-controls');
   });
+  chart.hidden=false;
 }
 $('player-prop-options').onclick=event=>{
   const button=event.target.closest('[data-prop-index]');
   if(!button||trialOnly||accessBlocked||!dataset?.source||Date.now()>=picksExpire)return;
+  if(button.getAttribute('aria-expanded')==='true'){
+    button.setAttribute('aria-expanded','false');
+    $('player-sheet-chart').hidden=true;
+    return;
+  }
   focusLivePick(dataset,Number(button.dataset.propIndex));
 };
 $('player-sheet-details').onclick=()=>{

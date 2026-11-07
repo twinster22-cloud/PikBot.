@@ -69,7 +69,8 @@ def nba_player(player, day, _window):
             minutes = str(row.get('min') or '0').split(':')
             if str(game.get('status', '')).lower() != 'final' or not any(part.isdigit() and int(part) for part in minutes):
                 continue
-            for field, stat in (('pts', 'PTS'), ('reb', 'REB'), ('ast', 'AST')):
+            for field, stat in (('pts', 'PTS'), ('reb', 'REB'), ('ast', 'AST'), ('fg3m', '3PM'),
+                                ('blk', 'BLK'), ('stl', 'STL')):
                 value = row.get(field)
                 if isinstance(value, (int, float)) and 0 <= value < float('inf'):
                     rows.append(('NBA', player, stat, game.get('date'), value))
@@ -196,7 +197,8 @@ def dunk_history(sport, offers, now):
             valid = {**completed(dunk_games(league, player_id, season - 1, day)), **valid}
         return [(sport, player, stat, row['date'], row[field])
                 for row in valid.values()
-                for field, stat in (('pts', 'PTS'), ('reb', 'REB'), ('ast', 'AST'))
+                for field, stat in (('pts', 'PTS'), ('reb', 'REB'), ('ast', 'AST'), ('tpm', '3PM'),
+                                    ('blk', 'BLK'), ('stl', 'STL'))
                 if isinstance(row.get(field), (int, float)) and 0 <= row[field] < float('inf')]
     players = offers['player'].drop_duplicates().head(3)
     with ThreadPoolExecutor(max_workers=3) as pool:
@@ -277,8 +279,12 @@ def reserve_nba_season(season, _day):
         columns = ['game_id', 'game_date', 'athlete_id', 'athlete_display_name',
                    'did_not_play', 'minutes', 'points', 'rebounds', 'assists',
                    'athlete_headshot_href']
-        return pd.read_csv(BytesIO(response.content), usecols=columns,
-                           dtype={'athlete_id': str, 'game_id': str})
+        extra = {'three_point_field_goals_made', 'blocks', 'steals'}
+        frame = pd.read_csv(BytesIO(response.content), usecols=lambda name: name in columns or name in extra,
+                            dtype={'athlete_id': str, 'game_id': str})
+        if not set(columns).issubset(frame.columns):
+            raise ValueError('Missing required box-score columns')
+        return frame
     except (requests.RequestException, ValueError):
         raise FeedError('The free NBA reserve history is temporarily unavailable.') from None
 
@@ -306,7 +312,11 @@ def reserve_nba_history(offers, now):
         photo = matches['athlete_headshot_href'].dropna()
         if len(photo):
             photos[name] = str(photo.iloc[-1])
-        for field, stat in (('points', 'PTS'), ('rebounds', 'REB'), ('assists', 'AST')):
+        fields = (('points', 'PTS'), ('rebounds', 'REB'), ('assists', 'AST'),
+                  ('three_point_field_goals_made', '3PM'), ('blocks', 'BLK'), ('steals', 'STL'))
+        for field, stat in fields:
+            if field not in matches.columns:
+                continue
             games = matches[['game_id', 'date', field, 'minutes']].copy()
             games[field] = pd.to_numeric(games[field], errors='coerce')
             conflicts = games.groupby('game_id')[[field, 'minutes']].nunique().gt(1).any(axis=1)

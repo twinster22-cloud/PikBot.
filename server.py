@@ -183,7 +183,8 @@ def todays_predictions():
     path = Path(directory) / (key + '.csv') if directory else None
     try:
         now = datetime.now(timezone.utc)
-        available = today.offers(sport, now, event_id=request.args.get('event_id'), bookmaker=bookmaker)
+        available = today.offers(sport, now, event_id=request.args.get('event_id'), bookmaker=bookmaker,
+                                 expanded=g.membership_access != 'trial')
         if not available:
             return jsonify(error=f'No fresh {book_label} lines are available for the covered game.'), 404
         offers = pd.DataFrame(available)

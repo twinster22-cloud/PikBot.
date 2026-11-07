@@ -28,6 +28,40 @@ def nba_playing_time(history):
     }
 
 
+BASKETBALL_COMBOS = {
+    'PRA': ['PTS', 'REB', 'AST'],
+    'PR': ['PTS', 'REB'],
+    'PA': ['PTS', 'AST'],
+    'RA': ['REB', 'AST'],
+}
+
+
+def add_nba_combo_history(history, offers):
+    requested = set(offers.loc[offers['sport'] == 'NBA', 'stat']) & BASKETBALL_COMBOS.keys()
+    if not requested:
+        return history
+    keys = ['sport', 'player', 'date']
+    base = history.loc[(history['sport'] == 'NBA') & history['stat'].isin(['PTS', 'REB', 'AST'])]
+    base = base.loc[base['value'].ge(0) & np.isfinite(base['value'])].dropna(subset=keys)
+    base = base.drop_duplicates(keys + ['stat'], keep=False)
+    values = base.pivot(index=keys, columns='stat', values='value')
+    additions = []
+    for stat, components in BASKETBALL_COMBOS.items():
+        if stat not in requested or not set(components).issubset(values.columns):
+            continue
+        totals = values[components].sum(axis=1, min_count=len(components)).dropna().rename('value')
+        existing = history.loc[history['stat'].eq(stat), keys]
+        totals = totals.loc[~totals.index.isin(pd.MultiIndex.from_frame(existing))]
+        if totals.empty:
+            continue
+        rows = totals.reset_index().assign(stat=stat)
+        if 'minutes' in base.columns:
+            minutes = base.loc[base['stat'].eq(components[0]), keys + ['minutes']]
+            rows = rows.merge(minutes, on=keys, how='left', validate='one_to_one')
+        additions.append(rows)
+    return pd.concat([history, *additions], ignore_index=True) if additions else history
+
+
 def predict(history, offers, min_games=12, max_age_days=30, *, include_history=False):
     """Baseline predictions. Never use records on/after the offer's as_of timestamp."""
     h=history.copy(); o=offers.copy()
@@ -35,6 +69,8 @@ def predict(history, offers, min_games=12, max_age_days=30, *, include_history=F
         h[col]=pd.to_datetime(h[col],errors='coerce',utc=True)
     o['as_of']=pd.to_datetime(o['as_of'],errors='coerce',utc=True)
     h['value']=pd.to_numeric(h['value'],errors='coerce'); o['line']=pd.to_numeric(o['line'],errors='coerce')
+    if include_history:
+        h = add_nba_combo_history(h, o)
     output=[]
     for _,r in o.iterrows():
         if pd.isna(r['as_of']) or pd.isna(r['line']) or r['line']<0: continue

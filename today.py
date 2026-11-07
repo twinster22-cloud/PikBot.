@@ -18,6 +18,11 @@ BOOKMAKERS = {
     'betmgm': 'BetMGM',
 }
 BASKETBALL = {'player_points': 'PTS', 'player_rebounds': 'REB', 'player_assists': 'AST'}
+NBA_EXTRA = {
+    'player_points_rebounds_assists': 'PRA', 'player_points_rebounds': 'PR',
+    'player_points_assists': 'PA', 'player_rebounds_assists': 'RA',
+    'player_threes': '3PM', 'player_blocks': 'BLK', 'player_steals': 'STL',
+}
 SPORTS = {
     'NBA': ('basketball_nba', BASKETBALL),
     'WNBA': ('basketball_wnba', BASKETBALL),
@@ -85,8 +90,10 @@ def today_events(sport, now):
 
 
 @lru_cache(maxsize=100)
-def event_offers(sport, event_id, _window, bookmaker=DEFAULT_BOOK):
+def event_offers(sport, event_id, _window, bookmaker=DEFAULT_BOOK, expanded=False):
     key, markets = SPORTS[sport]
+    if expanded and sport == 'NBA':
+        markets = {**markets, **NBA_EXTRA}
     try:
         return get(f'/{key}/events/{event_id}/odds', bookmakers=bookmaker,
                    markets=','.join(markets))
@@ -94,8 +101,11 @@ def event_offers(sport, event_id, _window, bookmaker=DEFAULT_BOOK):
         return {'error': str(exc)}
 
 
-def offers(sport, now, event_id=None, *, next_slate=False, bookmaker=DEFAULT_BOOK):
+def offers(sport, now, event_id=None, *, next_slate=False, bookmaker=DEFAULT_BOOK, expanded=False):
     _, markets = SPORTS[sport]
+    expanded = expanded and sport == 'NBA'
+    if expanded:
+        markets = {**markets, **NBA_EXTRA}
     result = {}
     offered_sides = {}
     slate = events(sport, bucket(30)) if next_slate else today_events(sport, now)
@@ -107,8 +117,13 @@ def offers(sport, now, event_id=None, *, next_slate=False, bookmaker=DEFAULT_BOO
     for event in upcoming[:1]:
         event_id = event['id']
         with LOCK:
-            payload = (event_offers(sport, event_id, bucket(60)) if bookmaker == DEFAULT_BOOK
-                       else event_offers(sport, event_id, bucket(60), bookmaker))
+            window = bucket(60)
+            if expanded:
+                payload = event_offers(sport, event_id, window, bookmaker, True)
+            elif bookmaker == DEFAULT_BOOK:
+                payload = event_offers(sport, event_id, window)
+            else:
+                payload = event_offers(sport, event_id, window, bookmaker)
         if payload.get('error'):
             raise FeedError(payload['error'])
         for book in payload.get('bookmakers', []):

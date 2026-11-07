@@ -18,7 +18,12 @@ BASKETBALL = {'PTS': ((), ('points',)), 'REB': ((), ('rebounds',)), 'AST': ((), 
 FOOTBALL = {'PASS_YDS': (('passing',), ('passingYards',)), 'RUSH_YDS': (('rushing',), ('rushingYards',))}
 SKATERS = ('forwards', 'defenses', 'skaters')
 LEAGUES = {
-    'NBA': ('basketball/nba', BASKETBALL),
+    'NBA': ('basketball/nba', {
+        **BASKETBALL, 'PRA': ((), ('points', 'rebounds', 'assists')),
+        'PR': ((), ('points', 'rebounds')), 'PA': ((), ('points', 'assists')),
+        'RA': ((), ('rebounds', 'assists')), 'BLK': ((), ('blocks',)), 'STL': ((), ('steals',)),
+        '3PM': ((), ('threePointFieldGoalsMade-threePointFieldGoalsAttempted',)),
+    }),
     'WNBA': ('basketball/wnba', BASKETBALL),
     'COLLEGE BASKETBALL': ('basketball/mens-college-basketball', BASKETBALL),
     'NFL': ('football/nfl', {**FOOTBALL, 'REC_YDS': (('receiving',), ('receivingYards',))}),
@@ -100,7 +105,10 @@ def actual_stat(pick, teams):
                     continue
                 if athlete.get('id') and player == name_key(athlete.get('displayName')):
                     try:
-                        value = sum(float(stats[index]) for index in indexes)
+                        if pick['stat'] == '3PM':
+                            value = float(str(stats[indexes[0]]).split('-', 1)[0])
+                        else:
+                            value = sum(float(stats[index]) for index in indexes)
                     except (TypeError, ValueError):
                         continue
                     if math.isfinite(value):
