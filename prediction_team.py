@@ -2,7 +2,7 @@
 from datetime import datetime, timezone
 import math
 
-MODEL_VERSION = 'team-review-v1'
+MODEL_VERSION = 'team-review-v2-shrunk'
 SPORT_CONTEXT = {
     'NBA':'confirmed lineups, injuries, teammate usage splits, pace and rest',
     'WNBA':'confirmed lineups, injuries, teammate usage splits and rest',
