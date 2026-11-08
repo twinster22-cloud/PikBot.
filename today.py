@@ -48,9 +48,9 @@ def timestamp(value):
 
 
 def get(path, **params):
-    key = os.getenv('ODDS_API_KEY')
-    if not key:
-        raise FeedError('The live feed is waiting for an Odds API key.')
+    key = (os.getenv('ODDS_API_KEY') or '').strip().strip('"').strip("'")
+    if not key or key.lower() in {'your_api_key', 'your-odds-api-key', 'replace_me', 'none', 'null'}:
+        raise FeedError('The Odds API key is missing or is a placeholder in Render.')
     try:
         response = requests.get(BASE + path, params={'apiKey': key, **params}, timeout=5)
         response.raise_for_status()
