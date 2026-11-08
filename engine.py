@@ -107,6 +107,12 @@ def predict(history, offers, min_games=12, max_age_days=30, *, include_history=F
             push=max(0,1-more-less)
         else:
             more=norm.sf((line-mu)/sd);less=1-more;push=0.
+        # Conservative finite-sample adjustment: raw normal-tail estimates from
+        # 12-50 games can be badly overconfident. Pull estimates toward 50%.
+        # This is a heuristic, NOT empirically calibrated win probability.
+        reliability = min(1.0, len(x) / 50.0)
+        more = .5 + (float(more) - .5) * reliability
+        less = .5 + (float(less) - .5) * reliability
         recent = ({'recent_games': [
             {'date': date.date().isoformat(), 'value': float(value)}
             for date, value in s[['date', 'value']].tail(10).itertuples(index=False, name=None)
