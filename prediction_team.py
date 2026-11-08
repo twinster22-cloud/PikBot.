@@ -79,7 +79,19 @@ def accuracy_summary(rows):
     for low, high in [(0, .6), (.6, .7), (.7, .8), (.8, .9), (.9, 1.01)]:
         group = [r for r in rows if isinstance(r.get('p_raw'), (int, float)) and low <= r['p_raw'] < high]
         bins.append({'label': f'{int(low*100)}–{min(100,int(high*100))}% raw score', **summarize(group)})
+    # Slice prospective results by the actual markets and directions that fail.
+    # These are descriptive diagnostics, not independently validated predictions.
+    markets = sorted({(str(r.get('sport', '')), str(r.get('stat', '')), str(r.get('side', '')))
+                      for r in rows if r.get('stat') and r.get('side')})
+    market_breakdown = []
+    for sport, stat, side in markets:
+        group = [r for r in rows if (str(r.get('sport', '')), str(r.get('stat', '')),
+                 str(r.get('side', ''))) == (sport, stat, side)]
+        metrics = summarize(group)
+        market_breakdown.append({'sport': sport, 'stat': stat, 'side': side, **metrics})
+    market_breakdown.sort(key=lambda m: (-m['losses'], -m['logged'], m['sport'], m['stat']))
     return {'overall': summarize(rows), 'score_bands': bins,
+            'market_breakdown': market_breakdown,
             'sports': [{'sport': sport, **summarize([r for r in rows if r['sport'] == sport])}
                        for sport in sorted({r['sport'] for r in rows})],
             'versions': [{'version': version, **summarize([r for r in rows if r['model_version'] == version])}
