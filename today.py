@@ -56,8 +56,10 @@ def get(path, **params):
         response.raise_for_status()
         return response.json()
     except requests.HTTPError as exc:
-        if exc.response.status_code in {401, 403}:
-            raise FeedError('The Odds API rejected this key or feed entitlement.') from None
+        if exc.response.status_code == 401:
+            raise FeedError('The Odds API returned 401: the key configured on the server was not accepted. Check the Render ODDS_API_KEY value.') from None
+        if exc.response.status_code == 403:
+            raise FeedError('The Odds API returned 403: this account is not authorized for the requested endpoint, bookmaker, or player-props market.') from None
         if exc.response.status_code == 429:
             raise FeedError('The live feed quota has been reached.') from None
         raise FeedError('The live provider is temporarily unavailable.') from None
