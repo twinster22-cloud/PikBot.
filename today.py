@@ -48,14 +48,41 @@ def timestamp(value):
 
 
 def get(path, **params):
-    """Try a backup credential if the primary is rejected; never invent prop lines."""
+    """Use one coherent event-ID namespace per request cycle.
+
+    PropLine is primary when configured, avoiding cross-provider event ID
+    mismatches. The Odds API is used only when PropLine isn't configured.
+    """
     def clean(value):
         return (value or '').strip().strip('"').strip("'")
+
+    propline = clean(os.getenv('PROPLINE_API_KEY'))
+    if propline and propline.lower() not in {'your_api_key', 'replace_me', 'none', 'null'}:
+        try:
+            response = requests.get(
+                'https://api.prop-line.com/v1/sports' + path,
+                headers={'X-API-Key': propline},
+                params={k: v for k, v in params.items() if k != 'oddsFormat'},
+                timeout=8)
+            response.raise_for_status()
+            return response.json()
+        except requests.HTTPError as exc:
+            code = exc.response.status_code
+            if code == 401:
+                raise FeedError('PropLine authentication failed. Check PROPLINE_API_KEY in Render.') from None
+            if code == 403:
+                raise FeedError('PropLine free tier does not allow this requested market or endpoint.') from None
+            if code == 429:
+                raise FeedError('PropLine request limit reached. Try again after the quota resets.') from None
+            raise FeedError('PropLine could not retrieve verified player-prop data.') from None
+        except (requests.RequestException, ValueError):
+            raise FeedError('PropLine is temporarily unavailable.') from None
+
     keys = [clean(os.getenv('ODDS_API_KEY')), clean(os.getenv('ODDS_API_BACKUP_KEY'))]
     keys = [key for key in dict.fromkeys(keys) if key and key.lower() not in
             {'your_api_key', 'your-odds-api-key', 'replace_me', 'none', 'null'}]
     if not keys:
-        raise FeedError('No valid Odds API credential configured. Verified player-prop lines are unavailable.')
+        raise FeedError('No active odds feed configured. Set PROPLINE_API_KEY in Render.')
     last_status = None
     for key in keys:
         try:
@@ -68,13 +95,12 @@ def get(path, **params):
                 last_status = status
                 continue
             if status == 429:
-                raise FeedError('The Odds API quota has been reached. Verified prop lines are unavailable.') from None
+                raise FeedError('Odds API request quota reached.') from None
             raise FeedError('The live odds provider is temporarily unavailable.') from None
         except (requests.RequestException, ValueError):
             raise FeedError('The live odds provider is temporarily unavailable.') from None
-    if last_status == 403:
-        raise FeedError('Odds API credentials lack access to this bookmaker or player-props market (403). No verified props are available.')
-    raise FeedError('Odds API primary and backup credentials were rejected (401). Check Render ODDS_API_KEY and ODDS_API_BACKUP_KEY.')
+    raise FeedError('Odds API credentials rejected (' + str(last_status or 401) +
+                    '). Set PROPLINE_API_KEY in Render to use the independent provider.')
 
 def bucket(minutes):
     return int(datetime.now(timezone.utc).timestamp()) // (minutes * 60)
