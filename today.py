@@ -48,24 +48,33 @@ def timestamp(value):
 
 
 def get(path, **params):
-    key = (os.getenv('ODDS_API_KEY') or '').strip().strip('"').strip("'")
-    if not key or key.lower() in {'your_api_key', 'your-odds-api-key', 'replace_me', 'none', 'null'}:
-        raise FeedError('The Odds API key is missing or is a placeholder in Render.')
-    try:
-        response = requests.get(BASE + path, params={'apiKey': key, **params}, timeout=5)
-        response.raise_for_status()
-        return response.json()
-    except requests.HTTPError as exc:
-        if exc.response.status_code == 401:
-            raise FeedError('The Odds API returned 401: the key configured on the server was not accepted. Check the Render ODDS_API_KEY value.') from None
-        if exc.response.status_code == 403:
-            raise FeedError('The Odds API returned 403: this account is not authorized for the requested endpoint, bookmaker, or player-props market.') from None
-        if exc.response.status_code == 429:
-            raise FeedError('The live feed quota has been reached.') from None
-        raise FeedError('The live provider is temporarily unavailable.') from None
-    except (requests.RequestException, ValueError):
-        raise FeedError('The live provider is temporarily unavailable.') from None
-
+    """Try a backup credential if the primary is rejected; never invent prop lines."""
+    def clean(value):
+        return (value or '').strip().strip('"').strip("'")
+    keys = [clean(os.getenv('ODDS_API_KEY')), clean(os.getenv('ODDS_API_BACKUP_KEY'))]
+    keys = [key for key in dict.fromkeys(keys) if key and key.lower() not in
+            {'your_api_key', 'your-odds-api-key', 'replace_me', 'none', 'null'}]
+    if not keys:
+        raise FeedError('No valid Odds API credential configured. Verified player-prop lines are unavailable.')
+    last_status = None
+    for key in keys:
+        try:
+            response = requests.get(BASE + path, params={'apiKey': key, **params}, timeout=5)
+            response.raise_for_status()
+            return response.json()
+        except requests.HTTPError as exc:
+            status = exc.response.status_code
+            if status in {401, 403}:
+                last_status = status
+                continue
+            if status == 429:
+                raise FeedError('The Odds API quota has been reached. Verified prop lines are unavailable.') from None
+            raise FeedError('The live odds provider is temporarily unavailable.') from None
+        except (requests.RequestException, ValueError):
+            raise FeedError('The live odds provider is temporarily unavailable.') from None
+    if last_status == 403:
+        raise FeedError('Odds API credentials lack access to this bookmaker or player-props market (403). No verified props are available.')
+    raise FeedError('Odds API primary and backup credentials were rejected (401). Check Render ODDS_API_KEY and ODDS_API_BACKUP_KEY.')
 
 def bucket(minutes):
     return int(datetime.now(timezone.utc).timestamp()) // (minutes * 60)
