@@ -478,7 +478,7 @@ def basketball_lineups(boxscore, plays, pregame):
     return roster, starters if pregame else on_court, history
 
 
-@lru_cache(maxsize=128)
+@lru_cache(maxsize=16)
 def gamecast_summary(league, event_id, _window):
     return pick_results.fetch(league, 'summary', event=event_id), datetime.now(timezone.utc).isoformat()
 
