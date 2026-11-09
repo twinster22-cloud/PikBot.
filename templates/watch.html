@@ -21,6 +21,8 @@ button,a,select{cursor:pointer}
 .sidebar nav{display:grid}.sidebar nav a{padding:15px 10px;border-top:1px solid #34263f;font-weight:650}.sidebar nav span{margin-right:.45rem;color:#d2a4ff}
 .active,.sidebar nav .active{background:linear-gradient(115deg,#38096b,#770fe8 58%,#2a0654);border:1px solid #ce88ff;box-shadow:inset 0 0 9px #c880ff7a,0 0 14px #a746ff68;color:white}
 main{min-width:0}
+.owner-return{display:inline-flex;align-items:center;justify-content:center;min-height:46px;padding:11px 16px;margin:4px 0 12px;border:1px solid #d99bff;border-radius:12px;background:linear-gradient(120deg,#5e15a2,#8728e5);color:#fff;font-weight:850;box-shadow:0 3px 15px #a746ff55}
+.owner-return:hover{filter:brightness(1.15)}
 .leagues{display:flex;gap:7px;overflow:auto;padding:3px 3px 12px;scrollbar-width:thin}
 .leagues a{flex:1 0 auto;text-align:center;background:#100b1b;border:1px solid #3b274c;border-radius:999px;padding:.65rem .85rem;font-weight:800}
 .leagues a.active{background:linear-gradient(125deg,#32086a,#7c14db);border-color:#d28dff}
@@ -95,6 +97,7 @@ h1{font-size:1rem;margin:0 0 9px}h2{font-size:1rem;margin:0 0 9px}.stat{display:
 </nav>
 </aside>
 <main>
+{% if owner %}<a class="owner-return" href="/owner" aria-label="Back to Owner Dashboard">← Back to Owner Dashboard</a>{% endif %}
 <nav class="leagues" aria-label="Leagues">
 {% for key, label in sports.items() %}
 <a href="{{ url_for('watch_page', sport=key, day=day) }}"{% if key == sport %} class="active" aria-current="page"{% endif %}>{{ label }}</a>
