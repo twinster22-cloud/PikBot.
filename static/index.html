@@ -1086,9 +1086,9 @@ configureBroadcastControls('owner');
    const active=(data.games||[]).filter(game=>game.state==='in');
    status.textContent=active.length?active.length+' live game(s). Tap Watch to open the animated GameCast.':'No games currently in progress for '+sport+'.';
    for(const game of active){
-    const p=document.createElement('button');p.type='button';p.className='sport';p.style.cssText='display:block;width:100%;min-height:0;margin:9px 0;padding:15px;text-align:left;border-color:#a85bff;background:linear-gradient(120deg,#211038,#0b1416);color:#fff';
+    const p=document.createElement('a');p.className='sport';p.setAttribute('role','button');p.style.cssText='display:block;width:100%;min-height:0;margin:9px 0;padding:15px;text-align:left;border-color:#a85bff;background:linear-gradient(120deg,#211038,#0b1416);color:#fff';
     p.textContent='▶ Watch GameCast · '+(game.name||game.matchup||game.title||'Live game')+' · '+(game.status||'LIVE');
-    p.onclick=()=>{if(!game.id){status.textContent='This game has no available event identifier.';return;}window.location.assign('/watch?'+new URLSearchParams({sport,event_id:String(game.id)}));};
+    if(!game.id){p.setAttribute('aria-disabled','true');p.title='Game identifier unavailable';}else{p.href='/watch?'+new URLSearchParams({sport,event_id:String(game.id)});p.style.display='block';p.style.textDecoration='none';}
     if(pikbotCanWatch)list.append(p);
    }
   }catch(error){status.textContent=error.message||'Live games could not be loaded.'}
