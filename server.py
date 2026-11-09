@@ -38,7 +38,7 @@ def public_asset(asset):
         'sw.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png',
         'splash.png', 'icon.svg', 'owner.webmanifest', 'owner-icon-192.png', 'owner-icon-512.png',
         'livecast-hoopers.webp', 'livecast-roster.webp', 'livecast-3d.js', 'livecast-arena.webp',
-        'livecast-face-uv.webp',
+        'livecast-face-uv.webp', 'livecast-field.js',
     }:
         return jsonify(error='Not found'), 404
     return send_from_directory(ROOT/'static', asset)
@@ -459,7 +459,7 @@ def basketball_lineups(boxscore, plays, pregame):
     # A feed that starts midgame can't reliably replay substitutions from tipoff.
     if (first.get('type') or {}).get('text') in ('Jump Ball', 'Start Game', 'Game Start', 'Start Period') or (
             (first.get('period') or {}).get('number') == 1 and
-            (first.get('clock') or {}).get('displayValue') in ('12:00', '20:00')):
+            (first.get('clock') or {}).get('displayValue') in ('10:00', '12:00', '20:00')):
         running = {team_id: ids.copy() for team_id, ids in starters.items()}
         for index, play in enumerate(plays):
             if not isinstance(play, dict):
@@ -529,7 +529,7 @@ def live_gamecast():
             all_drives = (drives.get('previous') or []) + [drives.get('current') or {}]
             raw = [play for drive in all_drives for play in drive.get('plays') or []]
         boxscore = summary.get('boxscore') or {}
-        basketball = sport in ('NBA', 'COLLEGE BASKETBALL')
+        basketball = sport in ('NBA', 'COLLEGE BASKETBALL', 'WNBA')
         roster, lineups, lineup_history = basketball_lineups(boxscore, raw, state.get('state') == 'pre') if basketball else ({}, {}, {})
         plays = []
         seen = set()
@@ -557,6 +557,10 @@ def live_gamecast():
                           'court': [x, y] if court else None,
                           'reported_at': play.get('wallclock'),
                           'kind': (play.get('type') or {}).get('text')})
+            if sport in ('NFL', 'COLLEGE FOOTBALL'):
+                yards = play.get('statYardage')
+                if type(yards) in (int, float) and -99 <= yards <= 99:
+                    plays[-1]['yards'] = yards
             if basketball:
                 participants = play.get('participants') or []
                 actor = (participants[0].get('athlete') or {}).get('id') if participants else None
