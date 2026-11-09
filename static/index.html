@@ -396,6 +396,8 @@ async function showMembership(){
     feedbackCsrf=info.csrf;
     ownerMode=info.role==='owner'&&info.permissions?.owner_tools===true;
     const canUseGameCast=info.broadcast_access===true;
+    pikbotCanWatch=canUseGameCast;
+    document.querySelectorAll(".watch-game-button").forEach(b=>{b.hidden=!pikbotCanWatch;});
     $('member-broadcast-monitor').hidden=!(canUseGameCast&&!ownerMode&&info.membership_tier==='plus');
     $('live-center-browser').hidden=!canUseGameCast;
     if(canUseGameCast&&!window.pikbotGamecastAutoStarted){window.pikbotGamecastAutoStarted=true;document.getElementById('live-center-day').value='today';browseMemberGames();}
@@ -493,6 +495,7 @@ let autoPickGeneration=0;
 let userSportChoice=false;
 let trialOnly=false;
 let ownerMode=false;
+let pikbotCanWatch=false;
 let feedbackCsrf='';
 let accessBlocked=true;
 let trialExpiryTimer;
@@ -510,7 +513,7 @@ function showMatchups(sport){
     '<h3>'+esc(league.name)+'</h3><ul>'+league.matchups.map(game=>
       '<li><button type="button" class="btn matchup-button" data-league="'+esc(league.name)+'" data-game="'+esc(game.id)+'" '+(game.started?'data-performance="true"':'')+'>'+
       esc(game.away||'Away team')+' at '+esc(game.home||'Home team')+' · '+esc(gameTime(game.starts_at))+
-      (game.started?' · View observed performance':' · View research props')+'</button> <button type="button" class="btn watch-game-button" data-watch-league="'+esc(league.name)+'" data-watch-id="'+esc(game.id)+'" data-watch-name="'+esc((game.away||'Away')+' at '+(game.home||'Home'))+'">▶ Watch</button></li>').join('')+'</ul>').join('');
+      (game.started?' · View observed performance':' · View research props')+'</button> <button type="button" class="btn watch-game-button" data-watch-league="'+esc(league.name)+'" data-watch-id="'+esc(game.id)+'" data-watch-name="'+esc((game.away||'Away')+' at '+(game.home||'Home'))+'" '+(pikbotCanWatch?'':'hidden')+'>▶ Watch</button></li>').join('')+'</ul>').join('');
 }
 async function loadToday(){
   if(accessBlocked)return;
@@ -742,7 +745,7 @@ async function loadLiveCenter(){
    count++;const card=document.createElement('div');card.className='statbox';
    card.append(liveNode('strong',sport.name+' · '+game.away+' at '+game.home),liveNode('p',game.started?'Started · live data may be available':'Scheduled · '+new Date(game.starts_at).toLocaleString()));
    const btn=liveNode('button','View live stats');btn.type='button';btn.className='btn';
-   btn.onclick=()=>openLiveGame(sport.name,game);card.append(btn);const watch=liveNode('button','▶ Watch');watch.type='button';watch.className='btn';watch.style.marginLeft='8px';watch.onclick=()=>openGameCast(sport.name,String(game.id),game.away+' at '+game.home);card.append(watch);grid.append(card);
+   btn.onclick=()=>openLiveGame(sport.name,game);card.append(btn);const watch=liveNode('button','▶ Watch');watch.type='button';watch.className='btn';watch.style.marginLeft='8px';watch.onclick=()=>openGameCast(sport.name,String(game.id),game.away+' at '+game.home);if(pikbotCanWatch)card.append(watch);grid.append(card);
   }
   status.textContent=count?count+' matchups found · Refresh for updates':'No matchups currently returned by the provider.';
  }catch(e){status.textContent=e.message;}
@@ -986,6 +989,7 @@ document.getElementById('sport-details-fullscreen').onclick=()=>{const panel=doc
 
 let pikbotGameCastSelection=null;
 async function openGameCast(sport,id,name){
+ if(!pikbotCanWatch){alert('Animated GameCast is exclusive to PikBot Plus members and the owner.');return;}
  pikbotGameCastSelection={sport,id};
  const gamecast=document.getElementById('pikbot-gamecast');
  if(gamecast.parentElement!==document.body)document.body.appendChild(gamecast);
@@ -1068,9 +1072,9 @@ configureBroadcastControls('owner');
    status.textContent=active.length?active.length+' live game(s). Live player-prop predictions are unavailable until verified in-game lines and a validated model are connected.':'No games currently in progress for '+sport+'.';
    for(const game of active){
     const p=document.createElement('button');p.type='button';p.className='sport';p.style.cssText='display:block;width:100%;min-height:0;margin:9px 0;padding:15px;text-align:left;border-color:#a85bff;background:linear-gradient(120deg,#211038,#0b1416);color:#fff';
-    p.textContent='▶ WATCH ANIMATED GAMECAST · '+(game.name||game.matchup||game.title||'Live game')+' · '+(game.status||'LIVE');
+    p.textContent='▶ Watch · '+(game.name||game.matchup||game.title||'Live game')+' · '+(game.status||'LIVE');
     p.onclick=()=>{if(!game.id){status.textContent='This game has no available event identifier.';return;}const center=document.getElementById('live-center-browser');if(center)center.hidden=false;openGameCast(sport,String(game.id),game.name||'Live game');};
-    list.append(p);
+    if(pikbotCanWatch)list.append(p);
    }
   }catch(error){status.textContent=error.message||'Live games could not be loaded.'}
   finally{button.disabled=false}
