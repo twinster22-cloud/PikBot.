@@ -510,7 +510,7 @@ function showMatchups(sport){
     '<h3>'+esc(league.name)+'</h3><ul>'+league.matchups.map(game=>
       '<li><button type="button" class="btn matchup-button" data-league="'+esc(league.name)+'" data-game="'+esc(game.id)+'" '+(game.started?'data-performance="true"':'')+'>'+
       esc(game.away||'Away team')+' at '+esc(game.home||'Home team')+' · '+esc(gameTime(game.starts_at))+
-      (game.started?' · View observed performance':' · View research props')+'</button></li>').join('')+'</ul>').join('');
+      (game.started?' · View observed performance':' · View research props')+'</button> <button type="button" class="btn watch-game-button" data-watch-league="'+esc(league.name)+'" data-watch-id="'+esc(game.id)+'" data-watch-name="'+esc((game.away||'Away')+' at '+(game.home||'Home'))+'">▶ Watch</button></li>').join('')+'</ul>').join('');
 }
 async function loadToday(){
   if(accessBlocked)return;
@@ -742,7 +742,7 @@ async function loadLiveCenter(){
    count++;const card=document.createElement('div');card.className='statbox';
    card.append(liveNode('strong',sport.name+' · '+game.away+' at '+game.home),liveNode('p',game.started?'Started · live data may be available':'Scheduled · '+new Date(game.starts_at).toLocaleString()));
    const btn=liveNode('button','View live stats');btn.type='button';btn.className='btn';
-   btn.onclick=()=>openLiveGame(sport.name,game);card.append(btn);grid.append(card);
+   btn.onclick=()=>openLiveGame(sport.name,game);card.append(btn);const watch=liveNode('button','▶ Watch');watch.type='button';watch.className='btn';watch.style.marginLeft='8px';watch.onclick=()=>openGameCast(sport.name,String(game.id),game.away+' at '+game.home);card.append(watch);grid.append(card);
   }
   status.textContent=count?count+' matchups found · Refresh for updates':'No matchups currently returned by the provider.';
  }catch(e){status.textContent=e.message;}
@@ -798,7 +798,7 @@ async function browseMemberGames(){
  const entries=d.games||[];const active=entries.filter(g=>g.state==='in');
  status.textContent=entries.length+' games · '+active.length+' in progress'+(!active.length?' · choose yesterday for completed games and official recaps':'');
  for(const game of entries){const row=document.createElement('div');row.className='statbox';const title=document.createElement('p');title.textContent=game.name+' · '+game.status+' · '+(game.teams||[]).map(t=>t.name+' '+(t.score??'—')).join(' / ');row.append(title);
- const btn=document.createElement('button');btn.type='button';btn.className='btn';btn.textContent='Player stats';btn.onclick=()=>browseMemberStats(sport,game.id);row.append(btn);const cast=document.createElement('button');cast.type='button';cast.className='btn';cast.textContent='Open GameCast';cast.onclick=()=>openGameCast(sport,game.id,game.name);row.append(cast);
+ const btn=document.createElement('button');btn.type='button';btn.className='btn';btn.textContent='Player stats';btn.onclick=()=>browseMemberStats(sport,game.id);row.append(btn);const cast=document.createElement('button');cast.type='button';cast.className='btn';cast.textContent='▶ Watch';cast.onclick=()=>openGameCast(sport,game.id,game.name);row.append(cast);
  if(game.official_recap){const link=document.createElement('a');link.href=game.official_recap;link.target='_blank';link.rel='noopener noreferrer';link.textContent=day==='yesterday'?'Official recap / possible highlights':'Official game page';row.append(document.createTextNode(' · '),link);}
  games.append(row);}
  if(autoGameCastPending&&day==='today'){autoGameCastPending=false;const playing=active[0];if(playing){status.textContent='Live now · automatically opening '+playing.name;openGameCast(sport,playing.id,playing.name);}else{status.textContent+=' · No live game in progress to autoplay';}}
@@ -1076,4 +1076,11 @@ configureBroadcastControls('owner');
   finally{button.disabled=false}
  });
 })();
+</script><script>
+document.addEventListener('click',function(event){
+ const watch=event.target.closest('.watch-game-button');if(!watch)return;
+ const id=watch.dataset.watchId,league=watch.dataset.watchLeague,name=watch.dataset.watchName;
+ if(!id){watch.textContent='Game unavailable';return;}
+ openGameCast(league,id,name);
+});
 </script></body></html>
