@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PikBot LiveCast</title>
+<style>
+:root{color-scheme:dark;--ink:#f6f0ff;--muted:#c1b3d1;--line:#463356;--panel:#0c0a17;--violet:#a746ff}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(ellipse at 32% 0,#27083e 0,transparent 38%),#07060c;color:var(--ink);font:15px system-ui,sans-serif}
+a{color:inherit;text-decoration:none}
+button,select{font:inherit;color:inherit;background:#110c1d;border:1px solid var(--line);border-radius:10px;padding:.65rem .8rem}
+button,a,select{cursor:pointer}
+:focus-visible{outline:2px solid #e2adff;outline-offset:3px}
+[hidden]{display:none!important}
+.shell{display:grid;grid-template-columns:180px minmax(0,1fr);gap:12px;max-width:1720px;margin:auto;padding:8px 12px 20px}
+.sidebar{min-width:0;align-self:start;background:linear-gradient(145deg,#161026,#090913);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.brand{display:grid;justify-items:center;gap:3px;padding:18px 7px 20px;font-size:clamp(25px,3.2vw,43px);font-style:italic;font-weight:900;letter-spacing:-.08em}
+.brand b{color:#cb82ff}.brand img{width:55px;height:55px;border-radius:14px;box-shadow:0 0 24px #a746ff70}
+.sidebar nav{display:grid}.sidebar nav a{padding:15px 10px;border-top:1px solid #34263f;font-weight:650}.sidebar nav span{margin-right:.45rem;color:#d2a4ff}
+.active,.sidebar nav .active{background:linear-gradient(115deg,#38096b,#770fe8 58%,#2a0654);border:1px solid #ce88ff;box-shadow:inset 0 0 9px #c880ff7a,0 0 14px #a746ff68;color:white}
+main{min-width:0}
+.leagues{display:flex;gap:7px;overflow:auto;padding:3px 3px 12px;scrollbar-width:thin}
+.leagues a{flex:1 0 auto;text-align:center;background:#100b1b;border:1px solid #3b274c;border-radius:999px;padding:.65rem .85rem;font-weight:800}
+.leagues a.active{background:linear-gradient(125deg,#32086a,#7c14db);border-color:#d28dff}
+.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 10px}
+.controls select{min-width:0}.controls #match{flex:1;max-width:100%}
+.stage{position:relative;overflow:hidden;min-height:290px;width:100%;aspect-ratio:2.24;background:#100a1a;border:1px solid #9066ac;border-radius:18px;isolation:isolate}
+.scene{position:absolute;inset:0;overflow:hidden;background:radial-gradient(ellipse at 50% 5%,#d4bcea 0,#554163 20%,#130c1d 63%);perspective:760px}
+.crowd{position:absolute;inset:7% 0 20%;background:radial-gradient(circle,#ead3fa90 0 1px,transparent 2.6px) 1px 1px/7px 5px,radial-gradient(circle,#934e8b 0 1px,transparent 2px) 4px 5px/9px 7px;mask-image:linear-gradient(#000,#000 20%,transparent 75%);transform:perspective(600px) rotateX(-16deg) scale(1.13);opacity:.7}
+.arena{position:absolute;inset:20% 5% 12%;width:90%;height:68%;transform:rotateX(36deg) scale(1.12);transition:transform .45s ease;filter:drop-shadow(0 12px 15px #0009)}
+.scene[data-view=sideline] .arena{transform:rotateX(47deg) rotateZ(-9deg) scale(1.1)}
+.scene[data-view=aerial] .arena{transform:scale(.9)}
+.scene[data-view=wide] .arena{transform:rotateX(26deg) scale(.85)}
+.surface{display:none}.scene[data-surface=football] .football,.scene[data-surface=court] .court,.scene[data-surface=hockey] .hockey,.scene[data-surface=baseball] .baseball,.scene[data-surface=fight] .fight{display:block}
+.formation{display:none;filter:drop-shadow(2px 5px 2px #000c)}.scene[data-surface=football][data-playing=true] .formation{display:block}.away{fill:var(--away,#a82556)}.home{fill:var(--home,#422a9f)}
+.stage-top{position:absolute;inset:12px 12px auto;display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.badge,.stamp{padding:6px 10px;border-radius:7px;background:#130e1de8;font-size:.8rem;font-weight:800}.badge[data-live=true]{background:#ce163b;box-shadow:0 0 15px #d622565e}.stamp{border:1px solid #b670ee;letter-spacing:.03em}.stamp i{color:#dc9eff}
+.angles{position:absolute;right:12px;top:52px;display:grid;padding:3px;background:#080613df;border:1px solid var(--line);border-radius:11px}.angles button{font-size:.78rem;padding:.4rem .7rem;text-align:left;border-color:transparent;background:transparent}.angles .active{background:#5a159c;border-color:#ba73f4}
+.scoreboard{position:absolute;bottom:0;left:0;right:0;display:flex;justify-content:center;align-items:stretch;background:#080711f0;border-top:1px solid #b46ef0;box-shadow:0 -2px 17px #8e28b950}
+.score-team,.clock{display:flex;gap:8px;align-items:center;padding:9px 14px;min-width:0}
+.score-team{flex:1;justify-content:center;background:linear-gradient(120deg,var(--team,#251044),#0c0a19);border-right:1px solid #bb7afe77}
+.score-team img{width:32px;height:32px;object-fit:contain}.score-team b{font-size:clamp(17px,3vw,36px);font-style:italic}.clock{font-weight:750;max-width:42%}
+.feed-note,.muted{color:var(--muted);font-size:.82rem}.feed-note{margin:8px 1px;min-height:1em}
+.game-center{border:1px solid var(--line);border-radius:16px;background:var(--panel);overflow:hidden}
+.panels{display:flex;gap:6px;padding:7px;overflow:auto;border-bottom:1px solid var(--line)}.panels button{flex:1 0 auto}
+.details{padding:12px}.overview{display:grid;grid-template-columns:1fr 1fr;gap:12px}.card{min-width:0;border:1px solid var(--line);background:#110c1b;border-radius:12px;padding:12px}
+h1{font-size:1rem;margin:0 0 9px}h2{font-size:1rem;margin:0 0 9px}.stat{display:grid;grid-template-columns:minmax(0,1fr) minmax(32px,auto) minmax(32px,auto);gap:10px;padding:6px 0;border-bottom:1px solid #2d2339}.stat span:not(:first-child){text-align:right}
+.leader,.play,.trend{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #2d2339}.leader img{width:43px;height:34px;object-fit:contain}.leader small{margin-left:auto;text-align:right;color:#e1baff}.play strong{color:#d7a8ff;min-width:75px}.play[data-score=true]{color:#9df4bc}
+.ticker{margin-top:10px;padding:10px 14px;border:1px solid #ad60e7;border-radius:12px;background:linear-gradient(110deg,#270b46,#0b0816 75%);box-shadow:inset 0 0 14px #7a18c646}.ticker b{color:#e4b8ff}
+@media(max-width:850px){.shell{grid-template-columns:1fr;gap:7px}.sidebar{display:flex;align-items:center;gap:8px}.brand{display:flex;padding:7px 9px;gap:6px}.brand img{width:30px;height:30px}.sidebar nav{display:flex;gap:5px;overflow:auto}.sidebar nav a{white-space:nowrap;border:1px solid transparent;border-radius:8px;padding:7px}.sidebar nav span{display:none}}
+@media(max-width:510px){.shell{padding:6px 7px 14px}.stage{min-height:235px}.angles{right:7px;top:43px}.angles button{padding:.26rem .42rem;font-size:.7rem}.stage-top{inset:7px 7px auto}.score-team,.clock{padding:7px;gap:5px}.clock{font-size:.7rem}.score-team img{width:22px;height:22px}.overview{grid-template-columns:1fr}.controls #match{order:2;flex:1 0 100%}}
+@media(prefers-reduced-motion:reduce){.arena{transition:none}}
+</style>
+</head>
+<body>
+<div class="shell">
+<aside class="sidebar">
+<a class="brand" href="{{ '/owner' if owner else '/' }}"><img src="/icon-192.png" alt=""><span><b>Pik</b>Bot</span></a>
+<nav aria-label="PikBot">
+<a href="/watch" class="active" aria-current="page"><span>◉</span>Live Games</a>
+<a href="{{ '/owner/picks' if owner else '/' }}#pick-timeline"><span>◎</span>PikBot Picks</a>
+<a href="{{ '/owner/picks' if owner else '/' }}#entries"><span>◇</span>My Entries</a>
+{% if owner %}<a href="/owner"><span>▦</span>Owner Dashboard</a>{% endif %}
+</nav>
+</aside>
+<main>
+<nav class="leagues" aria-label="Leagues">
+{% for key, label in sports.items() %}
+<a href="{{ url_for('watch_page', sport=key, day=day) }}"{% if key == sport %} class="active" aria-current="page"{% endif %}>{{ label }}</a>
+{% endfor %}
+</nav>
+<div class="controls">
+<select id="day" aria-label="Game date"><option value="today">Today</option><option value="yesterday"{% if day == 'yesterday' %} selected{% endif %}>Yesterday</option></select>
+<select id="match" aria-label="Choose a matchup" disabled><option>Loading games…</option></select>
+<button id="refresh" type="button">↻ Refresh</button>
+</div>
+<h1 id="match-title">{{ sports[sport] }} Live Games</h1>
+<section class="stage" aria-label="GameCast scoreboard and illustrated arena">
+<div class="scene" id="scene" data-view="broadcast" data-surface="football" aria-hidden="true">
+<div class="crowd"></div>
+<svg class="arena" viewBox="0 0 800 380" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<linearGradient id="grass" x2="0" y2="1"><stop stop-color="#3c783f"/><stop offset="1" stop-color="#133e2c"/></linearGradient>
+<pattern id="yards" width="66" height="306" patternUnits="userSpaceOnUse"><path d="M1 0V306M1 118h8m-8 69h8" stroke="#f9fff4" stroke-opacity=".7" stroke-width="2"/></pattern>
+<g id="player"><ellipse cy="10" rx="10" ry="5" fill="#000" opacity=".5"/><path d="m-6 2-3 10m15-10 3 10" stroke="#e8e8f5" stroke-width="5"/><rect x="-10" y="-10" width="20" height="15" rx="5" stroke="#fff" stroke-opacity=".45"/><circle cy="-12" r="5" stroke="#fff" stroke-width="1.5"/></g>
+</defs>
+<g class="surface football">
+<rect x="18" y="22" width="764" height="336" rx="8" fill="url(#grass)" stroke="#e7f0e8" stroke-width="3"/>
+<rect class="away" x="21" y="36" width="49" height="306" opacity=".86"/><rect class="home" x="730" y="36" width="49" height="306" opacity=".86"/>
+<rect x="70" y="36" width="660" height="306" fill="url(#yards)" stroke="#eee" stroke-width="2"/>
+<path d="M400 36V342" stroke="#fff" stroke-width="3"/><path d="M18 140v-38m0 38v38m764-38v-38m0 38v38" stroke="#ffd35e" stroke-width="5"/>
+<g fill="#f2f6e9" font-size="22" font-weight="700" text-anchor="middle" opacity=".8">
+<text x="136" y="321">10</text><text x="202" y="321">20</text><text x="268" y="321">30</text><text x="334" y="321">40</text><text x="400" y="321">50</text><text x="466" y="321">40</text><text x="532" y="321">30</text><text x="598" y="321">20</text><text x="664" y="321">10</text>
+</g>
+<g class="formation">
+<g class="away"><use href="#player" x="344" y="68"/><use href="#player" x="369" y="110"/><use href="#player" x="369" y="143"/><use href="#player" x="369" y="176"/><use href="#player" x="369" y="209"/><use href="#player" x="369" y="242"/><use href="#player" x="344" y="289"/><use href="#player" x="334" y="177"/><use href="#player" x="302" y="208"/><use href="#player" x="315" y="110"/><use href="#player" x="309" y="263"/></g>
+<g class="home"><use href="#player" x="444" y="68"/><use href="#player" x="411" y="113"/><use href="#player" x="411" y="148"/><use href="#player" x="411" y="182"/><use href="#player" x="411" y="217"/><use href="#player" x="411" y="250"/><use href="#player" x="444" y="289"/><use href="#player" x="450" y="165"/><use href="#player" x="450" y="217"/><use href="#player" x="512" y="126"/><use href="#player" x="503" y="250"/></g>
+</g></g>
+<g class="surface court"><rect x="35" y="28" width="730" height="324" rx="10" fill="#b47236" stroke="#f9e8c3" stroke-width="4"/><path d="M400 28v324M35 120h150v140H35m730-140H615v140h150M35 50C340 50 340 330 35 330m730-280C460 50 460 330 765 330" fill="none" stroke="#fff0d5" stroke-width="4"/><circle cx="400" cy="190" r="53" fill="none" stroke="#fff0d5" stroke-width="4"/></g>
+<g class="surface hockey"><rect x="22" y="28" width="756" height="324" rx="88" fill="#cfecfa" stroke="#fff" stroke-width="5"/><path d="M400 28v324" stroke="#c53351" stroke-width="7"/><path d="M280 28v324m240-324v324" stroke="#254baf" stroke-width="7"/><circle cx="400" cy="190" r="50" fill="none" stroke="#284ca1" stroke-width="4"/></g>
+<g class="surface baseball"><path d="M400 363 135 122Q400-130 665 122Z" fill="#296644" stroke="#e9eddc" stroke-width="3"/><path d="m400 340-122-117 122-118 122 118z" fill="#b36c42"/><path d="m400 307-88-84 88-84 88 84z" fill="#346f49"/><circle cx="400" cy="222" r="15" fill="#b36c42"/></g>
+<g class="surface fight"><path d="m270 27 260 0 125 92v142l-125 92H270l-125-92V119z" fill="#777381" stroke="#211d30" stroke-width="14"/><path d="m282 49 236 0 114 81v120l-114 81H282l-114-81V130z" fill="none" stroke="#eae5ee" stroke-width="3"/><circle cx="400" cy="190" r="52" fill="none" stroke="#eae5ee" stroke-width="3"/></g>
+</svg>
+</div>
+<div class="stage-top"><span class="badge" id="badge">GAMECAST</span><span class="stamp">PikBot <i>LIVECAST</i> · SIMULATION</span></div>
+<div class="angles" role="group" aria-label="Illustrated camera angle">
+<button type="button" class="active" data-angle="broadcast" aria-pressed="true">▣ Broadcast</button>
+<button type="button" data-angle="sideline" aria-pressed="false">◫ Sideline</button>
+<button type="button" data-angle="aerial" aria-pressed="false">◇ Aerial</button>
+<button type="button" data-angle="wide" id="wide-angle" aria-pressed="false">▤ Wide</button>
+</div>
+<div class="scoreboard" id="scoreboard"><div class="clock">Choose a game above</div></div>
+</section>
+<p id="feed-note" class="feed-note" role="status">Connecting to the game feed…</p>
+<section class="game-center" aria-label="Game details">
+<div class="panels" role="group" aria-label="Game detail views">
+<button type="button" data-panel="stats" class="active" aria-pressed="true">Game Stats</button>
+<button type="button" data-panel="plays" aria-pressed="false">Play-by-Play</button>
+<button type="button" data-panel="trends" aria-pressed="false">Game Trends</button>
+</div>
+<div class="details overview" id="stats"><section class="card"><h2>Team Stats</h2><div id="team-stats"></div></section><section class="card"><h2>Top Performers</h2><div id="leaders"></div></section></div>
+<div class="details" id="plays" hidden><h2>Latest Plays</h2><div id="play-list"></div></div>
+<div class="details" id="trends" hidden><h2>Scoring Plays</h2><div id="scoring-plays"></div></div>
+</section>
+<div class="ticker"><b>◈ Game Update</b> <span id="ticker">Select a matchup to follow the game.</span></div>
+<p class="feed-note">Illustrated arena and camera angles. Scores, game events and statistics come from the scoreboard feed and may be delayed. <a id="official" hidden target="_blank" rel="noopener noreferrer">Official game page ↗</a></p>
+</main>
+</div>
+<script>
+const sport = {{ sport|tojson }};
+const day = {{ day|tojson }};
+let selected = {{ event_id|tojson }};
+const link = new URLSearchParams(location.search);
+const normalize = value => (value || '').normalize('NFKD').toLowerCase().replace(/[^a-z0-9]/g, '');
+const requested = ['away', 'home'].map(side => normalize(link.get(side)));
+const hasMatchupLink = requested.every(Boolean);
+const $ = id => document.getElementById(id);
+const football = ['NFL', 'COLLEGE FOOTBALL'].includes(sport);
+$('scene').dataset.surface = football ? 'football' : ({MLB:'baseball', NHL:'hockey', UFC:'fight'}[sport] || 'court');
+if (football) $('wide-angle').textContent = '▤ All-22';
+function gameURL(nextDay, id) {
+  const params = new URLSearchParams({sport, day:nextDay});
+  if (id) params.set('event_id', id);
+  return '/watch?' + params;
+}
+$('day').onchange = () => location.assign(gameURL($('day').value));
+$('match').onchange = () => {
+  if ($('match').value) location.assign(gameURL(day, $('match').value));
+};
+function controls(attribute, select) {
+  const buttons = [...document.querySelectorAll('[' + attribute + ']')];
+  for (const button of buttons) button.onclick = () => {
+    for (const candidate of buttons) {
+      candidate.classList.toggle('active', candidate === button);
+      candidate.setAttribute('aria-pressed', String(candidate === button));
+    }
+    select(button.getAttribute(attribute), buttons);
+  };
+}
+controls('data-angle', angle => $('scene').dataset.view = angle);
+controls('data-panel', (id, buttons) => {
+  for (const button of buttons) $(button.dataset.panel).hidden = button.dataset.panel !== id;
+});
+function node(tag, text, className) {
+  const el = document.createElement(tag);
+  if (text != null) el.textContent = text;
+  if (className) el.className = className;
+  return el;
+}
+function photo(url) {
+  if (typeof url !== 'string' || !url.startsWith('https://a.espncdn.com/')) return null;
+  const img = node('img');
+  img.src = url;
+  img.alt = '';
+  img.addEventListener('error', () => img.remove(), {once:true});
+  return img;
+}
+function fill(id, children, empty) {
+  $(id).replaceChildren(...(children.length ? children : [node('p', empty, 'muted')]));
+}
+function statRow(values) {
+  const row = node('div', null, 'stat');
+  row.append(...values.map(value => node('span', value)));
+  return row;
+}
+async function api(path, query) {
+  const response = await fetch(path + '?' + new URLSearchParams(query), {cache:'no-store'});
+  const data = await response.json();
+  if (!response.ok) throw Error(data.error || 'The feed is unavailable.');
+  return data;
+}
+function render(data) {
+  const teams = data.teams;
+  const live = data.state === 'in';
+  const badge = $('badge');
+  badge.dataset.live = String(live);
+  badge.textContent = live ? '● LIVE' : data.status || 'GAMECAST';
+  $('scene').dataset.playing = String(live);
+  $('match-title').textContent = teams.map(team => team.name).join(' vs ') || sport;
+  const clock = [data.period ? (sport === 'UFC' ? 'Round ' : 'Period ') + data.period : '', live ? data.clock : '', data.detail || data.status].filter(Boolean);
+  $('scoreboard').replaceChildren(...teams.map((team, index) => {
+    const card = node('div', null, 'score-team');
+    const color = /^[0-9a-f]{6}$/i.test(team.color) ? '#' + team.color : (index ? '#382977' : '#842f58');
+    card.style.setProperty('--team', color);
+    $('scene').style.setProperty(index ? '--home' : '--away', color);
+    const logo = photo(team.logo);
+    if (logo) card.append(logo);
+    card.append(node('span', team.short || team.name), node('b', team.score ?? (team.winner ? 'W' : '—')));
+    return card;
+  }), node('div', clock.join(' · '), 'clock'));
+  const stats = data.team_stats.map(stat => statRow([stat.label, ...teams.map(team => stat.values[team.id] ?? '—')]));
+  if (stats.length) stats.unshift(statRow(['Team totals', ...teams.map(team => team.short || team.name)]));
+  fill('team-stats', stats, 'Team totals are unavailable for this matchup.');
+  fill('leaders', data.leaders.map(leader => {
+    const row = node('div', null, 'leader');
+    const img = photo(leader.photo);
+    if (img) row.append(img);
+    row.append(node('strong', leader.name), node('small', [leader.stat, leader.value].filter(Boolean).join(' · ')));
+    return row;
+  }), 'Player leaders are unavailable for this matchup.');
+  const playRow = play => {
+    const row = node('div', null, 'play');
+    row.dataset.score = String(play.scoring);
+    row.append(node('strong', [play.period ? 'P' + play.period : '', play.clock].filter(Boolean).join(' ')), node('span', play.text));
+    return row;
+  };
+  fill('play-list', data.plays.slice(0, 30).map(playRow), 'The feed has not published play-by-play for this matchup.');
+  fill('scoring-plays', data.plays.filter(play => play.scoring).map(playRow), 'No scoring plays are available in the current feed.');
+  $('ticker').textContent = data.plays[0]?.text || data.detail || data.status;
+  $('official').hidden = !data.official_page;
+  if (data.official_page) $('official').href = data.official_page;
+  $('feed-note').textContent = [data.venue, data.drive, data.broadcasts.join(', '), 'Updated ' + new Date(data.observed_at).toLocaleTimeString()].filter(Boolean).join(' · ');
+}
+let busy = false;
+let loadedSchedule = false;
+async function update(refreshSchedule = false) {
+  if (busy) return;
+  busy = true;
+  $('refresh').disabled = true;
+  try {
+    if (refreshSchedule || !loadedSchedule) {
+      const {games} = await api('/api/live/games', {sport, day});
+      const match = $('match');
+      if (!selected && hasMatchupLink) {
+        const matches = games.filter(game => requested.every((team, index) =>
+          game.teams.some(side => side.home_away === ['away', 'home'][index] && normalize(side.name) === team)));
+        if (matches.length === 1) selected = matches[0].id;
+      } else if (!selected) {
+        selected = (games.find(game => game.state === 'in') || games[0])?.id || '';
+      }
+      const options = games.map(game => new Option((game.state === 'in' ? '● ' : '') + game.name + ' · ' + game.status, game.id));
+      if (!selected && options.length) options.unshift(new Option('Choose a matchup', ''));
+      if (selected && !games.some(game => game.id === selected)) options.unshift(new Option('Selected matchup', selected));
+      match.replaceChildren(...(options.length ? options : [new Option('No games for this date', '')]));
+      match.value = selected;
+      match.disabled = !options.length;
+      loadedSchedule = true;
+    }
+    if (selected) {
+      render(await api('/api/live/gamecast', {sport, event_id:selected, day}));
+    } else {
+      $('feed-note').textContent = $('match').disabled
+        ? 'No ' + sport + ' games for this date. Choose another league or day.'
+        : 'Choose the matchup from the scoreboard schedule above.';
+    }
+  } catch (error) {
+    $('feed-note').textContent = error.message + ' Choose another matchup or refresh to retry.';
+    // A saved scoreboard link can still work when the schedule is temporarily unavailable.
+    if (selected && !loadedSchedule) {
+      try { render(await api('/api/live/gamecast', {sport, event_id:selected, day})); }
+      catch (gameError) { $('feed-note').textContent = gameError.message; }
+    }
+  } finally {
+    busy = false;
+    $('refresh').disabled = false;
+  }
+}
+$('refresh').onclick = () => update(true);
+update();
+setInterval(() => { if (!document.hidden) update(!selected); }, 15000);
+</script>
+</body>
+</html>

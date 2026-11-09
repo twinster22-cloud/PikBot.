@@ -16,7 +16,7 @@ import pick_results
 import psycopg
 from player_photos import attach_photos
 from membership import trial_daily_board, account, daily_trial_picks, init_accounts, premium_required, owner_required, check_csrf, database, private_paid_test, broadcast_entitlement
-from flask import Flask, g, request, jsonify, send_from_directory, redirect, session
+from flask import Flask, g, request, jsonify, send_from_directory, redirect, render_template, session
 import pandas as pd
 import numpy as np
 from io import StringIO
@@ -41,7 +41,7 @@ def public_asset(asset):
 
 @app.after_request
 def prevent_private_caching(response):
-    if request.path in ('/', '/owner') or request.path.startswith(('/api/', '/login', '/owner/', '/billing/', '/logout')):
+    if request.path in ('/', '/owner', '/watch') or request.path.startswith(('/api/', '/login', '/owner/', '/billing/', '/logout')):
         response.headers['Cache-Control'] = 'no-store, private'
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
@@ -331,130 +331,187 @@ def basketball_provider_status():
                        message='BasketballAPI is temporarily unreachable.'), 503
 
 
+GAMECAST_SPORTS = {
+    'NBA': 'NBA', 'NFL': 'NFL', 'MLB': 'MLB', 'NHL': 'NHL',
+    'COLLEGE FOOTBALL': 'NCAAF', 'COLLEGE BASKETBALL': 'NCAAB', 'UFC': 'UFC', 'WNBA': 'WNBA',
+}
+GAMECAST_LEAGUES = {sport: league for sport, (league, _) in pick_results.LEAGUES.items()}
+GAMECAST_LEAGUES['UFC'] = 'mma/ufc'
+
+
+def gamecast_schedule(sport, day):
+    from zoneinfo import ZoneInfo
+    local = datetime.now(ZoneInfo('America/New_York')).date() - timedelta(days=day == 'yesterday')
+    events = pick_results.scoreboard(GAMECAST_LEAGUES[sport], local.strftime('%Y%m%d'),
+                                     int(datetime.now(timezone.utc).timestamp()) // 60)
+    for event in events:
+        competitions = event.get('competitions') or []
+        if sport != 'UFC':
+            competitions = competitions[:1]
+        for competition in competitions:
+            if competition.get('id'):
+                yield event, competition
+
+
+def gamecast_teams(competition):
+    teams = []
+    for competitor in sorted(competition.get('competitors') or [],
+                             key=lambda item: item.get('homeAway') == 'home'):
+        team = competitor.get('team') or competitor.get('athlete') or {}
+        logos = team.get('logos') or []
+        score = competitor.get('score')
+        if isinstance(score, dict):
+            score = score.get('displayValue')
+        teams.append({
+            'id': str(team.get('id') or competitor.get('id') or ''),
+            'name': team.get('displayName') or 'Competitor',
+            'short': team.get('abbreviation') or team.get('shortName'),
+            'logo': team.get('logo') or (logos[0].get('href') if logos else None),
+            'color': team.get('color'), 'score': score, 'home_away': competitor.get('homeAway'),
+            'winner': competitor.get('winner') is True,
+        })
+    return teams
+
+
+def gamecast_official_page(links):
+    return next((link['href'] for link in links
+                 if str(link.get('href', '')).startswith('https://www.espn.com/')), None)
+
+
 @app.get('/api/live/games')
 @gamecast_plus_required
 def live_games_browser():
-    """Observed ESPN schedule and scores, including yesterday's finished games."""
-    from zoneinfo import ZoneInfo
-    from datetime import date as date_type
+    """Observed schedule and scores for the selected Eastern day."""
     sport = request.args.get('sport', 'NBA').upper()
-    if sport not in pick_results.LEAGUES:
-        return jsonify(error='Unsupported sport.'), 400
     day = request.args.get('day', 'today')
-    if day not in ('today', 'yesterday'):
-        return jsonify(error='Choose today or yesterday.'), 400
-    local = datetime.now(ZoneInfo('America/New_York')).date()
-    if day == 'yesterday':
-        local -= timedelta(days=1)
+    if sport not in GAMECAST_LEAGUES or day not in ('today', 'yesterday'):
+        return jsonify(error='Choose a supported sport and day.'), 400
     try:
-        league = pick_results.LEAGUES[sport][0]
-        events = pick_results.scoreboard(league, local.strftime('%Y%m%d'), int(datetime.now(timezone.utc).timestamp())//60)
         games = []
-        for event in events:
-            competition = (event.get('competitions') or [{}])[0]
-            competitors = competition.get('competitors') or []
-            teams = [{'name': c.get('team',{}).get('displayName','Unknown'), 'score':c.get('score'),
-                      'home_away':c.get('homeAway')} for c in competitors]
-            state = event.get('status',{}).get('type',{})
-            games.append({'id':str(event.get('id','')), 'name':event.get('name','Game'),
-                          'starts_at':event.get('date'), 'status':state.get('description','Scheduled'),
-                          'state':state.get('state','pre'), 'teams':teams,
-                          'official_recap':next((link.get('href') for link in event.get('links',[])
-                             if str(link.get('href','')).startswith('https://www.espn.com/')),None)})
-        return jsonify(sport=sport,day=day,games=games)
-    except (requests.RequestException,ValueError,KeyError,TypeError,AttributeError):
-        return jsonify(error='Live scoreboard provider is temporarily unavailable.'), 503
-
+        for event, competition in gamecast_schedule(sport, day):
+            teams = gamecast_teams(competition)
+            state = (competition.get('status') or event.get('status') or {}).get('type') or {}
+            games.append({
+                'id': str(competition['id']), 'name': ' vs '.join(t['name'] for t in teams)
+                if sport == 'UFC' else event.get('name', 'Game'), 'teams': teams,
+                'starts_at': competition.get('date') or event.get('date'),
+                'status': state.get('description', 'Scheduled'), 'state': state.get('state', 'pre'),
+                'official_recap': gamecast_official_page(event.get('links') or []),
+            })
+        return jsonify(sport=sport, day=day, games=games)
+    except (requests.RequestException, ValueError, KeyError, TypeError, AttributeError):
+        return jsonify(error='The scoreboard is temporarily unavailable.'), 503
 
 
 @app.get('/watch')
 @gamecast_plus_required
 def watch_page():
-    """Standalone GameCast page, independent of the dashboard's JavaScript."""
-    sport = request.args.get('sport', '').upper()
+    sport = request.args.get('sport', 'NFL').upper()
     event_id = request.args.get('event_id', '')
-    if sport not in pick_results.LEAGUES or not event_id.isdigit() or len(event_id) > 20:
+    day = request.args.get('day', 'today')
+    if sport not in GAMECAST_LEAGUES or day not in ('today', 'yesterday'):
         return jsonify(error='Invalid game selection.'), 400
-    from markupsafe import escape
-    sport_safe = escape(sport)
-    event_safe = escape(event_id)
-    return """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PikBot Watch</title><style>
-body{margin:0;background:#080c12;color:#f4f8ff;font-family:system-ui,Arial,sans-serif}main{max-width:1000px;margin:auto;padding:18px}a{color:#b9ff8c}.head{display:flex;align-items:center;justify-content:space-between;gap:10px}.screen{border:2px solid #9746ff;border-radius:20px;overflow:hidden;background:#111326;box-shadow:0 0 32px #8538ff44}.bar{padding:14px;background:#21123b;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}.field{position:relative;min-height:300px;overflow:hidden;background:repeating-linear-gradient(90deg,#176a45 0 9.7%,#e0f5e5 9.7% 10%,#257f50 10% 19.7%,#e0f5e5 19.7% 20%)}.field.basketball{background:repeating-linear-gradient(90deg,#a97543 0 9.7%,#eed5a5 9.7% 10%,#b9834b 10% 19.7%,#eed5a5 19.7% 20%)}.field.hockey{background:#e1edf4}.field.baseball{background:radial-gradient(circle at 50% 75%,#a77d53 0 12%,transparent 13%),repeating-linear-gradient(45deg,#276d44 0 14%,#328052 14% 28%)}.marker{position:absolute;top:45%;left:48%;font-size:45px;color:#ffef87;text-shadow:0 0 20px #fff;transition:all 1s}.status{padding:16px;background:#1d1432}.plays{padding:14px}.play{border-bottom:1px solid #3c3552;padding:12px 4px}.btn{border:1px solid #a65bff;border-radius:12px;background:#25143b;color:white;padding:12px 20px;font-size:16px}small{color:#c3b9d5}h1{font-size:24px} .brand{color:#d9adff;text-shadow:0 0 16px #a448ff}.tag{background:#b81943;padding:5px 10px;border-radius:7px;font-weight:800}.broadcast{display:flex;gap:8px;flex-wrap:wrap;padding:12px;background:#130c22}.broadcast button{background:#1d1431;color:#eee;border:1px solid #7535b1;border-radius:8px;padding:9px 12px}.broadcast button.active{background:#6d1bd3}.tabs{display:flex;gap:6px;padding:12px 0}.tabs button{flex:1;background:#201432;border:1px solid #7234af;color:white;border-radius:8px;padding:12px}.tabs button.active{background:#7225c8}.field{height:min(55vw,480px);min-height:260px}.field:before{content:'';position:absolute;inset:0;background:linear-gradient(180deg,#151325aa,transparent 35%,transparent 70%,#0a081755);pointer-events:none}.marker{font-size:26px}.head{padding:14px 0}.play{background:#171126;margin:5px 0;border-radius:8px}.screen{border-radius:16px}.status{font-weight:600}.field.basketball{background:linear-gradient(90deg,transparent 49.8%,#fbe9cd 49.8% 50.2%,transparent 50.2%),radial-gradient(circle at 50% 50%,transparent 0 13%,#fbe9cd 13.2% 13.7%,transparent 14%),linear-gradient(90deg,#b78349,#d8a56b 30%,#b78349 60%,#d5a067)}
-.field{perspective:900px;isolation:isolate}.court-lines{position:absolute;inset:7%;border:3px solid #fff9;border-radius:8px;pointer-events:none}.court-lines:before,.court-lines:after{content:'';position:absolute;top:24%;bottom:24%;width:14%;border:3px solid #fff9}.court-lines:before{left:0;border-left:0}.court-lines:after{right:0;border-right:0}.hoop{position:absolute;top:48%;width:14px;height:38px;border:3px solid #fff;border-radius:50%;box-shadow:0 0 12px #fff}.hoop.left{left:2%}.hoop.right{right:2%}.avatar{position:absolute;width:22px;height:44px;transform:translate(-50%,-50%);transition:left 2.5s ease,top 2.5s ease;filter:drop-shadow(2px 8px 3px #0009)}.avatar .head{position:absolute;top:0;left:6px;width:11px;height:11px;border-radius:50%;background:#a66a47;padding:0}.avatar .jersey{position:absolute;top:11px;left:3px;width:17px;height:20px;border-radius:5px 5px 3px 3px;background:var(--kit);border:1px solid #fff9;text-align:center;font-size:10px;font-weight:bold}.avatar .legs{position:absolute;top:31px;left:6px;width:12px;height:13px;border-left:4px solid #333;border-right:4px solid #333}.avatar .shadow{position:absolute;top:40px;left:0;width:24px;height:6px;background:#0005;border-radius:50%}.ball{position:absolute;width:12px;height:12px;border-radius:50%;background:radial-gradient(circle at 30% 30%,#ffc56d,#b75c18 65%);border:1px solid #54270e;transition:left 2.5s ease,top 2.5s ease;z-index:5}.field.view-sideline{transform:perspective(850px) rotateX(15deg) scale(.95)}.field.view-aerial{transform:perspective(850px) rotateX(0deg) scale(.97)}.field.view-all22{transform:scale(.88)}@media(prefers-reduced-motion:reduce){.avatar,.ball{transition:none}}.layout{display:grid;grid-template-columns:minmax(0,1fr) 265px;gap:14px}.side{background:#151020;border:1px solid #7934b4;border-radius:15px;padding:16px;align-self:start}.side h2{margin:0 0 14px;color:#e9c5ff}.side .side-score{padding:12px;border-bottom:1px solid #43304f}.stage-label{position:absolute;top:12px;right:12px;padding:7px 11px;border-radius:8px;background:#170e2bcf;border:1px solid #a65aff;color:#eee;font-size:12px;z-index:10}.stadium{position:absolute;inset:0;background:linear-gradient(180deg,#14121f 0%,#3d3342 8%,transparent 20%,transparent 80%,#17101c 100%);pointer-events:none;opacity:.55}.field.football{background:repeating-linear-gradient(90deg,#175637 0 9.6%,#f2f1df 9.6% 10%,#1d6a42 10% 19.6%,#f2f1df 19.6% 20%)}.field.football .court-lines{border:none}.field.football .court-lines:before,.field.football .court-lines:after{display:none}.field.football .hoop{display:none}.field.football .avatar{width:26px;height:48px}.field.football .avatar .jersey{width:21px;height:22px}.field.football .avatar .head{left:8px}.field.football .avatar .legs{top:33px}.field.football .ball{border-radius:60% 30%;width:17px;height:10px}.field:not(.basketball):not(.football) .hoop{display:none}.field:not(.basketball):not(.football) .court-lines{display:none}.screen{min-width:0}@media(max-width:750px){.layout{display:block}.side{margin-top:16px}.field{height:390px}.head{flex-wrap:wrap}}</style></head><body><main><div class="head"><h1 class="brand">◈ PikBot <span style="color:white">LIVECAST</span></h1><a href="/">← Back to PikBot</a></div><p id="title">Loading """ + str(sport_safe) + """ game…</p><div class="layout"><section class="screen"><div class="bar"><span class="tag">● LIVE</span><strong id="score">Connecting to game data…</strong><span id="clock">LIVE GAMECAST</span></div><div class="broadcast"><button class="active" type="button" data-view="Broadcast">▣ Broadcast</button><button type="button" data-view="Sideline">◫ Sideline</button><button type="button" data-view="Aerial">◇ Aerial</button><button type="button" data-view="All-22">▤ All-22</button></div><div id="field" class="field"><div class="stadium"></div><span class="stage-label">PikBot LIVECAST · SIMULATED</span><div class="court-lines"></div><div class="hoop left"></div><div class="hoop right"></div><div id="actors"></div><div id="game-ball" class="ball" hidden></div></div><div class="status" id="status">Loading play-by-play…</div></section><aside class="side"><h2>LIVE GAME CENTER</h2><div class="side-score" id="side-matchup">Loading teams…</div><div class="side-score" id="side-period">Waiting for game clock…</div><div class="side-score" id="side-event">Waiting for game events…</div><p style="font-size:12px;color:#bfb0d0">Illustrative simulation. Player movements are not actual tracking data.</p></aside></div><p><button id="refresh" class="btn" type="button">↻ Refresh GameCast</button></p><small>Illustrative animated players based on game updates, not actual player positions or television footage. Plays may be delayed. Pregame predictions remain available separately in PikBot.</small><div class="tabs"><button class="active" type="button">Game Stats &amp; Plays</button></div><h2>Play-by-play</h2><div id="plays" class="plays"></div></main><script>
-const sport=""" + json.dumps(sport) + """,eventId=""" + json.dumps(event_id) + """;
-document.getElementById('field').classList.add(['NBA','WNBA','NCAAB'].includes(sport)?'basketball':sport==='NHL'?'hockey':sport==='MLB'?'baseball':'football');
-// Stylized simulation: formations are illustrative, NOT tracked player positions.
-let actorTick=0;
-function renderActors(count,play){
- const field=document.getElementById('field'),host=document.getElementById('actors');
- if(!['NBA','WNBA','NCAAB','NFL','NCAAF'].includes(sport)){document.getElementById('game-ball').hidden=true;return;}
- if(!host.children.length){for(let i=0;i<10;i++){const el=document.createElement('div');el.className='avatar';el.style.setProperty('--kit',i<5?'#263c78':'#f0f0f0');el.innerHTML='<span class="shadow"></span><span class="head"></span><span class="jersey">'+(i+1)+'</span><span class="legs"></span>';host.append(el);}}
- actorTick=count;Array.from(host.children).forEach((el,i)=>{const side=i<5?0:1,idx=i%5;const x=(side?54:18)+(idx%3)*10+Math.sin(count*.7+i)*3;const y=22+Math.floor(idx/3)*35+(idx%3)*9+Math.cos(count*.4+i)*3;el.style.left=x+'%';el.style.top=y+'%';});
- const ball=document.getElementById('game-ball');ball.hidden=false;ball.style.left=(45+Math.sin(count*.8)*12)+'%';ball.style.top=(45+Math.cos(count*.7)*16)+'%';
-}
-async function update(){const status=document.getElementById('status');status.textContent='Refreshing verified game events…';try{
-const response=await fetch('/api/live/gamecast?'+new URLSearchParams({sport,event_id:eventId}),{cache:'no-store'});const data=await response.json();if(!response.ok)throw Error(data.error||'Game feed unavailable');
-const teams=data.teams||[];document.getElementById('title').textContent=teams.map(t=>t.name).join(' vs ')||sport+' GameCast';
-document.getElementById('score').textContent=teams.map(t=>t.name+' '+(t.score??'—')).join(' · ');
-document.getElementById('clock').textContent=[data.status,data.clock].filter(Boolean).join(' · ')||'Status pending';document.getElementById('side-matchup').textContent=teams.map(t=>t.name+' '+(t.score??'—')).join(' · ');document.getElementById('side-period').textContent=[data.status,data.clock].filter(Boolean).join(' · ');
-const plays=data.plays||[],play=plays[plays.length-1];status.textContent=play?.text||'Waiting for reported plays';document.getElementById('side-event').textContent=play?.text||'Awaiting next event';
-renderActors(plays.length,play);
-const list=document.getElementById('plays');list.replaceChildren();for(const p of plays.slice(-15).reverse()){const row=document.createElement('div');row.className='play';row.textContent=[p.period?'Period '+p.period:'',p.clock,p.text].filter(Boolean).join(' · ');list.append(row);}
-}catch(e){status.textContent='GameCast unavailable: '+e.message;}}
-document.querySelectorAll('[data-view]').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('[data-view]').forEach(b=>b.classList.remove('active'));button.classList.add('active');const field=document.getElementById('field');field.classList.remove('view-sideline','view-aerial','view-all22');if(button.dataset.view!=='Broadcast')field.classList.add('view-'+button.dataset.view.toLowerCase());}));document.getElementById('refresh').onclick=update;update();setInterval(()=>{if(!document.hidden)update()},15000);
-</script></body></html>"""
+    if event_id and (not event_id.isascii() or not event_id.isdecimal() or len(event_id) > 20):
+        # Older dashboard links carried IDs from the pregame offers provider.
+        from urllib.parse import urlencode
+        return redirect('/watch?' + urlencode({'sport': sport, 'day': day}))
+    return render_template('watch.html', sport=sport, sports=GAMECAST_SPORTS, event_id=event_id, day=day,
+                           owner=private_paid_test(account()))
+
 
 @app.get('/api/live/gamecast')
 @gamecast_plus_required
 def live_gamecast():
-    """Observed game events from ESPN summary; no video or inferred tracking coordinates."""
+    """Observed game facts and play-by-play from the scoreboard provider."""
     sport = request.args.get('sport', '').upper()
     event_id = request.args.get('event_id', '')
-    if sport not in pick_results.LEAGUES or not event_id.isdigit() or len(event_id) > 20:
+    day = request.args.get('day', 'today')
+    if (sport not in GAMECAST_LEAGUES or day not in ('today', 'yesterday')
+            or not event_id.isascii() or not event_id.isdecimal() or len(event_id) > 20):
         return jsonify(error='Invalid GameCast selection.'), 400
     try:
-        league = pick_results.LEAGUES[sport][0]
-        summary = pick_results.fetch(league, 'summary', event=event_id)
-        header = (summary.get('header', {}).get('competitions') or [{}])[0]
-        status = header.get('status', {})
-        competitors = header.get('competitors') or []
-        teams = [{'name': t.get('team', {}).get('displayName', 'Team'),
-                  'score': t.get('score'), 'home_away': t.get('homeAway')}
-                 for t in competitors]
+        if sport == 'UFC':
+            # The UFC scoreboard groups individual fights inside event cards.
+            fight = next(((event, comp) for event, comp in gamecast_schedule(sport, day)
+                          if str(comp['id']) == event_id), None)
+            if not fight:
+                return jsonify(error='Fight details are unavailable for this date.'), 404
+            event, competition = fight
+            summary = {}
+            links = event.get('links') or []
+        else:
+            summary = pick_results.fetch(GAMECAST_LEAGUES[sport], 'summary', event=event_id)
+            header = summary.get('header') or {}
+            competition = next((comp for comp in header.get('competitions') or []
+                                if str(comp.get('id')) == event_id), None)
+            if not competition:
+                return jsonify(error='Game details are unavailable.'), 404
+            links = header.get('links') or []
+        status = competition.get('status') or {}
+        state = status.get('type') or {}
+        teams = gamecast_teams(competition)
         raw = summary.get('plays') or []
         if isinstance(raw, dict):
             raw = raw.get('items') or raw.get('plays') or []
+        drives = summary.get('drives') or {}
+        if not raw:
+            all_drives = (drives.get('previous') or []) + [drives.get('current') or {}]
+            raw = [play for drive in all_drives for play in drive.get('plays') or []]
         plays = []
-        for play in raw[-80:]:
+        seen = set()
+        for play in reversed(raw):
             if not isinstance(play, dict):
                 continue
+            play_id = str(play.get('id') or '')
+            text_value = play.get('text') or play.get('shortText')
+            if not text_value or (play_id and play_id in seen):
+                continue
+            seen.add(play_id)
             clock = play.get('clock') or {}
             period = play.get('period') or {}
-            text_value = play.get('text') or play.get('shortText') or ''
-            if not text_value:
-                continue
-            # Coordinates are optional provider facts, never estimated from play text.
-            coord = play.get('coordinate') or play.get('coordinates') or {}
-            point = None
-            if isinstance(coord, dict):
-                try:
-                    x, y = float(coord.get('x')), float(coord.get('y'))
-                    if 0 <= x <= 100 and 0 <= y <= 100:
-                        point = {'x': x, 'y': y}
-                except (TypeError, ValueError):
-                    pass
-            plays.append({'coordinate': point, 'id': str(play.get('id', ''))[:80],
-                          'text': str(text_value)[:450],
-                          'clock': clock.get('displayValue') if isinstance(clock, dict) else '',
+            plays.append({'id': play_id, 'text': str(text_value)[:450],
+                          'clock': clock.get('displayValue') if isinstance(clock, dict) else clock,
                           'period': period.get('number') if isinstance(period, dict) else period,
                           'scoring': bool(play.get('scoringPlay'))})
-        return jsonify(sport=sport, event_id=event_id, teams=teams,
-                       status=status.get('type', {}).get('description', 'Unknown') if isinstance(status.get('type'), dict) else status.get('displayClock', 'Unknown'),
-                       clock=status.get('displayClock'), period=status.get('period'),
-                       plays=plays[::-1], observed_at=datetime.now(timezone.utc).isoformat(),
-                       note='Provider-reported updates; timing and coverage vary. Coordinates shown only when explicitly supplied by provider.')
+            if len(plays) == 80:
+                break
+
+        stats = {}
+        for entry in (summary.get('boxscore') or {}).get('teams') or []:
+            team_id = str((entry.get('team') or {}).get('id') or '')
+            for item in entry.get('statistics') or []:
+                key = item.get('name')
+                if key and item.get('displayValue') is not None:
+                    row = stats.setdefault(key, {'label': item.get('label') or key, 'values': {}})
+                    row['values'][team_id] = item['displayValue']
+        stat_priority = ('totalYards', 'netPassingYards', 'rushingYards', 'firstDowns', 'possessionTime')
+        for key in reversed(stat_priority):
+            if key in stats:
+                stats = {key: stats[key], **stats}
+        leaders = []
+        for entry in summary.get('leaders') or []:
+            for category in entry.get('leaders') or []:
+                player = next(iter(category.get('leaders') or []), {})
+                athlete = player.get('athlete') or {}
+                if athlete.get('displayName') and player.get('displayValue'):
+                    headshot = athlete.get('headshot')
+                    leaders.append({'name': athlete['displayName'], 'stat': category.get('displayName'),
+                                    'value': player['displayValue'],
+                                    'photo': headshot.get('href') if isinstance(headshot, dict) else headshot})
+        venue = (summary.get('gameInfo') or {}).get('venue') or {}
+        broadcasts = [entry.get('media', {}).get('shortName')
+                      for entry in competition.get('broadcasts') or []]
+        return jsonify(
+            sport=sport, event_id=event_id, teams=teams, state=state.get('state'),
+            status=state.get('description', 'Unknown'), detail=state.get('shortDetail'),
+            clock=status.get('displayClock'), period=status.get('period'),
+            venue=venue.get('fullName'), broadcasts=[name for name in broadcasts if name],
+            official_page=gamecast_official_page(links), drive=(drives.get('current') or {}).get('description'),
+            team_stats=list(stats.values()), leaders=leaders, plays=plays,
+            observed_at=datetime.now(timezone.utc).isoformat(),
+        )
     except (requests.RequestException, ValueError, KeyError, TypeError, AttributeError, IndexError):
-        return jsonify(error='GameCast provider is temporarily unavailable.'), 503
+        return jsonify(error='The GameCast feed is temporarily unavailable.'), 503
 
 
 @app.get('/api/live/game-stats')
