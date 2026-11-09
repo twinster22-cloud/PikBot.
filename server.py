@@ -703,9 +703,21 @@ def previous_pick_results():
     page = request.args.get('page', 0, type=int)
     if not 0 <= page <= (2**63 - 1) // pick_results.PAGE_SIZE:
         return jsonify(error='Invalid results page.'), 400
+    day = request.args.get('day', 'recent')
+    if day not in ('recent', 'today', 'yesterday'):
+        return jsonify(error='Invalid results day.'), 400
+
     now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(days=2)
-    first_day = cutoff.astimezone(pick_results.EASTERN).date()
+    eastern = pick_results.EASTERN
+    cutoff, end = now - timedelta(days=2), now
+    first_day = cutoff.astimezone(eastern).date()
+    if day != 'recent':
+        today_eastern = now.astimezone(eastern).date()
+        midnight = datetime.combine(today_eastern, datetime.min.time(), tzinfo=eastern)
+        if day == 'yesterday':
+            cutoff, end = midnight - timedelta(days=1), midnight
+        else:
+            cutoff = midnight
     with database() as conn:
         rows = conn.execute(f"""WITH boards AS (
                 SELECT pick_day, payload FROM pikbot_trial_daily_board WHERE pick_day >= %s
@@ -719,11 +731,11 @@ def previous_pick_results():
                     WITH ORDINALITY AS saved(pick, pick_order)
             ), unique_picks AS (
                 SELECT DISTINCT ON (identity) pick, identity, starts_at
-                FROM candidates WHERE starts_at BETWEEN %s AND %s
+                FROM candidates WHERE starts_at >= %s AND starts_at < %s
                 ORDER BY identity, (pick ? 'p_raw') DESC, pick_day, pick_order, pick
             )
             SELECT pick FROM unique_picks ORDER BY starts_at DESC, identity
-            LIMIT %s OFFSET %s""", (first_day, first_day, cutoff, now,
+            LIMIT %s OFFSET %s""", (first_day, first_day, cutoff, end,
                                     pick_results.PAGE_SIZE + 1, page * pick_results.PAGE_SIZE)).fetchall()
     picks = [row['pick'] for row in rows[:pick_results.PAGE_SIZE]]
     return jsonify(picks=pick_results.grade(picks, now),
