@@ -438,6 +438,8 @@ function identify(athlete, person) {
   const key = person ? [person.id,person.short,person.name,person.number,person.position].join('|') : '';
   if (key === athlete.identity) return;
   athlete.identity = key;
+  athlete.number = person?.number;
+  paintPhotoPlayer(athlete);
   let seed = athlete.index + 1;
   for (const ch of String(person?.id || '')) seed = (Math.imul(seed,31)+ch.charCodeAt(0)) >>> 0;
   const rng = random(seed);
@@ -577,6 +579,82 @@ function makeBall(scene) {
   return model(scene,sphere,new MeshStandardMaterial({map,roughness:.79}),[.15,.15,.15],[0,.18,0]);
 }
 
+function createPhotoShadow() {
+  const image = canvas(64,64);
+  const ink = image.getContext('2d');
+  const gradient = ink.createRadialGradient(32,32,2,32,32,31);
+  gradient.addColorStop(0,'#130e1f83');
+  gradient.addColorStop(1,'#130e1f00');
+  ink.fillStyle = gradient;
+  ink.fillRect(0,0,64,64);
+  return new MeshBasicMaterial({map:texture(image),transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1});
+}
+
+function setPhotoPlayer(athlete, atlas, shadowMaterial) {
+  const playerArt = canvas(256,448), mirroredArt = canvas(256,448);
+  const front = texture(playerArt), reverse = texture(mirroredArt);
+  const material = new SpriteMaterial({map:front,transparent:true,alphaTest:.23,depthWrite:false,toneMapped:false});
+  const portrait = new Sprite(material);
+  portrait.center.set(.5,.025);
+  portrait.scale.set(1.35,2.35,1);
+  position(portrait,0,.035,0);
+  athlete.root.add(portrait);
+  const shadow = model(athlete.root,new PlaneGeometry(1.4,1.0),shadowMaterial,[1,1,1],[0,.023,0],false);
+  shadow.rotation.x = -PI/2;
+  athlete.photo = {portrait,material,front,reverse,playerArt,mirroredArt,atlas,shadow};
+  athlete.rig.visible = false;
+  paintPhotoPlayer(athlete);
+}
+function paintPhotoPlayer(athlete) {
+  if (!athlete.photo) return;
+  const {playerArt,mirroredArt,atlas,front,reverse} = athlete.photo;
+  const variant = (athlete.index + Math.floor(athlete.index/5)*2)%5;
+  const tileWidth = atlas.width/5;
+  const [chestX,chestY] = [[65,84],[73,66],[48,99],[77,81],[79,74]][variant];
+  for (const [image,flip] of [[playerArt,false],[mirroredArt,true]]) {
+    const ctx = image.getContext('2d');
+    ctx.clearRect(0,0,image.width,image.height);
+    ctx.save();
+    if (flip) {
+      ctx.translate(image.width,0);
+      ctx.scale(-1,1);
+    }
+    ctx.drawImage(atlas,variant*tileWidth,0,tileWidth,atlas.height,0,0,image.width,image.height);
+    ctx.restore();
+    if (athlete.number != null) {
+      const x = (flip ? 128-chestX : chestX)*2;
+      ctx.font = '900 31px system-ui';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = '#221731';
+      ctx.fillStyle = '#fff9f1';
+      ctx.strokeText(String(athlete.number),x,chestY*2);
+      ctx.fillText(String(athlete.number),x,chestY*2);
+    }
+  }
+  front.needsUpdate = true;
+  reverse.needsUpdate = true;
+}
+function animatePhotoPlayer(athlete, t, alpha, reduced) {
+  const {root,target,photo,index,pose,rig} = athlete;
+  const distance = root.position.distanceTo(target);
+  const moving = !reduced && distance > .12;
+  athlete.distance += moving ? distance*alpha : 0;
+  root.position.lerp(target,reduced ? 1 : alpha);
+  const gait = Math.sin(athlete.distance*7+index);
+  const idle = reduced ? 0 : Math.sin(t*2+index)*.009;
+  const jump = reduced ? 0 : athlete.jump/24;
+  const scale = rig.scale.y || 1;
+  const flip = athlete.facing < 0;
+  const map = flip ? photo.reverse : photo.front;
+  if (photo.material.map !== map) photo.material.map = map;
+  photo.portrait.position.y = .035 + jump + (moving ? Math.abs(gait)*.055 : idle);
+  photo.portrait.scale.set(1.36*rig.scale.x,2.38*scale*(pose==='shot' ? 1.07 : 1),1);
+  photo.material.rotation = moving ? (flip ? 1 : -1) * (.07 + gait*.035) : 0;
+  photo.shadow.scale.setScalar(1-jump*.27);
+  athlete.label.visible = athlete.actor && Boolean(athlete.identity);
+}
 export function mountCourt(container, stage, teams, reducedMotion, onReady) {
   const colors = kitColors(teams);
   const renderer = new WebGLRenderer({antialias:true,alpha:false,powerPreference:'low-power'});
@@ -616,6 +694,7 @@ export function mountCourt(container, stage, teams, reducedMotion, onReady) {
       athlete.beard.visible = false;
     }
   });
+  const photoShadow = createPhotoShadow();
   const ball = makeBall(scene);
   const ballTarget = new Vector3(0,.18,0);
   ball.visible = false;
@@ -652,7 +731,10 @@ export function mountCourt(container, stage, teams, reducedMotion, onReady) {
     const reduced = reducedMotion.matches;
     const pace = 1 - Math.exp(-Math.max(.001,dt)*14);
     const t = time/1000;
-    for (const player of players) animateAthlete(player,playActive ? t : 0,pace,dt,reduced,ball.visible ? ball.position : null);
+    for (const player of players) {
+      if (player.photo) animatePhotoPlayer(player,playActive ? t : 0,pace,reduced);
+      else animateAthlete(player,playActive ? t : 0,pace,dt,reduced,ball.visible ? ball.position : null);
+    }
     ball.position.lerp(ballTarget,reduced ? 1 : Math.min(1,pace*1.7));
     if (!reduced && playActive) {ball.rotation.x += dt*5; ball.rotation.z += dt*2;}
     const mode = stage.dataset.view || 'broadcast';
@@ -685,6 +767,11 @@ export function mountCourt(container, stage, teams, reducedMotion, onReady) {
       player.target.set(courtX(point.x),0,courtZ(point.y));
       if (!ready) player.root.position.copy(player.target);
       Object.assign(player,{facing,pose,jump});
+    },
+    photoKit(side,atlas) {
+      for (const athlete of players.slice(side*5,side*5+5)) {
+        if (!athlete.photo) setPhotoPlayer(athlete,atlas,photoShadow);
+      }
     },
     lineup(index,person) {identify(players[index],person);},
     handler(index) {players.forEach(player=>{player.actor = index === player.index;});},

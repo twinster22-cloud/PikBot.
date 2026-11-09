@@ -287,6 +287,7 @@ let highlightedTeam;
 let basketLogo;
 let court3D;
 let court3DLoading = false;
+const photoKits = [];
 let liveMotion = false;
 let currentActor = -1;
 let physicalBall;
@@ -295,13 +296,14 @@ const sceneNode = $('scene');
 function startCourt3D(teams) {
   if (court3DLoading) return;
   court3DLoading = true;
-  import('/livecast-3d.js?v=player-textures').then(({mountCourt}) => {
+  import('/livecast-3d.js?v=photo-players').then(({mountCourt}) => {
     court3D = mountCourt($('arena-3d'), sceneNode, teams, motionPreference,
       enabled => $('dimension').hidden = !enabled);
     for (const [index, player] of courtPlayers.entries()) {
       court3D.player(index, player.position, player.facing, player.pose, player.jump);
       court3D.lineup(index, player.person);
     }
+    for (const [side,kit] of photoKits.entries()) court3D.photoKit(side,kit);
     if (physicalBall) court3D.ball(...physicalBall);
     court3D.handler(currentActor);
     court3D.motion(liveMotion);
@@ -344,6 +346,12 @@ function loadRosterArt(teams) {
       }
       context.putImageData(pixels, 0, 0);
       const kit = canvas.toDataURL('image/webp');
+      const teamArt = document.createElement('canvas');
+      teamArt.width = canvas.width;
+      teamArt.height = canvas.height;
+      teamArt.getContext('2d').drawImage(canvas,0,0);
+      photoKits[side] = teamArt;
+      court3D?.photoKit(side,teamArt);
       for (const image of document.querySelectorAll('[data-roster-kit="' + side + '"]')) image.setAttribute('href', kit);
     }
     rosterArtReady = true;
@@ -546,9 +554,9 @@ function playBasketballSequence() {
       const route = Math.min(1, Math.max(0,(move-delay)/(1-delay)));
       const point = interpolate(starts[i],targets[i],route*route*(3-2*route));
       if (i !== attacking) point.y += Math.sin(route*Math.PI) * (offense ? 13 : -9) * (i%2 ? 1 : -1);
-      const stride = move < 1 && Math.floor(elapsed / 155 + i) % 2;
+      const inMotion = !reduced && route < 1;
       drawBasketballPose(player, point, offense ? direction : -direction,
-        release && i === attacking ? 'shot' : stride ? 'run' : 'ready', i === attacking ? jump : 0);
+        release && i === attacking ? 'shot' : inMotion ? 'run' : 'ready', i === attacking ? jump : 0);
     });
     const host = $('basketball-players');
     for (const player of [...courtPlayers].sort((a, b) => a.position.y - b.position.y)) host.append(player.el);
