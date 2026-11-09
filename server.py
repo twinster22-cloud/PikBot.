@@ -37,7 +37,7 @@ def public_asset(asset):
     if asset not in {
         'sw.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png',
         'splash.png', 'icon.svg', 'owner.webmanifest', 'owner-icon-192.png', 'owner-icon-512.png',
-        'livecast-hoopers.webp', 'livecast-roster.webp', 'livecast-3d.js',
+        'livecast-hoopers.webp', 'livecast-roster.webp', 'livecast-3d.js', 'livecast-arena.webp',
     }:
         return jsonify(error='Not found'), 404
     return send_from_directory(ROOT/'static', asset)
@@ -478,6 +478,11 @@ def basketball_lineups(boxscore, plays, pregame):
     return roster, starters if pregame else on_court, history
 
 
+@lru_cache(maxsize=128)
+def gamecast_summary(league, event_id, _window):
+    return pick_results.fetch(league, 'summary', event=event_id), datetime.now(timezone.utc).isoformat()
+
+
 @app.get('/api/live/gamecast')
 @gamecast_plus_required
 def live_gamecast():
@@ -489,6 +494,8 @@ def live_gamecast():
             or not event_id.isascii() or not event_id.isdecimal() or len(event_id) > 20):
         return jsonify(error='Invalid GameCast selection.'), 400
     try:
+        checked_at = datetime.now(timezone.utc)
+        observed_at = checked_at.isoformat()
         if sport == 'UFC':
             # The UFC scoreboard groups individual fights inside event cards.
             fight = next(((event, comp) for event, comp in gamecast_schedule(sport, day)
@@ -499,7 +506,7 @@ def live_gamecast():
             summary = {}
             links = event.get('links') or []
         else:
-            summary = pick_results.fetch(GAMECAST_LEAGUES[sport], 'summary', event=event_id)
+            summary, observed_at = gamecast_summary(GAMECAST_LEAGUES[sport], event_id, int(checked_at.timestamp()) // 5)
             header = summary.get('header') or {}
             competition = next((comp for comp in header.get('competitions') or []
                                 if str(comp.get('id')) == event_id), None)
@@ -542,7 +549,9 @@ def live_gamecast():
                           'scoring': bool(play.get('scoringPlay')),
                           'shot': bool(play.get('shootingPlay')),
                           'team': str((play.get('team') or {}).get('id') or ''),
-                          'court': [x, y] if court else None})
+                          'court': [x, y] if court else None,
+                          'reported_at': play.get('wallclock'),
+                          'kind': (play.get('type') or {}).get('text')})
             if basketball:
                 participants = play.get('participants') or []
                 actor = (participants[0].get('athlete') or {}).get('id') if participants else None
@@ -582,7 +591,7 @@ def live_gamecast():
             venue=venue.get('fullName'), broadcasts=[name for name in broadcasts if name],
             official_page=gamecast_official_page(links), drive=(drives.get('current') or {}).get('description'),
             team_stats=list(stats.values()), leaders=leaders, plays=plays, roster=roster, lineups=lineups,
-            observed_at=datetime.now(timezone.utc).isoformat(),
+            observed_at=observed_at,
         )
     except (requests.RequestException, ValueError, KeyError, TypeError, AttributeError, IndexError):
         return jsonify(error='The GameCast feed is temporarily unavailable.'), 503
