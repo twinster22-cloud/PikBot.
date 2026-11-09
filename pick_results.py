@@ -71,7 +71,7 @@ def game_stats(sport, matchup, starts_at, now):
     league, _ = LEAGUES[sport]
     expected = dict(zip(('away', 'home'), map(name_key, sides)))
     matches = []
-    window = bucket(30)
+    window = bucket(1)
     for event in scoreboard(league, start.astimezone(EASTERN).strftime('%Y%m%d'), window):
         games = event.get('competitions', [])
         kickoff = timestamp(event.get('date'))

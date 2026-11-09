@@ -726,7 +726,9 @@ def previous_pick_results():
             LIMIT %s OFFSET %s""", (first_day, first_day, cutoff, now,
                                     pick_results.PAGE_SIZE + 1, page * pick_results.PAGE_SIZE)).fetchall()
     picks = [row['pick'] for row in rows[:pick_results.PAGE_SIZE]]
-    return jsonify(picks=pick_results.grade(picks, now), has_more=len(rows) > pick_results.PAGE_SIZE)
+    return jsonify(picks=pick_results.grade(picks, now),
+                   has_more=len(rows) > pick_results.PAGE_SIZE,
+                   checked_at=now.isoformat())
 
 
 def trial_public_board(board):
