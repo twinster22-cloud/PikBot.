@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PikBot LiveCast</title>
+{% if sport in ('NBA', 'COLLEGE BASKETBALL') %}<link rel="preload" href="/livecast-hoopers.webp" as="image">{% endif %}
 <style>
 :root{color-scheme:dark;--ink:#f6f0ff;--muted:#c1b3d1;--line:#463356;--panel:#0c0a17;--violet:#a746ff}
 *{box-sizing:border-box}
@@ -33,6 +34,14 @@ main{min-width:0}
 .scene[data-view=aerial] .arena{transform:scale(.9)}
 .scene[data-view=wide] .arena{transform:rotateX(26deg) scale(.85)}
 .surface{display:none}.scene[data-surface=football] .football,.scene[data-surface=court] .court,.scene[data-surface=hockey] .hockey,.scene[data-surface=baseball] .baseball,.scene[data-surface=fight] .fight{display:block}
+.scene[data-surface=court]{background:radial-gradient(ellipse at 50% 20%,#847392 0,#292131 38%,#07070e 84%)}
+.scene[data-surface=court] .arena{inset:12% 1% 15%;width:98%;height:73%;transform:rotateX(22deg) scale(1.05)}
+.scene[data-surface=court][data-view=sideline] .arena{transform:rotateX(41deg) rotateZ(-10deg) scale(1.07)}
+.scene[data-surface=court][data-view=aerial] .arena{transform:scale(.92)}
+.scene[data-surface=court][data-view=wide] .arena{transform:rotateX(12deg) scale(.88)}
+.scene[data-surface=court] .arena{overflow:visible}
+.hooper{filter:drop-shadow(3px 4px 2px #19111080)}
+.stage:has(.scene[data-surface=court]){aspect-ratio:1.92}
 .formation{display:none;filter:drop-shadow(2px 5px 2px #000c)}.scene[data-surface=football][data-playing=true] .formation{display:block}.away{fill:var(--away,#a82556)}.home{fill:var(--home,#422a9f)}
 .stage-top{position:absolute;inset:12px 12px auto;display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
 .badge,.stamp{padding:6px 10px;border-radius:7px;background:#130e1de8;font-size:.8rem;font-weight:800}.badge[data-live=true]{background:#ce163b;box-shadow:0 0 15px #d622565e}.stamp{border:1px solid #b670ee;letter-spacing:.03em}.stamp i{color:#dc9eff}
@@ -49,7 +58,7 @@ h1{font-size:1rem;margin:0 0 9px}h2{font-size:1rem;margin:0 0 9px}.stat{display:
 .leader,.play,.trend{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #2d2339}.leader img{width:43px;height:34px;object-fit:contain}.leader small{margin-left:auto;text-align:right;color:#e1baff}.play strong{color:#d7a8ff;min-width:75px}.play[data-score=true]{color:#9df4bc}
 .ticker{margin-top:10px;padding:10px 14px;border:1px solid #ad60e7;border-radius:12px;background:linear-gradient(110deg,#270b46,#0b0816 75%);box-shadow:inset 0 0 14px #7a18c646}.ticker b{color:#e4b8ff}
 @media(max-width:850px){.shell{grid-template-columns:1fr;gap:7px}.sidebar{display:flex;align-items:center;gap:8px}.brand{display:flex;padding:7px 9px;gap:6px}.brand img{width:30px;height:30px}.sidebar nav{display:flex;gap:5px;overflow:auto}.sidebar nav a{white-space:nowrap;border:1px solid transparent;border-radius:8px;padding:7px}.sidebar nav span{display:none}}
-@media(max-width:510px){.shell{padding:6px 7px 14px}.stage{min-height:235px}.angles{right:7px;top:43px}.angles button{padding:.26rem .42rem;font-size:.7rem}.stage-top{inset:7px 7px auto}.score-team,.clock{padding:7px;gap:5px}.clock{font-size:.7rem}.score-team img{width:22px;height:22px}.overview{grid-template-columns:1fr}.controls #match{order:2;flex:1 0 100%}}
+@media(max-width:510px){.leagues{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}.leagues a{padding:.46rem .18rem;font-size:.78rem}.stage:has(.scene[data-surface=court]){min-height:255px}.stage:has(.scene[data-surface=court]) .angles{top:auto;bottom:43px;right:6px;left:6px;display:flex;justify-content:center}.stage:has(.scene[data-surface=court]) .angles button{flex:1;text-align:center}.scene[data-surface=court] .arena{inset:9% 1% 24%;height:67%}.shell{padding:6px 7px 14px}.stage{min-height:235px}.angles{right:7px;top:43px}.angles button{padding:.26rem .42rem;font-size:.7rem}.stage-top{inset:7px 7px auto}.score-team,.clock{padding:7px;gap:5px}.clock{font-size:.7rem}.score-team img{width:22px;height:22px}.overview{grid-template-columns:1fr}.controls #match{order:2;flex:1 0 100%}}
 @media(prefers-reduced-motion:reduce){.arena{transition:none}}
 </style>
 </head>
@@ -76,11 +85,22 @@ h1{font-size:1rem;margin:0 0 9px}h2{font-size:1rem;margin:0 0 9px}.stat{display:
 <button id="refresh" type="button">↻ Refresh</button>
 </div>
 <h1 id="match-title">{{ sports[sport] }} Live Games</h1>
-<section class="stage" aria-label="GameCast scoreboard and illustrated arena">
+<section class="stage" aria-label="GameCast scoreboard and animated arena">
 <div class="scene" id="scene" data-view="broadcast" data-surface="football" aria-hidden="true">
 <div class="crowd"></div>
 <svg class="arena" viewBox="0 0 800 380" xmlns="http://www.w3.org/2000/svg">
 <defs>
+<linearGradient id="maple" x2="0" y2="1"><stop stop-color="#d8a26a"/><stop offset=".5" stop-color="#f7d397"/><stop offset="1" stop-color="#bd864e"/></linearGradient>
+<linearGradient id="court-edge" x2="0" y2="1"><stop stop-color="#2c2a35"/><stop offset="1" stop-color="#070810"/></linearGradient>
+<radialGradient id="basketball"><stop stop-color="#ffc47a"/><stop offset=".6" stop-color="#f77828"/><stop offset="1" stop-color="#8e2d0d"/></radialGradient>
+<pattern id="hardwood" width="127" height="12" patternUnits="userSpaceOnUse"><path d="M0 0h127M32 0v6m63 0v6M0 6h127" stroke="#542d16" stroke-opacity=".18"/><path d="M0 4h127M0 9h127" stroke="#fff4cb" stroke-opacity=".14"/></pattern>
+{% if sport in ('NBA', 'COLLEGE BASKETBALL') %}
+{% for team in ('dark', 'light') %}
+{% for pose in ('ready', 'run', 'shot') %}
+<symbol id="hooper-{{ team }}-{{ pose }}" viewBox="0 0 128 224" overflow="hidden"><image href="/livecast-hoopers.webp" x="{{ -128 * loop.index0 }}" y="{{ 0 if team == 'dark' else -224 }}" width="384" height="448"/></symbol>
+{% endfor %}
+{% endfor %}
+{% endif %}
 <linearGradient id="grass" x2="0" y2="1"><stop stop-color="#3c783f"/><stop offset="1" stop-color="#133e2c"/></linearGradient>
 <pattern id="yards" width="66" height="306" patternUnits="userSpaceOnUse"><path d="M1 0V306M1 118h8m-8 69h8" stroke="#f9fff4" stroke-opacity=".7" stroke-width="2"/></pattern>
 <g id="player"><ellipse cy="10" rx="10" ry="5" fill="#000" opacity=".5"/><path d="m-6 2-3 10m15-10 3 10" stroke="#e8e8f5" stroke-width="5"/><rect x="-10" y="-10" width="20" height="15" rx="5" stroke="#fff" stroke-opacity=".45"/><circle cy="-12" r="5" stroke="#fff" stroke-width="1.5"/></g>
@@ -97,7 +117,19 @@ h1{font-size:1rem;margin:0 0 9px}h2{font-size:1rem;margin:0 0 9px}.stat{display:
 <g class="away"><use href="#player" x="344" y="68"/><use href="#player" x="369" y="110"/><use href="#player" x="369" y="143"/><use href="#player" x="369" y="176"/><use href="#player" x="369" y="209"/><use href="#player" x="369" y="242"/><use href="#player" x="344" y="289"/><use href="#player" x="334" y="177"/><use href="#player" x="302" y="208"/><use href="#player" x="315" y="110"/><use href="#player" x="309" y="263"/></g>
 <g class="home"><use href="#player" x="444" y="68"/><use href="#player" x="411" y="113"/><use href="#player" x="411" y="148"/><use href="#player" x="411" y="182"/><use href="#player" x="411" y="217"/><use href="#player" x="411" y="250"/><use href="#player" x="444" y="289"/><use href="#player" x="450" y="165"/><use href="#player" x="450" y="217"/><use href="#player" x="512" y="126"/><use href="#player" x="503" y="250"/></g>
 </g></g>
-<g class="surface court"><rect x="35" y="28" width="730" height="324" rx="10" fill="#b47236" stroke="#f9e8c3" stroke-width="4"/><path d="M400 28v324M35 120h150v140H35m730-140H615v140h150M35 50C340 50 340 330 35 330m730-280C460 50 460 330 765 330" fill="none" stroke="#fff0d5" stroke-width="4"/><circle cx="400" cy="190" r="53" fill="none" stroke="#fff0d5" stroke-width="4"/></g>
+<g class="surface court">
+<rect x="15" y="18" width="770" height="344" rx="10" fill="url(#court-edge)" stroke="#755576" stroke-width="2"/>
+<rect x="35" y="28" width="730" height="324" rx="2" fill="url(#maple)"/>
+<rect x="35" y="28" width="730" height="324" fill="url(#hardwood)"/>
+<path class="home" d="M35 120h148v140H35M765 120H617v140h148" opacity=".88"/>
+<path d="M35 28h730v324H35ZM400 28v324M35 120h148v140H35m730-140H617v140h148M35 48h42a156 156 0 0 1 0 284H35m730-284h-42a156 156 0 0 0 0 284h42" fill="none" stroke="#fff6e1" stroke-width="3"/>
+<circle cx="400" cy="190" r="45" fill="none" stroke="#fff6e1" stroke-width="3"/>
+<circle cx="183" cy="190" r="39" fill="none" stroke="#fff6e1" stroke-width="2"/><circle cx="617" cy="190" r="39" fill="none" stroke="#fff6e1" stroke-width="2"/>
+<image id="court-logo" x="368" y="158" width="64" height="64" opacity=".85" hidden/>
+<path d="M43 169v42m714-42v42" stroke="#e8effc" stroke-width="5"/><circle cx="56" cy="190" r="10" fill="none" stroke="#ed4b30" stroke-width="3"/><circle cx="744" cy="190" r="10" fill="none" stroke="#ed4b30" stroke-width="3"/>
+<g id="basketball-players"></g>
+<g id="live-ball" hidden><circle r="8" fill="url(#basketball)" stroke="#602d12" stroke-width="1.4"/><path d="M-7-3q7 6 14 6M-2-7q4 6 0 14" fill="none" stroke="#602d12" stroke-width="1"/></g>
+</g>
 <g class="surface hockey"><rect x="22" y="28" width="756" height="324" rx="88" fill="#cfecfa" stroke="#fff" stroke-width="5"/><path d="M400 28v324" stroke="#c53351" stroke-width="7"/><path d="M280 28v324m240-324v324" stroke="#254baf" stroke-width="7"/><circle cx="400" cy="190" r="50" fill="none" stroke="#284ca1" stroke-width="4"/></g>
 <g class="surface baseball"><path d="M400 363 135 122Q400-130 665 122Z" fill="#296644" stroke="#e9eddc" stroke-width="3"/><path d="m400 340-122-117 122-118 122 118z" fill="#b36c42"/><path d="m400 307-88-84 88-84 88 84z" fill="#346f49"/><circle cx="400" cy="222" r="15" fill="#b36c42"/></g>
 <g class="surface fight"><path d="m270 27 260 0 125 92v142l-125 92H270l-125-92V119z" fill="#777381" stroke="#211d30" stroke-width="14"/><path d="m282 49 236 0 114 81v120l-114 81H282l-114-81V130z" fill="none" stroke="#eae5ee" stroke-width="3"/><circle cx="400" cy="190" r="52" fill="none" stroke="#eae5ee" stroke-width="3"/></g>
@@ -124,7 +156,7 @@ h1{font-size:1rem;margin:0 0 9px}h2{font-size:1rem;margin:0 0 9px}.stat{display:
 <div class="details" id="trends" hidden><h2>Scoring Plays</h2><div id="scoring-plays"></div></div>
 </section>
 <div class="ticker"><b>◈ Game Update</b> <span id="ticker">Select a matchup to follow the game.</span></div>
-<p class="feed-note">Illustrated arena and camera angles. Scores, game events and statistics come from the scoreboard feed and may be delayed. <a id="official" hidden target="_blank" rel="noopener noreferrer">Official game page ↗</a></p>
+<p class="feed-note">LiveCast reconstructs reported plays with animated players. Player movement and camera angles are simulated. Scoreboard updates may be delayed. <a id="official" hidden target="_blank" rel="noopener noreferrer">Official game page ↗</a></p>
 </main>
 </div>
 <script>
@@ -137,6 +169,7 @@ const requested = ['away', 'home'].map(side => normalize(link.get(side)));
 const hasMatchupLink = requested.every(Boolean);
 const $ = id => document.getElementById(id);
 const football = ['NFL', 'COLLEGE FOOTBALL'].includes(sport);
+const basketball = ['NBA', 'COLLEGE BASKETBALL'].includes(sport);
 $('scene').dataset.surface = football ? 'football' : ({MLB:'baseball', NHL:'hockey', UFC:'fight'}[sport] || 'court');
 if (football) $('wide-angle').textContent = '▤ All-22';
 function gameURL(nextDay, id) {
@@ -190,6 +223,135 @@ async function api(path, query) {
   if (!response.ok) throw Error(data.error || 'The feed is unavailable.');
   return data;
 }
+const courtPlayers = [];
+const motionPreference = matchMedia('(prefers-reduced-motion: reduce)');
+let lastBasketballPlay = '';
+let animationFrame;
+let ballPosition;
+let highlightedTeam;
+let basketLogo;
+
+function courtPosition(x, y) {
+  return {x:Math.min(743, Math.max(57, x)), y:Math.min(322, Math.max(58, y))};
+}
+function drawBasketballPose(player, point, facing, pose, jump = 0) {
+  const scale = .82 + point.y / 850;
+  player.el.setAttribute('transform', 'translate(' + point.x + ' ' + (point.y - jump) + ') scale(' + facing * scale + ' ' + scale + ')');
+  if (player.pose !== pose) {
+    player.el.setAttribute('href', '#hooper-' + player.kit + '-' + pose);
+    player.pose = pose;
+  }
+  player.position = point;
+}
+function drawBall(point) {
+  $('live-ball').removeAttribute('hidden');
+  $('live-ball').setAttribute('transform', 'translate(' + point.x + ' ' + point.y + ')');
+  ballPosition = point;
+}
+function interpolate(from, to, fraction) {
+  return {x:from.x + (to.x - from.x) * fraction, y:from.y + (to.y - from.y) * fraction};
+}
+function renderBasketball(data) {
+  if (data.teams.length !== 2) return;
+  const home = data.teams[1];
+  if (basketLogo !== home.logo) {
+    basketLogo = home.logo;
+    const logo = $('court-logo');
+    const validLogo = typeof basketLogo === 'string' && basketLogo.startsWith('https://a.espncdn.com/');
+    logo.toggleAttribute('hidden', !validLogo);
+    if (validLogo) logo.setAttribute('href', basketLogo);
+  }
+  if (!courtPlayers.length) {
+    const host = $('basketball-players');
+    for (let i = 0; i < 10; i++) {
+      const el = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+      for (const [key, value] of Object.entries({class:'hooper', x:-31, y:-108.5, width:62, height:108.5})) el.setAttribute(key, value);
+      const player = {el, kit:i < 5 ? 'light' : 'dark'};
+      drawBasketballPose(player, {x:285 + 225 * Math.floor(i / 5) + (i % 5 % 2) * 50, y:60 + (i % 5) * 63}, i < 5 ? 1 : -1, 'ready');
+      host.append(el);
+      courtPlayers.push(player);
+    }
+  }
+
+  const teams = data.teams.map(team => team.id);
+  const latest = data.plays[0];
+  const actions = data.plays.filter(play => play.id && teams.includes(play.team) && (play.court || play.shot));
+  $('ticker').textContent = latest ? [latest.clock, latest.text].filter(Boolean).join(' · ') : data.detail || data.status;
+  if (!actions.length) return;
+  const previous = actions.findIndex(play => play.id === lastBasketballPlay);
+  if (previous === 0) return;
+  const newest = actions.slice(0, previous > 0 ? Math.min(previous, 3) : 2);
+  const pending = newest.filter(play => play.period === actions[0].period).reverse();
+  lastBasketballPlay = actions[0].id;
+  if (data.state === 'post' && highlightedTeam) return;
+  cancelAnimationFrame(animationFrame);
+  playBasketballSequence(pending, teams, latest);
+}
+
+function playBasketballSequence(plays, teams, latest) {
+  const play = plays.shift();
+  if (!play) {
+    $('ticker').textContent = [latest.clock, latest.text].filter(Boolean).join(' · ');
+    return;
+  }
+  $('ticker').textContent = [play.clock, play.text].filter(Boolean).join(' · ');
+  const homeAttacks = play.team === teams[1];
+  const direction = homeAttacks ? 1 : -1;
+  const hoop = {x:homeAttacks ? 744 : 56, y:190};
+  const [width, depth] = play.court || [25, 18];
+  const handler = courtPosition(hoop.x - direction * (depth * 7.3 + 15), 34 + width * 6.2);
+  const attacking = homeAttacks ? 5 : 0;
+  const starts = courtPlayers.map(player => player.position);
+  const targets = courtPlayers.map((player, index) => {
+    const offense = Math.floor(index / 5) === attacking / 5;
+    const slot = index % 5;
+    if (index === attacking) return handler;
+    const spacing = [[90,0],[125,-115],[125,115],[210,-65],[210,65]][slot];
+    return courtPosition(hoop.x - direction * (spacing[0] + (offense ? 35 : -30)), 190 + spacing[1] + (offense ? 14 : -14));
+  });
+  // Jersey figures approximate spacing. The reported shot location sets the ball handler's position.
+  const possessionChanged = highlightedTeam && highlightedTeam !== play.team;
+  highlightedTeam = play.team;
+  const hand = {x:handler.x + direction * 14, y:handler.y - 32};
+  const carryFrom = possessionChanged || !ballPosition
+    ? {x:starts[attacking].x + direction * 14, y:starts[attacking].y - 32}
+    : ballPosition;
+  const start = performance.now();
+  const reduced = motionPreference.matches;
+  const duration = reduced ? 0 : play.shot ? 2700 : 1750;
+  const result = play.scoring ? {x:hoop.x, y:hoop.y + 18} : courtPosition(hoop.x - direction * 53, hoop.y + 35);
+  function frame(time) {
+    const elapsed = Math.max(0, time - start);
+    const progress = duration ? Math.min(1, elapsed / duration) : 1;
+    const move = Math.min(1, progress * 1.85);
+    const pace = move * move * (3 - 2 * move);
+    const release = play.shot && progress > .48 && progress < .82;
+    const jump = release && !reduced ? 15 * Math.sin((progress - .48) / .34 * Math.PI) : 0;
+    courtPlayers.forEach((player, i) => {
+      const point = interpolate(starts[i], targets[i], pace);
+      const offense = Math.floor(i / 5) === attacking / 5;
+      const stride = move < 1 && Math.floor(elapsed / 155 + i) % 2;
+      drawBasketballPose(player, point, offense ? direction : -direction,
+        release && i === attacking ? 'shot' : stride ? 'run' : 'ready', i === attacking ? jump : 0);
+    });
+    const host = $('basketball-players');
+    for (const player of [...courtPlayers].sort((a, b) => a.position.y - b.position.y)) host.append(player.el);
+    if (play.shot && progress >= .54) {
+      const flight = Math.min(1, (progress - .54) / .29);
+      const point = interpolate(hand, hoop, flight);
+      point.y -= Math.sin(flight * Math.PI) * 85;
+      drawBall(flight < 1 ? point : interpolate(hoop, result, (progress - .83) / .17));
+    } else {
+      const point = interpolate(carryFrom, hand, pace);
+      if (move < 1 && !reduced) point.y += Math.abs(Math.sin(elapsed / 105)) * 25;
+      drawBall(point);
+    }
+    if (progress < 1) animationFrame = requestAnimationFrame(frame);
+    else playBasketballSequence(plays, teams, latest);
+  }
+  animationFrame = requestAnimationFrame(frame);
+}
+
 function render(data) {
   const teams = data.teams;
   const live = data.state === 'in';
@@ -198,7 +360,7 @@ function render(data) {
   badge.textContent = live ? '● LIVE' : data.status || 'GAMECAST';
   $('scene').dataset.playing = String(live);
   $('match-title').textContent = teams.map(team => team.name).join(' vs ') || sport;
-  const clock = [data.period ? (sport === 'UFC' ? 'Round ' : 'Period ') + data.period : '', live ? data.clock : '', data.detail || data.status].filter(Boolean);
+  const clock = data.detail || [data.period ? (sport === 'UFC' ? 'Round ' : 'Period ') + data.period : '', live ? data.clock : '', data.status].filter(Boolean).join(' · ');
   $('scoreboard').replaceChildren(...teams.map((team, index) => {
     const card = node('div', null, 'score-team');
     const color = /^[0-9a-f]{6}$/i.test(team.color) ? '#' + team.color : (index ? '#382977' : '#842f58');
@@ -208,7 +370,8 @@ function render(data) {
     if (logo) card.append(logo);
     card.append(node('span', team.short || team.name), node('b', team.score ?? (team.winner ? 'W' : '—')));
     return card;
-  }), node('div', clock.join(' · '), 'clock'));
+  }), node('div', clock, 'clock'));
+  if (basketball) renderBasketball(data);
   const stats = data.team_stats.map(stat => statRow([stat.label, ...teams.map(team => stat.values[team.id] ?? '—')]));
   if (stats.length) stats.unshift(statRow(['Team totals', ...teams.map(team => team.short || team.name)]));
   fill('team-stats', stats, 'Team totals are unavailable for this matchup.');
@@ -227,7 +390,7 @@ function render(data) {
   };
   fill('play-list', data.plays.slice(0, 30).map(playRow), 'The feed has not published play-by-play for this matchup.');
   fill('scoring-plays', data.plays.filter(play => play.scoring).map(playRow), 'No scoring plays are available in the current feed.');
-  $('ticker').textContent = data.plays[0]?.text || data.detail || data.status;
+  if (!basketball) $('ticker').textContent = data.plays[0]?.text || data.detail || data.status;
   $('official').hidden = !data.official_page;
   if (data.official_page) $('official').href = data.official_page;
   $('feed-note').textContent = [data.venue, data.drive, data.broadcasts.join(', '), 'Updated ' + new Date(data.observed_at).toLocaleTimeString()].filter(Boolean).join(' · ');

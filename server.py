@@ -35,6 +35,7 @@ def public_asset(asset):
     if asset not in {
         'sw.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png',
         'splash.png', 'icon.svg', 'owner.webmanifest', 'owner-icon-192.png', 'owner-icon-512.png',
+        'livecast-hoopers.webp',
     }:
         return jsonify(error='Not found'), 404
     return send_from_directory(ROOT/'static', asset)
@@ -469,10 +470,18 @@ def live_gamecast():
             seen.add(play_id)
             clock = play.get('clock') or {}
             period = play.get('period') or {}
+            coordinate = play.get('coordinate') or {}
+            x, y = coordinate.get('x'), coordinate.get('y')
+            court = (sport in ('NBA', 'COLLEGE BASKETBALL')
+                     and isinstance(x, (int, float)) and isinstance(y, (int, float))
+                     and 0 <= x <= 50 and 0 <= y <= 47)
             plays.append({'id': play_id, 'text': str(text_value)[:450],
                           'clock': clock.get('displayValue') if isinstance(clock, dict) else clock,
                           'period': period.get('number') if isinstance(period, dict) else period,
-                          'scoring': bool(play.get('scoringPlay'))})
+                          'scoring': bool(play.get('scoringPlay')),
+                          'shot': bool(play.get('shootingPlay')),
+                          'team': str((play.get('team') or {}).get('id') or ''),
+                          'court': [x, y] if court else None})
             if len(plays) == 80:
                 break
 
