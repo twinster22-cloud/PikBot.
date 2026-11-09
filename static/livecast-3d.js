@@ -36,6 +36,61 @@ const shortsMesh = tailoredMesh([[.118,.12],[.141,.139],[.15,.145],[.147,.142],[
 const cuffMesh = new TorusGeometry(1,.035,7,25);
 const noseMesh = new SphereGeometry(1,12,10);
 
+function sculptedHead() {
+  const geometry = new SphereGeometry(1,42,32);
+  const points = geometry.attributes.position;
+  const profile = (x,y,cx,cy,width,height) =>
+    Math.exp(-(((x-cx)/width)**2+((y-cy)/height)**2));
+  for (let i=0;i<points.count;i++) {
+    const x = points.getX(i), y = points.getY(i), z = points.getZ(i);
+    const width = 1-.20*profile(0,y,0,-.91,1,.30)+.05*profile(0,y,0,-.39,1,.34);
+    const front = Math.max(0,z)**2;
+    const nose = .25*profile(x,y,0,-.11,.22,.21)+.12*profile(x,y,0,.13,.17,.33);
+    const brows = .08*profile(Math.abs(x),y,.37,.31,.30,.12);
+    const socket = .093*profile(Math.abs(x),y,.36,.14,.23,.13);
+    const cheek = .10*profile(Math.abs(x),y,.57,-.13,.25,.19);
+    const jaw = .11*profile(x,y,0,-.68,.56,.22);
+    points.setXYZ(i,x*width,y,z+front*(nose+brows-socket+cheek+jaw));
+  }
+  geometry.computeVertexNormals();
+  return geometry;
+}
+const headGeometry = sculptedHead();
+const faceSwatches = ['#6f452f','#a26e51','#a6775e','#65412c','#b47559','#a06c52'];
+let faceMaterials;
+let faceTexturePromise;
+
+function loadFaceMaterials() {
+  if (faceTexturePromise) return faceTexturePromise;
+  faceTexturePromise = new Promise(resolve => {
+    const image = new Image();
+    image.onload = () => {
+      const size = image.naturalWidth/3;
+      if (!Number.isInteger(size) || !size || size*2 !== image.naturalHeight) {
+        resolve();
+        return;
+      }
+      faceMaterials = faceSwatches.map((_,index) => {
+        const tile = canvas(size,size);
+        tile.getContext('2d').drawImage(image,index%3*size,Math.floor(index/3)*size,size,size,0,0,size,size);
+        return new MeshStandardMaterial({map:texture(tile),roughness:.66});
+      });
+      resolve();
+    };
+    image.onerror = () => resolve();
+    image.src = '/livecast-face-uv.webp';
+  });
+  return faceTexturePromise;
+}
+
+function applyFaceMaterial(athlete) {
+  if (!faceMaterials || athlete.faceStyle == null) return;
+  athlete.head.material = faceMaterials[athlete.faceStyle];
+  athlete.skin.color.set(faceSwatches[athlete.faceStyle]);
+  for (const detail of athlete.fallbackFace) detail.visible = false;
+}
+
+
 function jerseyFabric() {
   const image = canvas(64,64);
   const ctx = image.getContext('2d');
@@ -240,6 +295,43 @@ function buildArena(scene, colors, home) {
   }
 }
 
+
+// One continuous skin surface bends across the joint, so the upper and lower limb don't separate.
+function flexibleSkin(parent, material, rings, jointY) {
+  const geometry = new CylinderGeometry(1,1,1,14,rings.length-1,true);
+  const points = geometry.attributes.position;
+  const weights = new Float32Array(points.count);
+  for (let i=0;i<points.count;i++) {
+    const ring = rings[Math.round((.5-points.getY(i))*(rings.length-1))];
+    const [y,width,depth] = ring;
+    points.setXYZ(i,points.getX(i)*width,y,points.getZ(i)*depth);
+    const t = Math.max(0,Math.min(1,(jointY-y+.09)/.18));
+    weights[i] = t*t*(3-2*t);
+  }
+  geometry.computeVertexNormals();
+  const mesh = model(parent,geometry,material,[1,1,1],[0,0,0]);
+  mesh.frustumCulled = false;
+  return {geometry, points, weights, jointY, bind:points.array.slice(), angle:0};
+}
+function flexSkin(skin, angle) {
+  if (Math.abs(skin.angle-angle) < .035) return;
+  skin.angle = angle;
+  const c = Math.cos(angle), s = Math.sin(angle);
+  for (let i=0;i<skin.points.count;i++) {
+    const offset = i*3, x = skin.bind[offset], y = skin.bind[offset+1], z = skin.bind[offset+2];
+    const relative = y-skin.jointY, w = skin.weights[i];
+    skin.points.setXYZ(i,x,y+w*(relative*c-z*s-relative),z+w*(relative*s+z*c-z));
+  }
+  skin.points.needsUpdate = true;
+  skin.geometry.computeVertexNormals();
+}
+const armSkinRings = [[.098,.015,.019],[.068,.071,.074],[.025,.101,.098],[-.037,.100,.093],
+  [-.103,.090,.081],[-.174,.080,.074],[-.246,.068,.066],[-.319,.066,.065],[-.377,.068,.066],
+  [-.437,.061,.058],[-.503,.052,.046],[-.566,.039,.035]];
+const legSkinRings = [[-.257,.102,.097],[-.317,.104,.096],[-.375,.096,.089],[-.434,.083,.078],
+  [-.498,.078,.079],[-.552,.087,.077],[-.613,.088,.078],[-.677,.077,.071],[-.738,.066,.065],
+  [-.800,.059,.055],[-.851,.052,.049]];
+
 function buildAthlete(scene, index, jersey, team) {
   const root = group(scene,0,0,0);
   const rig = group(root,0,0,0);
@@ -261,9 +353,10 @@ function buildAthlete(scene, index, jersey, team) {
   const collar = model(body,cuffMesh,trim,[.108,.074,.16],[0,.585,0]);
   collar.rotation.x = -PI / 2;
   model(body,limb,skin,[.103,.062,.10],[0,.615,0]);
-  const face = group(body,0,.77,.005);
-  const head = model(face,sphere,skin,[.146,.188,.132],[0,0,0]);
-  model(face,sphere,skin,[.122,.102,.112],[0,-.074,.022]);
+  const face = group(body,0,.747,.006);
+  face.scale.set(.84,.86,.88);
+  const head = model(face,headGeometry,skin,[.145,.181,.133],[0,0,0]);
+  const fallbackFace = [];
   const scalp = model(face,sphere,hair,[.149,.072,.135],[0,.109,-.013],false);
   const sideHair = model(face,sphere,hair,[.147,.109,.083],[0,.02,-.065],false);
   const crown = group(face,0,.145,-.01);
@@ -279,37 +372,35 @@ function buildAthlete(scene, index, jersey, team) {
   const headband = model(face,cuffMesh,trim,[.151,.137,.62],[0,.062,0],false);
   headband.rotation.x = -PI / 2;
   const beard = model(face,sphere,hair,[.107,.056,.075],[0,-.115,.062],false);
-  model(face,noseMesh,skin,[.035,.037,.047],[0,-.006,.132]);
+
   const eyes = surface('#251b1b'), lips = surface('#754437');
-  model(face,noseMesh,lips,[.046,.011,.01],[0,-.066,.125]);
+  fallbackFace.push(model(face,noseMesh,lips,[.036,.008,.007],[0,-.077,.134],false));
   for (const side of [-1,1]) {
-    model(face,sphere,skin,[.036,.052,.033],[side*.143,-.008,-.002]);
-    model(face,noseMesh,eyes,[.020,.010,.006],[side*.055,.033,.125]);
-    model(face,noseMesh,hair,[.026,.008,.005],[side*.055,.056,.123]);
+    const ear = model(face,sphere,skin,[.028,.046,.027],[side*.142,-.007,-.006],false);
+    ear.rotation.z = -side*.18;
+    fallbackFace.push(model(face,noseMesh,eyes,[.016,.007,.005],[side*.055,.035,.125],false));
+    fallbackFace.push(model(face,noseMesh,hair,[.023,.006,.004],[side*.055,.058,.124],false));
   }
 
   const arms = [], legs = [];
   for (const side of [-1,1]) {
     const shoulder = group(body,side*.313,.45,0);
-    model(shoulder,sphere,skin,[.121,.133,.116],[0,.013,-.005]);
-    const strap = model(shoulder,sphere,jersey,[.082,.10,.112],[-side*.037,.045,-.018]);
+    const armSkin = flexibleSkin(shoulder,skin,armSkinRings,-.32);
+    const strap = model(shoulder,sphere,jersey,[.070,.084,.104],[-side*.040,.046,-.018]);
     strap.rotation.z = -side*.18;
-    model(shoulder,limb,skin,[.084,.106,.087],[0,-.145,0]);
     const elbow = group(shoulder,0,-.32,0);
-    model(elbow,limb,skin,[.068,.088,.069],[0,-.114,0]);
     const wrist = group(elbow,0,-.239,.008);
     model(wrist,sphere,skin,[.058,.063,.034],[0,-.028,.006]);
     model(wrist,sphere,skin,[.044,.048,.023],[0,-.078,.017],false);
     model(wrist,sphere,skin,[.022,.041,.022],[-side*.045,-.036,.012],false);
-    arms.push({shoulder,elbow,wrist});
+    arms.push({shoulder,elbow,wrist,skin:armSkin});
 
     const hip = group(rig,side*.157,1.13,0);
     model(hip,shortsMesh,jersey,[1,.37,1],[0,-.135,0]);
     const hem = model(hip,cuffMesh,trim,[.115,.12,.14],[0,-.314,0]);
     hem.rotation.x = -PI / 2;
-    model(hip,limb,skin,[.093,.087,.092],[0,-.335,0]);
+    const legSkin = flexibleSkin(hip,skin,legSkinRings,-.50);
     const knee = group(hip,0,-.50,0);
-    model(knee,limb,skin,[.086,.118,.079],[0,-.157,0]);
     model(knee,cone,trim,[.094,.20,.088],[0,-.387,0]);
     const foot = group(knee,0,-.505,0);
     model(foot,sphere,shoe,[.111,.073,.183],[0,.030,.089]);
@@ -317,7 +408,7 @@ function buildAthlete(scene, index, jersey, team) {
     const ankle = model(foot,sphere,shoe,[.103,.092,.105],[0,.072,-.004]);
     ankle.rotation.x = -.23;
     for (let lace=0;lace<3;lace++) model(foot,box,trim,[.098,.009,.018],[0,.097-lace*.007,.079+lace*.031],false);
-    legs.push({hip,knee,foot});
+    legs.push({hip,knee,foot,skin:legSkin});
   }
 
   const printFront = canvas(192,224), printBack = canvas(192,224);
@@ -338,7 +429,7 @@ function buildAthlete(scene, index, jersey, team) {
   position(label,0,2.55,0);
   label.visible = false;
   root.add(label);
-  return {root,rig,body,face,head,skin,hair,scalp,sideHair,crown,twists,headband,beard,shoe,arms,legs,
+  return {root,rig,body,face,head,fallbackFace,skin,hair,scalp,sideHair,crown,twists,headband,beard,shoe,arms,legs,
           printFront,printBack,frontMap,backMap,labelCanvas,labelMap,label,team,
           target:new Vector3(),facing:1,pose:'ready',jump:0,actor:false,identity:null,index,distance:index*.12,dominant:1,crouch:.10};
 }
@@ -360,7 +451,10 @@ function identify(athlete, person) {
   athlete.twists.visible = style === 4;
   athlete.headband.visible = style === 2;
   athlete.beard.visible = rng() < .37;
-  athlete.head.scale.x = .137 + rng() * .028;
+  athlete.head.scale.x = .137 + rng() * .023;
+  athlete.faceStyle = seed % faceSwatches.length;
+  applyFaceMaterial(athlete);
+  if (faceMaterials) athlete.beard.visible = false;
   athlete.dominant = seed % 7 === 0 ? 0 : 1;
   athlete.shoe.color.set(['#eceaf1','#141621','#ebe1d1','#8d9aaf','#c5464e'][seed % 5]);
   const position = String(person?.position || '').toUpperCase();
@@ -412,6 +506,7 @@ function plantFoot(leg, forward, drop, outward, toe, alpha) {
   leg.hip.rotation.z = blend(leg.hip.rotation.z,outward,alpha);
   leg.knee.rotation.x = blend(leg.knee.rotation.x,bend,alpha);
   leg.foot.rotation.x = -leg.hip.rotation.x-leg.knee.rotation.x+toe;
+  flexSkin(leg.skin,leg.knee.rotation.x);
 }
 
 function animateAthlete(athlete,t,alpha,dt,reduced,ball) {
@@ -452,6 +547,7 @@ function animateAthlete(athlete,t,alpha,dt,reduced,ball) {
     elbow.rotation.x = blend(elbow.rotation.x,shooting ? (primary ? -.13 : -.70) :
       athlete.actor && primary ? -.67-dribble*.35 : moving ? -.83 : -.69,alpha);
     wrist.rotation.x = blend(wrist.rotation.x,shooting && primary ? -.54 : -.085+dribble*.16,alpha);
+    flexSkin(arm.skin,elbow.rotation.x);
   }
   for (const [i,leg] of legs.entries()) {
     const phase = (athlete.distance/1.66+i*.5)%1;
@@ -513,6 +609,13 @@ export function mountCourt(container, stage, teams, reducedMotion, onReady) {
   const fabric = jerseyFabric();
   const jerseys = colors.map(color => new MeshStandardMaterial({color,map:fabric,roughness:.88}));
   const players = Array.from({length:10},(_,index)=>buildAthlete(scene,index,jerseys[Math.floor(index/5)],teams[Math.floor(index/5)]));
+  loadFaceMaterials().then(() => {
+    if (!faceMaterials) return;
+    for (const athlete of players) {
+      applyFaceMaterial(athlete);
+      athlete.beard.visible = false;
+    }
+  });
   const ball = makeBall(scene);
   const ballTarget = new Vector3(0,.18,0);
   ball.visible = false;

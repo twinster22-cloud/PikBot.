@@ -295,7 +295,7 @@ const sceneNode = $('scene');
 function startCourt3D(teams) {
   if (court3DLoading) return;
   court3DLoading = true;
-  import('/livecast-3d.js').then(({mountCourt}) => {
+  import('/livecast-3d.js?v=player-textures').then(({mountCourt}) => {
     court3D = mountCourt($('arena-3d'), sceneNode, teams, motionPreference,
       enabled => $('dimension').hidden = !enabled);
     for (const [index, player] of courtPlayers.entries()) {

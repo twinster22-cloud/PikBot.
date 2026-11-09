@@ -38,6 +38,7 @@ def public_asset(asset):
         'sw.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png',
         'splash.png', 'icon.svg', 'owner.webmanifest', 'owner-icon-192.png', 'owner-icon-512.png',
         'livecast-hoopers.webp', 'livecast-roster.webp', 'livecast-3d.js', 'livecast-arena.webp',
+        'livecast-face-uv.webp',
     }:
         return jsonify(error='Not found'), 404
     return send_from_directory(ROOT/'static', asset)
