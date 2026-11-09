@@ -86,7 +86,7 @@
 .pb-arena-surface.hockey:after{content:'';position:absolute;inset:9% 5%;border:3px solid #c94262;border-radius:40%;pointer-events:none}
 .pb-arena-surface.football:after{content:'10　20　30　40　50　40　30　20　10';position:absolute;left:3%;right:3%;top:17%;font-size:clamp(8px,1.1vw,13px);letter-spacing:3px;color:#fff9;text-align:center;pointer-events:none}
 @media(max-width:780px){.pb-live-layout{grid-template-columns:1fr}.pb-live-aside{margin:0 0 12px}.pb-live-aside .pb-side-row{display:inline-block;width:49%;vertical-align:top;padding-right:8px}}
-</style></head><body><button id="pikbot-app-refresh" type="button" aria-label="Refresh PikBot app" title="Refresh PikBot app" style="position:fixed;right:14px;bottom:calc(16px + env(safe-area-inset-bottom, 0px));z-index:9999;display:flex;align-items:center;gap:7px;border:1px solid #43cf80;border-radius:999px;background:#09291c;color:#f2fff7;padding:11px 15px;font:600 13px system-ui,sans-serif;box-shadow:0 3px 15px #0009;cursor:pointer"><span aria-hidden="true" style="font-size:19px;line-height:1">↻</span> Refresh App</button><script>
+</style><style>.pb-gamecast-overlay:not([hidden]){display:block!important;position:fixed;z-index:99999;inset:12px;overflow:auto;margin:0!important;padding:18px!important;background:#090817!important;border:2px solid #a65aff!important;box-shadow:0 0 0 100vmax #000b,0 0 30px #9342ff66!important;border-radius:18px;max-width:none!important}.pb-gamecast-overlay #pikbot-gamecast-close{position:sticky;top:0;z-index:4;float:right;background:#b12754!important;color:white!important}.pb-gamecast-overlay .pb-live-layout{clear:both}</style></head><body><button id="pikbot-app-refresh" type="button" aria-label="Refresh PikBot app" title="Refresh PikBot app" style="position:fixed;right:14px;bottom:calc(16px + env(safe-area-inset-bottom, 0px));z-index:9999;display:flex;align-items:center;gap:7px;border:1px solid #43cf80;border-radius:999px;background:#09291c;color:#f2fff7;padding:11px 15px;font:600 13px system-ui,sans-serif;box-shadow:0 3px 15px #0009;cursor:pointer"><span aria-hidden="true" style="font-size:19px;line-height:1">↻</span> Refresh App</button><script>
 document.addEventListener('DOMContentLoaded',()=>{const manage=document.getElementById('manage-membership-toggle'),managePanel=document.getElementById('pikbot-membership-controls');if(manage&&managePanel){manage.onclick=()=>{managePanel.hidden=!managePanel.hidden;manage.setAttribute('aria-expanded',String(!managePanel.hidden));if(!managePanel.hidden){managePanel.scrollIntoView({behavior:'smooth',block:'nearest'});const status=document.getElementById('membership-status');if(status&&status.textContent==='Checking membership…')status.textContent='Account controls';}};}const liveStatus=document.getElementById('member-broadcast-status');const videoStop=document.getElementById('member-broadcast-stop');if(videoStop)videoStop.onclick=()=>{const player=document.getElementById('member-broadcast-player');if(player){const frame=player.querySelector('iframe');if(frame)frame.remove();}if(liveStatus)liveStatus.textContent='Playback stopped. No authorized live video is currently available.';};const gamecastButton=document.getElementById('broadcast-open-gamecast');if(gamecastButton)gamecastButton.addEventListener('click',()=>{const live=document.getElementById('pikbot-live');if(live){live.hidden=false;live.scrollIntoView({behavior:'smooth',block:'start'});}document.getElementById('live-center-refresh')?.click();});const toggle=document.getElementById('manage-membership-toggle'),panel=document.getElementById('pikbot-membership-controls');if(toggle&&panel)toggle.addEventListener('click',()=>{panel.hidden=!panel.hidden;toggle.setAttribute('aria-expanded',String(!panel.hidden));});
  const shell=document.querySelector('.shell'), membership=document.querySelector('section[aria-label="Membership"]');
  const video=document.getElementById('member-broadcast-monitor'), plans=document.getElementById('upgrade-plan');
@@ -987,7 +987,9 @@ document.getElementById('sport-details-fullscreen').onclick=()=>{const panel=doc
 let pikbotGameCastSelection=null;
 async function openGameCast(sport,id,name){
  pikbotGameCastSelection={sport,id};
- document.getElementById('pikbot-gamecast').hidden=false;
+ const gamecast=document.getElementById('pikbot-gamecast');
+ if(gamecast.parentElement!==document.body)document.body.appendChild(gamecast);
+ gamecast.hidden=false;gamecast.classList.add('pb-gamecast-overlay');
  document.getElementById('pikbot-gamecast-title').textContent='GameCast · '+name;
  document.getElementById('pikbot-gamecast').scrollIntoView({behavior:'smooth',block:'nearest'});
  await refreshGameCast();
@@ -1017,7 +1019,7 @@ async function refreshGameCast(){
  }catch(e){if(pikbotGameCastSelection===selected)updated.textContent=e.message;}
 }
 document.getElementById('pikbot-gamecast-refresh').onclick=refreshGameCast;
-document.getElementById('pikbot-gamecast-close').onclick=()=>{pikbotGameCastSelection=null;document.getElementById('pikbot-gamecast').hidden=true;};
+document.getElementById('pikbot-gamecast-close').onclick=()=>{pikbotGameCastSelection=null;const panel=document.getElementById('pikbot-gamecast');panel.hidden=true;panel.classList.remove('pb-gamecast-overlay');};
 setInterval(()=>{if(pikbotGameCastSelection&&!document.hidden)refreshGameCast();},15000);
 
 function configureBroadcastControls(prefix){
