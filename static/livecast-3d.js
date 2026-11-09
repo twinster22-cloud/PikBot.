@@ -240,14 +240,22 @@ function buildArena(scene, colors, home) {
   }
 }
 
-function buildAthlete(scene, index, jersey) {
+function buildAthlete(scene, index, jersey, team) {
   const root = group(scene,0,0,0);
   const rig = group(root,0,0,0);
   const skin = surface('#ac714d'), hair = surface('#201715');
+  skin.roughness = .61;
   const shoe = surface(index % 3 === 0 ? '#b3a8cb' : '#e8e4ec');
   const trim = surface('#ede7f4');
+  const seam = surface(jersey.color.clone().lerp(new Color('#ece5f7'),.62));
   const body = group(rig,0,1.15,0);
   model(body, torsoMesh, jersey, [1,.64,1], [0,.265,0]);
+  const waistband = model(body,cuffMesh,seam,[.268,.158,.33],[0,-.021,0]);
+  waistband.rotation.x = -PI / 2;
+  for (const side of [-1,1]) {
+    const panel = model(body,sphere,seam,[.014,.242,.028],[side*.263,.20,.018],false);
+    panel.rotation.z = -side*.105;
+  }
   const hips = model(rig, sphere, jersey, [.28,.15,.16], [0,1.15,0]);
   hips.rotation.x = -.12;
   const collar = model(body,cuffMesh,trim,[.108,.074,.16],[0,.585,0]);
@@ -256,8 +264,21 @@ function buildAthlete(scene, index, jersey) {
   const face = group(body,0,.77,.005);
   const head = model(face,sphere,skin,[.146,.188,.132],[0,0,0]);
   model(face,sphere,skin,[.122,.102,.112],[0,-.074,.022]);
-  model(face,sphere,hair,[.148,.096,.136],[0,.099,-.016]);
-  model(face,sphere,hair,[.147,.116,.084],[0,.018,-.065]);
+  const scalp = model(face,sphere,hair,[.149,.072,.135],[0,.109,-.013],false);
+  const sideHair = model(face,sphere,hair,[.147,.109,.083],[0,.02,-.065],false);
+  const crown = group(face,0,.145,-.01);
+  for (const [x,z] of [[-.097,-.035],[-.053,.04],[0,.065],[.06,.045],[.105,-.025],[-.042,-.059],[.046,-.064]]) {
+    model(crown,sphere,hair,[.049,.057,.050],[x,.027,z],false);
+  }
+  const twists = group(face,0,.10,-.025);
+  for (const [x,z] of [[-.112,-.02],[-.066,-.08],[0,-.095],[.067,-.08],[.112,-.018]]) {
+    const twist = model(twists,limb,hair,[.031,.045,.031],[x,.045,z],false);
+    twist.rotation.z = x * 5;
+    twist.rotation.x = -.37;
+  }
+  const headband = model(face,cuffMesh,trim,[.151,.137,.62],[0,.062,0],false);
+  headband.rotation.x = -PI / 2;
+  const beard = model(face,sphere,hair,[.107,.056,.075],[0,-.115,.062],false);
   model(face,noseMesh,skin,[.035,.037,.047],[0,-.006,.132]);
   const eyes = surface('#251b1b'), lips = surface('#754437');
   model(face,noseMesh,lips,[.046,.011,.01],[0,-.066,.125]);
@@ -276,8 +297,11 @@ function buildAthlete(scene, index, jersey) {
     model(shoulder,limb,skin,[.084,.106,.087],[0,-.145,0]);
     const elbow = group(shoulder,0,-.32,0);
     model(elbow,limb,skin,[.068,.088,.069],[0,-.114,0]);
-    model(elbow,sphere,skin,[.065,.09,.052],[0,-.28,.017]);
-    arms.push({shoulder,elbow});
+    const wrist = group(elbow,0,-.239,.008);
+    model(wrist,sphere,skin,[.058,.063,.034],[0,-.028,.006]);
+    model(wrist,sphere,skin,[.044,.048,.023],[0,-.078,.017],false);
+    model(wrist,sphere,skin,[.022,.041,.022],[-side*.045,-.036,.012],false);
+    arms.push({shoulder,elbow,wrist});
 
     const hip = group(rig,side*.157,1.13,0);
     model(hip,shortsMesh,jersey,[1,.37,1],[0,-.135,0]);
@@ -287,20 +311,23 @@ function buildAthlete(scene, index, jersey) {
     const knee = group(hip,0,-.50,0);
     model(knee,limb,skin,[.086,.118,.079],[0,-.157,0]);
     model(knee,cone,trim,[.094,.20,.088],[0,-.387,0]);
-    model(knee,sphere,shoe,[.111,.073,.183],[0,-.475,.089]);
-    model(knee,sphere,trim,[.108,.025,.184],[0,-.525,.088]);
-    const ankle = model(knee,sphere,shoe,[.103,.092,.105],[0,-.433,-.004]);
+    const foot = group(knee,0,-.505,0);
+    model(foot,sphere,shoe,[.111,.073,.183],[0,.030,.089]);
+    model(foot,sphere,trim,[.108,.025,.184],[0,-.020,.088]);
+    const ankle = model(foot,sphere,shoe,[.103,.092,.105],[0,.072,-.004]);
     ankle.rotation.x = -.23;
-    for (let lace=0;lace<3;lace++) model(knee,box,trim,[.098,.009,.018],[0,-.408-lace*.007,.079+lace*.031],false);
-    legs.push({hip,knee});
+    for (let lace=0;lace<3;lace++) model(foot,box,trim,[.098,.009,.018],[0,.097-lace*.007,.079+lace*.031],false);
+    legs.push({hip,knee,foot});
   }
 
-  const numberCanvas = canvas(128,128);
-  const numberMap = texture(numberCanvas);
-  const numberMat = new MeshBasicMaterial({map:numberMap,transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1});
-  const numberPlane = new PlaneGeometry(.34,.34);
-  model(body,numberPlane,numberMat,[1,1,1],[0,.29,.204],false);
-  const back = model(body,numberPlane,numberMat,[1,1,1],[0,.29,-.204],false);
+  const printFront = canvas(192,224), printBack = canvas(192,224);
+  const frontMap = texture(printFront), backMap = texture(printBack);
+  const printPlane = new PlaneGeometry(.45,.50);
+  const printMaterial = map => new MeshStandardMaterial({
+    map, transparent:true, roughness:.87, depthWrite:false, polygonOffset:true, polygonOffsetFactor:-1
+  });
+  model(body,printPlane,printMaterial(frontMap),[1,1,1],[0,.32,.197],false);
+  const back = model(body,printPlane,printMaterial(backMap),[1,1,1],[0,.32,-.197],false);
   back.rotation.y = PI;
 
   const labelCanvas = canvas(512,96);
@@ -311,12 +338,13 @@ function buildAthlete(scene, index, jersey) {
   position(label,0,2.55,0);
   label.visible = false;
   root.add(label);
-  return {root,rig,body,head,skin,hair,arms,legs,numberCanvas,numberMap,labelCanvas,labelMap,label,jersey,
-          target:new Vector3(),facing:1,pose:'ready',jump:0,actor:false,identity:null,index};
+  return {root,rig,body,face,head,skin,hair,scalp,sideHair,crown,twists,headband,beard,shoe,arms,legs,
+          printFront,printBack,frontMap,backMap,labelCanvas,labelMap,label,team,
+          target:new Vector3(),facing:1,pose:'ready',jump:0,actor:false,identity:null,index,distance:index*.12,dominant:1,crouch:.10};
 }
 
 function identify(athlete, person) {
-  const key = person ? [person.id,person.short,person.name,person.number].join('|') : '';
+  const key = person ? [person.id,person.short,person.name,person.number,person.position].join('|') : '';
   if (key === athlete.identity) return;
   athlete.identity = key;
   let seed = athlete.index + 1;
@@ -325,17 +353,44 @@ function identify(athlete, person) {
   const skin = ['#613827','#8f553c','#a97050','#c79674','#d6a98d','#b77d5e'];
   athlete.skin.color.set(skin[Math.floor(rng()*skin.length)]);
   athlete.hair.color.set(['#1a1517','#28201e','#352923'][Math.floor(rng()*3)]);
+  const style = Math.floor(rng()*5);
+  athlete.scalp.visible = style !== 0;
+  athlete.sideHair.visible = style > 1;
+  athlete.crown.visible = style === 3;
+  athlete.twists.visible = style === 4;
+  athlete.headband.visible = style === 2;
+  athlete.beard.visible = rng() < .37;
   athlete.head.scale.x = .137 + rng() * .028;
-  athlete.rig.scale.set(.86 + rng()*.25,.91 + rng()*.17,.89 + rng()*.17);
-  const ctx = athlete.numberCanvas.getContext('2d');
-  ctx.clearRect(0,0,128,128);
-  if (person?.number != null) {
-    ctx.font = '900 105px system-ui';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineWidth = 10;
-    ctx.strokeStyle = '#150b22'; ctx.fillStyle = '#ffffff';
-    ctx.strokeText(String(person.number),64,67); ctx.fillText(String(person.number),64,67);
+  athlete.dominant = seed % 7 === 0 ? 0 : 1;
+  athlete.shoe.color.set(['#eceaf1','#141621','#ebe1d1','#8d9aaf','#c5464e'][seed % 5]);
+  const position = String(person?.position || '').toUpperCase();
+  const build = position.startsWith('C') ? [1.09,1.075,1.07] :
+    position.startsWith('G') || /[PS]G/.test(position) ? [.89,.94,.93] : [1.00,1.01,.99];
+  athlete.rig.scale.set(build[0]+rng()*.12-.06,build[1]+rng()*.06-.03,build[2]+rng()*.12-.06);
+  const lastName = person?.short?.replace(/^(?:[A-Z]\.\s*)+/i,'') || person?.name?.split(' ').at(-1);
+  for (const [image,map,heading] of [[athlete.printFront,athlete.frontMap,athlete.team.short],
+                                     [athlete.printBack,athlete.backMap,lastName]]) {
+    const ink = image.getContext('2d');
+    ink.clearRect(0,0,image.width,image.height);
+    if (person?.number != null) {
+      ink.textAlign = 'center';
+      ink.textBaseline = 'middle';
+      ink.lineJoin = 'round';
+      ink.strokeStyle = '#1b1028';
+      ink.fillStyle = '#ffffff';
+      ink.font = '900 101px system-ui';
+      ink.lineWidth = 10;
+      ink.strokeText(String(person.number),96,132);
+      ink.fillText(String(person.number),96,132);
+      if (heading) {
+        ink.font = '900 29px system-ui';
+        ink.lineWidth = 5;
+        ink.strokeText(String(heading).toUpperCase(),96,64,184);
+        ink.fillText(String(heading).toUpperCase(),96,64,184);
+      }
+    }
+    map.needsUpdate = true;
   }
-  athlete.numberMap.needsUpdate = true;
   const tag = athlete.labelCanvas.getContext('2d');
   tag.clearRect(0,0,512,96);
   if (person) {
@@ -347,31 +402,67 @@ function identify(athlete, person) {
   athlete.labelMap.needsUpdate = true;
 }
 
-function animateAthlete(athlete, t, alpha, reduced) {
-  const {root,target,rig,body,arms,legs,index,pose} = athlete;
-  const dx = target.x - root.position.x, dz = target.z - root.position.z;
+// Solve the thigh and shin angles from the desired ankle position, keeping the stance foot near the floor.
+function plantFoot(leg, forward, drop, outward, toe, alpha) {
+  const thigh = .50, shin = .505;
+  const reach = Math.min(thigh+shin-.004,Math.hypot(forward,drop));
+  const bend = Math.acos(Math.max(-1,Math.min(1,(reach*reach-thigh*thigh-shin*shin)/(2*thigh*shin))));
+  const hipAngle = -Math.atan2(forward,drop) - Math.atan2(shin*Math.sin(bend),thigh+shin*Math.cos(bend));
+  leg.hip.rotation.x = blend(leg.hip.rotation.x,hipAngle,alpha);
+  leg.hip.rotation.z = blend(leg.hip.rotation.z,outward,alpha);
+  leg.knee.rotation.x = blend(leg.knee.rotation.x,bend,alpha);
+  leg.foot.rotation.x = -leg.hip.rotation.x-leg.knee.rotation.x+toe;
+}
+
+function animateAthlete(athlete,t,alpha,dt,reduced,ball) {
+  const {root,target,rig,body,face,arms,legs,index,pose} = athlete;
+  const dx = target.x-root.position.x, dz = target.z-root.position.z;
+  const step = Math.hypot(dx,dz)*(reduced ? 1 : alpha);
   const moving = !reduced && Math.hypot(dx,dz) > .13;
-  root.position.lerp(target, reduced ? 1 : alpha);
-  const turn = moving ? Math.atan2(dx,dz) : athlete.facing * PI / 2;
-  const delta = Math.atan2(Math.sin(turn - root.rotation.y),Math.cos(turn - root.rotation.y));
-  root.rotation.y += delta * (reduced ? 1 : Math.min(1,alpha*.75));
-  const gait = Math.sin(t * 13.8 + index * .8);
-  const idle = reduced ? 0 : Math.sin(t * 2.15 + index * 1.8);
-  const lift = reduced ? 0 : athlete.jump / 24;
-  rig.position.y = lift + (moving ? Math.abs(gait)*.06 : idle*.013);
-  body.rotation.x = blend(body.rotation.x, pose === 'shot' ? -.12 : moving ? .16 : .085, alpha);
-  body.rotation.z = moving ? gait*.07 : idle*.019;
-  arms.forEach(({shoulder,elbow},i) => {
-    const stride = (i ? -1 : 1) * gait;
-    shoulder.rotation.x = blend(shoulder.rotation.x,pose === 'shot' ? -2.4 : moving ? stride*.86 : -.29 + idle*.045,alpha);
-    shoulder.rotation.z = (i ? 1 : -1) * (pose === 'shot' ? -.10 : -.19);
-    elbow.rotation.x = blend(elbow.rotation.x,pose === 'shot' ? -.34 : moving ? -.83 : -.57,alpha);
-  });
-  legs.forEach(({hip,knee},i) => {
-    const stride = (i ? 1 : -1) * gait;
-    hip.rotation.x = blend(hip.rotation.x,moving ? stride*.72 : -.09,alpha);
-    knee.rotation.x = blend(knee.rotation.x,moving ? Math.max(0,-stride)*1.04 + .16 : .13,alpha);
-  });
+  const shooting = pose === 'shot';
+  const turning = moving && !shooting;
+  root.position.lerp(target,reduced ? 1 : alpha);
+  if (moving) athlete.distance += step;
+  const toward = turning ? Math.atan2(dx,dz) : athlete.facing*PI/2;
+  const delta = Math.atan2(Math.sin(toward-root.rotation.y),Math.cos(toward-root.rotation.y));
+  root.rotation.y += delta*(reduced ? 1 : Math.min(1,alpha*.80));
+  const gait = Math.sin(athlete.distance*PI*2/1.66);
+  const idle = reduced ? 0 : Math.sin(t*2.15+index*1.8);
+  const ballAngle = ball && !reduced ? Math.atan2(ball.x-root.position.x,ball.z-root.position.z)-root.rotation.y : 0;
+  const glance = Math.max(-.62,Math.min(.62,Math.atan2(Math.sin(ballAngle),Math.cos(ballAngle))));
+  face.rotation.y = blend(face.rotation.y,shooting ? 0 : glance,alpha);
+  face.rotation.x = blend(face.rotation.x,shooting ? -.13 : moving ? .045 : 0,alpha);
+
+  const launch = reduced ? 0 : athlete.jump/24;
+  const crouch = shooting ? .105-Math.min(.067,launch*.16) : moving ? .055 : athlete.actor ? .115 : .14;
+  athlete.crouch = blend(athlete.crouch,crouch,reduced ? 1 : alpha);
+  rig.position.y = launch-athlete.crouch + (moving ? Math.abs(gait)*.031 : idle*.009);
+  body.rotation.x = blend(body.rotation.x,shooting ? -.055 : moving ? .19 : .13,alpha);
+  body.rotation.z = moving ? gait*.068 : idle*.012;
+  const dribble = athlete.actor && !shooting && !reduced && moving ? Math.sin(t*11.7) : 0;
+  for (const [i,arm] of arms.entries()) {
+    const {shoulder,elbow,wrist} = arm;
+    const primary = i === athlete.dominant;
+    const side = i ? 1 : -1;
+    const stride = side*gait;
+    const upper = shooting ? (primary ? -2.68 : -2.14) :
+      athlete.actor && primary ? -.65+dribble*.26 : moving ? stride*.76 : -.44+idle*.035;
+    shoulder.rotation.x = blend(shoulder.rotation.x,upper,alpha);
+    shoulder.rotation.z = -side*(shooting ? (primary ? .09 : .28) : moving ? .13 : .33);
+    elbow.rotation.x = blend(elbow.rotation.x,shooting ? (primary ? -.13 : -.70) :
+      athlete.actor && primary ? -.67-dribble*.35 : moving ? -.83 : -.69,alpha);
+    wrist.rotation.x = blend(wrist.rotation.x,shooting && primary ? -.54 : -.085+dribble*.16,alpha);
+  }
+  for (const [i,leg] of legs.entries()) {
+    const phase = (athlete.distance/1.66+i*.5)%1;
+    const swing = Math.max(0,(phase-.58)/.42);
+    const stride = phase < .58 ? .40-phase/.58*.80 : -.40+swing*.80;
+    const footLift = moving ? Math.sin(swing*PI)*.20 : 0;
+    const forward = moving ? stride : (i ? .14 : -.105);
+    const drop = 1.13-athlete.crouch-.09-footLift-(shooting ? launch*.08 : 0);
+    const outward = (i ? 1 : -1)*(moving ? .038 : .115);
+    plantFoot(leg,forward,drop,outward,moving ? Math.sin(swing*PI)*.22 : 0,reduced ? 1 : Math.min(1,alpha+dt*3));
+  }
   athlete.label.visible = athlete.actor && Boolean(athlete.identity);
 }
 
@@ -421,7 +512,7 @@ export function mountCourt(container, stage, teams, reducedMotion, onReady) {
   buildArena(scene,colors,teams[1]);
   const fabric = jerseyFabric();
   const jerseys = colors.map(color => new MeshStandardMaterial({color,map:fabric,roughness:.88}));
-  const players = Array.from({length:10},(_,index)=>buildAthlete(scene,index,jerseys[Math.floor(index/5)]));
+  const players = Array.from({length:10},(_,index)=>buildAthlete(scene,index,jerseys[Math.floor(index/5)],teams[Math.floor(index/5)]));
   const ball = makeBall(scene);
   const ballTarget = new Vector3(0,.18,0);
   ball.visible = false;
@@ -458,7 +549,7 @@ export function mountCourt(container, stage, teams, reducedMotion, onReady) {
     const reduced = reducedMotion.matches;
     const pace = 1 - Math.exp(-Math.max(.001,dt)*14);
     const t = time/1000;
-    for (const player of players) animateAthlete(player,playActive ? t : 0,pace,reduced);
+    for (const player of players) animateAthlete(player,playActive ? t : 0,pace,dt,reduced,ball.visible ? ball.position : null);
     ball.position.lerp(ballTarget,reduced ? 1 : Math.min(1,pace*1.7));
     if (!reduced && playActive) {ball.rotation.x += dt*5; ball.rotation.z += dt*2;}
     const mode = stage.dataset.view || 'broadcast';

@@ -439,6 +439,7 @@ def basketball_lineups(boxscore, plays, pregame):
                 headshot = athlete.get('headshot') or {}
                 roster[player_id] = {'name': athlete['displayName'], 'short': athlete.get('shortName'),
                                      'number': athlete.get('jersey'), 'photo': headshot.get('href'),
+                                     'position': (athlete.get('position') or {}).get('abbreviation'),
                                      'team': team_id}
                 if row.get('active') is True:
                     active.append(player_id)
