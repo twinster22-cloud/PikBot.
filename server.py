@@ -365,6 +365,35 @@ def live_games_browser():
         return jsonify(error='Live scoreboard provider is temporarily unavailable.'), 503
 
 
+
+@app.get('/watch')
+@gamecast_plus_required
+def watch_page():
+    """Standalone GameCast page, independent of the dashboard's JavaScript."""
+    sport = request.args.get('sport', '').upper()
+    event_id = request.args.get('event_id', '')
+    if sport not in pick_results.LEAGUES or not event_id.isdigit() or len(event_id) > 20:
+        return jsonify(error='Invalid game selection.'), 400
+    from markupsafe import escape
+    sport_safe = escape(sport)
+    event_safe = escape(event_id)
+    return """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PikBot Watch</title><style>
+body{margin:0;background:#080c12;color:#f4f8ff;font-family:system-ui,Arial,sans-serif}main{max-width:1000px;margin:auto;padding:18px}a{color:#b9ff8c}.head{display:flex;align-items:center;justify-content:space-between;gap:10px}.screen{border:2px solid #9746ff;border-radius:20px;overflow:hidden;background:#111326;box-shadow:0 0 32px #8538ff44}.bar{padding:14px;background:#21123b;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}.field{position:relative;min-height:300px;overflow:hidden;background:repeating-linear-gradient(90deg,#176a45 0 9.7%,#e0f5e5 9.7% 10%,#257f50 10% 19.7%,#e0f5e5 19.7% 20%)}.field.basketball{background:repeating-linear-gradient(90deg,#a97543 0 9.7%,#eed5a5 9.7% 10%,#b9834b 10% 19.7%,#eed5a5 19.7% 20%)}.field.hockey{background:#e1edf4}.field.baseball{background:radial-gradient(circle at 50% 75%,#a77d53 0 12%,transparent 13%),repeating-linear-gradient(45deg,#276d44 0 14%,#328052 14% 28%)}.marker{position:absolute;top:45%;left:48%;font-size:45px;color:#ffef87;text-shadow:0 0 20px #fff;transition:all 1s}.status{padding:16px;background:#1d1432}.plays{padding:14px}.play{border-bottom:1px solid #3c3552;padding:12px 4px}.btn{border:1px solid #a65bff;border-radius:12px;background:#25143b;color:white;padding:12px 20px;font-size:16px}small{color:#c3b9d5}h1{font-size:24px}
+</style></head><body><main><div class="head"><h1>▶ PikBot Live GameCast</h1><a href="/">← Back to PikBot</a></div><p id="title">Loading """ + str(sport_safe) + """ game…</p><section class="screen"><div class="bar"><strong id="score">Connecting to game data…</strong><span id="clock">LIVE GAMECAST</span></div><div id="field" class="field"><div id="marker" class="marker">●</div></div><div class="status" id="status">Loading play-by-play…</div></section><p><button id="refresh" class="btn" type="button">↻ Refresh GameCast</button></p><small>Event-based animation, not real-time player tracking or television footage. Plays may be delayed. Live MORE/LESS picks require verified live lines.</small><div id="plays" class="plays"></div></main><script>
+const sport=""" + json.dumps(sport) + """,eventId=""" + json.dumps(event_id) + """;
+document.getElementById('field').classList.add(['NBA','WNBA','COLLEGE BASKETBALL'].includes(sport)?'basketball':sport==='NHL'?'hockey':sport==='MLB'?'baseball':'football');
+async function update(){const status=document.getElementById('status');status.textContent='Refreshing verified game events…';try{
+const response=await fetch('/api/live/gamecast?'+new URLSearchParams({sport,event_id:eventId}),{cache:'no-store'});const data=await response.json();if(!response.ok)throw Error(data.error||'Game feed unavailable');
+const teams=data.teams||[];document.getElementById('title').textContent=teams.map(t=>t.name).join(' vs ')||sport+' GameCast';
+document.getElementById('score').textContent=teams.map(t=>t.name+' '+(t.score??'—')).join(' · ');
+document.getElementById('clock').textContent=[data.status,data.clock].filter(Boolean).join(' · ')||'Status pending';
+const plays=data.plays||[],play=plays[plays.length-1];status.textContent=play?.text||'Waiting for reported plays';
+const marker=document.getElementById('marker');if(play?.coordinate){marker.style.left=play.coordinate.x+'%';marker.style.top=play.coordinate.y+'%';}else{marker.style.left='48%';marker.style.top='45%';}
+const list=document.getElementById('plays');list.replaceChildren();for(const p of plays.slice(-15).reverse()){const row=document.createElement('div');row.className='play';row.textContent=[p.period?'Period '+p.period:'',p.clock,p.text].filter(Boolean).join(' · ');list.append(row);}
+}catch(e){status.textContent='GameCast unavailable: '+e.message;}}
+document.getElementById('refresh').onclick=update;update();setInterval(()=>{if(!document.hidden)update()},15000);
+</script></body></html>"""
+
 @app.get('/api/live/gamecast')
 @gamecast_plus_required
 def live_gamecast():
