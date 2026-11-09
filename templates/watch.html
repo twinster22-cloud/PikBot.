@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PikBot LiveCast</title>
-{% if sport in ('NBA', 'COLLEGE BASKETBALL') %}<link rel="preload" href="/livecast-hoopers.webp" as="image">{% endif %}
+{% if sport in ('NBA', 'COLLEGE BASKETBALL') %}<link rel="preload" href="/livecast-roster.webp" as="image">{% endif %}
 <style>
 :root{color-scheme:dark;--ink:#f6f0ff;--muted:#c1b3d1;--line:#463356;--panel:#0c0a17;--violet:#a746ff}
 *{box-sizing:border-box}
@@ -40,6 +40,14 @@ main{min-width:0}
 .scene[data-surface=court][data-view=aerial] .arena{transform:scale(.92)}
 .scene[data-surface=court][data-view=wide] .arena{transform:rotateX(12deg) scale(.88)}
 .scene[data-surface=court] .arena{overflow:visible}
+.jersey-number{font:900 20px system-ui,sans-serif;fill:white;stroke:#0b0814;stroke-width:5px;paint-order:stroke;pointer-events:none;text-anchor:middle}
+.hooper[data-handler=true] .jersey-number{fill:#ffd682;stroke:#1d091c}
+.lineups{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:8px 0}
+.lineup-team{min-width:0;padding:8px 10px;background:#100b1a;border:1px solid var(--line);border-radius:10px}
+.lineup-team>strong{display:block;color:#d7b9f4;margin-bottom:5px}
+.lineup-player{display:flex;align-items:center;gap:5px;min-height:22px;font-size:.78rem}
+.lineup-player img{width:23px;height:19px;object-fit:contain}.lineup-player b{color:#d9b7ff}
+.lineup-toggle{margin:7px 0;color:#e8ceff;font-weight:700;font-size:.86rem}
 .hooper{filter:drop-shadow(3px 4px 2px #19111080)}
 .stage:has(.scene[data-surface=court]){aspect-ratio:1.92}
 .formation{display:none;filter:drop-shadow(2px 5px 2px #000c)}.scene[data-surface=football][data-playing=true] .formation{display:block}.away{fill:var(--away,#a82556)}.home{fill:var(--home,#422a9f)}
@@ -100,6 +108,11 @@ h1{font-size:1rem;margin:0 0 9px}h2{font-size:1rem;margin:0 0 9px}.stat{display:
 <symbol id="hooper-{{ team }}-{{ pose }}" viewBox="0 0 128 224" overflow="hidden"><image href="/livecast-hoopers.webp" x="{{ -128 * loop.index0 }}" y="{{ 0 if team == 'dark' else -224 }}" width="384" height="448"/></symbol>
 {% endfor %}
 {% endfor %}
+{% for side in range(2) %}
+{% for variant in range(5) %}
+<symbol id="roster-{{ side }}-{{ variant }}" viewBox="0 0 128 224" overflow="hidden"><image data-roster-kit="{{ side }}" x="{{ -128 * variant }}" width="640" height="224"/></symbol>
+{% endfor %}
+{% endfor %}
 {% endif %}
 <linearGradient id="grass" x2="0" y2="1"><stop stop-color="#3c783f"/><stop offset="1" stop-color="#133e2c"/></linearGradient>
 <pattern id="yards" width="66" height="306" patternUnits="userSpaceOnUse"><path d="M1 0V306M1 118h8m-8 69h8" stroke="#f9fff4" stroke-opacity=".7" stroke-width="2"/></pattern>
@@ -145,6 +158,9 @@ h1{font-size:1rem;margin:0 0 9px}h2{font-size:1rem;margin:0 0 9px}.stat{display:
 <div class="scoreboard" id="scoreboard"><div class="clock">Choose a game above</div></div>
 </section>
 <p id="feed-note" class="feed-note" role="status">Connecting to the game feed…</p>
+{% if sport in ('NBA', 'COLLEGE BASKETBALL') %}
+<details class="lineup-toggle"><summary>Who’s on the court</summary><div class="lineups" id="live-lineups" hidden></div></details>
+{% endif %}
 <section class="game-center" aria-label="Game details">
 <div class="panels" role="group" aria-label="Game detail views">
 <button type="button" data-panel="stats" class="active" aria-pressed="true">Game Stats</button>
@@ -231,15 +247,97 @@ let ballPosition;
 let highlightedTeam;
 let basketLogo;
 
+let rosterArtReady = false;
+let rosterColors = '';
+
+function loadRosterArt(teams) {
+  const rgb = (hex, fallback) => /^[a-f0-9]{6}$/i.test(hex)
+    ? hex.match(/../g).map(channel => parseInt(channel, 16)) : fallback;
+  const away = rgb(teams[0].color, [190,53,75]);
+  const home = rgb(teams[1].color, [92,48,160]);
+  const contrast = Math.hypot(...away.map((channel, i) => channel - home[i]));
+  const colors = [contrast < 90 ? [235,237,245] : away, home];
+  const key = colors.join('/');
+  if (key === rosterColors) return;
+  rosterColors = key;
+  const atlas = new Image();
+  atlas.onload = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = atlas.naturalWidth;
+    canvas.height = atlas.naturalHeight;
+    const context = canvas.getContext('2d', {willReadFrequently:true});
+    if (!context) return;
+    for (const [side, color] of colors.entries()) {
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(atlas, 0, 0);
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+      for (let i = 0; i < pixels.data.length; i += 4) {
+        const [r, g, b] = [pixels.data[i], pixels.data[i+1], pixels.data[i+2]];
+        const green = g - Math.max(r,b);
+        if (green < 12 || pixels.data[i+3] === 0) continue;
+        const strength = Math.min(1, (green - 12) / 29);
+        const shade = .40 + g / 215;
+        for (let c = 0; c < 3; c++) {
+          pixels.data[i+c] = pixels.data[i+c] * (1-strength) + Math.max(23,color[c] * shade) * strength;
+        }
+      }
+      context.putImageData(pixels, 0, 0);
+      const kit = canvas.toDataURL('image/webp');
+      for (const image of document.querySelectorAll('[data-roster-kit="' + side + '"]')) image.setAttribute('href', kit);
+    }
+    rosterArtReady = true;
+    for (const player of courtPlayers) updatePlayerSprite(player, player.pose);
+  };
+  atlas.src = '/livecast-roster.webp';
+}
+function updatePlayerSprite(player, pose) {
+  player.sprite.setAttribute('href', rosterArtReady
+    ? '#roster-' + player.side + '-' + player.variant : '#hooper-' + player.kit + '-' + pose);
+}
+function applyLineup(teams, groups, roster) {
+  for (const [side, team] of teams.entries()) {
+    const ids = groups?.[team.id] || [];
+    for (let i = 0; i < 5; i++) {
+      const figure = courtPlayers[side * 5 + i];
+      figure.id = ids[i] || '';
+      const player = roster[figure.id];
+      figure.number.textContent = player?.number ?? '';
+      figure.title.textContent = player?.name || 'Illustrated player';
+    }
+  }
+}
+function renderLineup(data) {
+  const host = $('live-lineups');
+  const key = JSON.stringify([data.lineups, data.state]);
+  if (host.dataset.key === key) return;
+  host.dataset.key = key;
+  host.hidden = false;
+  host.replaceChildren(...data.teams.map(team => {
+    const column = node('div', null, 'lineup-team');
+    column.append(node('strong', (team.short || team.name) + (data.state === 'pre' ? ' · Starters' : ' · Reported lineup')));
+    const players = (data.lineups?.[team.id] || []).map(id => data.roster[id]).filter(Boolean);
+    if (!players.length) column.append(node('small', 'Lineup pending', 'muted'));
+    for (const player of players) {
+      const row = node('div', null, 'lineup-player');
+      const portrait = photo(player.photo);
+      if (portrait) row.append(portrait);
+      row.append(node('b', player.number != null ? '#' + player.number : '—'), node('span', player.name));
+      column.append(row);
+    }
+    return column;
+  }));
+}
+
 function courtPosition(x, y) {
   return {x:Math.min(743, Math.max(57, x)), y:Math.min(322, Math.max(58, y))};
 }
 function drawBasketballPose(player, point, facing, pose, jump = 0) {
   const scale = .82 + point.y / 850;
-  player.el.setAttribute('transform', 'translate(' + point.x + ' ' + (point.y - jump) + ') scale(' + facing * scale + ' ' + scale + ')');
+  player.el.setAttribute('transform', 'translate(' + point.x + ' ' + (point.y - jump) + ') scale(' + scale + ')');
+  player.sprite.setAttribute('transform', 'scale(' + facing + ' 1) rotate(' + (pose === 'run' && rosterArtReady ? 4 : 0) + ')');
   if (player.pose !== pose) {
-    player.el.setAttribute('href', '#hooper-' + player.kit + '-' + pose);
     player.pose = pose;
+    updatePlayerSprite(player, pose);
   }
   player.position = point;
 }
@@ -254,6 +352,8 @@ function interpolate(from, to, fraction) {
 function renderBasketball(data) {
   if (data.teams.length !== 2) return;
   const home = data.teams[1];
+  loadRosterArt(data.teams);
+  renderLineup(data);
   if (basketLogo !== home.logo) {
     basketLogo = home.logo;
     const logo = $('court-logo');
@@ -264,9 +364,18 @@ function renderBasketball(data) {
   if (!courtPlayers.length) {
     const host = $('basketball-players');
     for (let i = 0; i < 10; i++) {
-      const el = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-      for (const [key, value] of Object.entries({class:'hooper', x:-31, y:-108.5, width:62, height:108.5})) el.setAttribute(key, value);
-      const player = {el, kit:i < 5 ? 'light' : 'dark'};
+      const svg = 'http://www.w3.org/2000/svg';
+      const el = document.createElementNS(svg, 'g');
+      const sprite = document.createElementNS(svg, 'use');
+      const number = document.createElementNS(svg, 'text');
+      const title = document.createElementNS(svg, 'title');
+      el.setAttribute('class', 'hooper');
+      number.setAttribute('class', 'jersey-number');
+      number.setAttribute('y', '-8');
+      for (const [key, value] of Object.entries({x:-31, y:-108.5, width:62, height:108.5})) sprite.setAttribute(key, value);
+      el.append(title, sprite, number);
+      const side = Math.floor(i / 5);
+      const player = {el, sprite, number, title, side, variant:(i + side * 2) % 5, kit:side ? 'dark' : 'light'};
       drawBasketballPose(player, {x:285 + 225 * Math.floor(i / 5) + (i % 5 % 2) * 50, y:60 + (i % 5) * 63}, i < 5 ? 1 : -1, 'ready');
       host.append(el);
       courtPlayers.push(player);
@@ -277,33 +386,41 @@ function renderBasketball(data) {
   const latest = data.plays[0];
   const actions = data.plays.filter(play => play.id && teams.includes(play.team) && (play.court || play.shot));
   $('ticker').textContent = latest ? [latest.clock, latest.text].filter(Boolean).join(' · ') : data.detail || data.status;
-  if (!actions.length) return;
   const previous = actions.findIndex(play => play.id === lastBasketballPlay);
-  if (previous === 0) return;
+  if (!actions.length || previous === 0) {
+    applyLineup(data.teams, data.lineups, data.roster);
+    return;
+  }
   const newest = actions.slice(0, previous > 0 ? Math.min(previous, 3) : 2);
   const pending = newest.filter(play => play.period === actions[0].period).reverse();
   lastBasketballPlay = actions[0].id;
   if (data.state === 'post' && highlightedTeam) return;
   cancelAnimationFrame(animationFrame);
-  playBasketballSequence(pending, teams, latest);
+  playBasketballSequence(pending, data, latest);
 }
 
-function playBasketballSequence(plays, teams, latest) {
+function playBasketballSequence(plays, data, latest) {
   const play = plays.shift();
   if (!play) {
     $('ticker').textContent = [latest.clock, latest.text].filter(Boolean).join(' · ');
+    applyLineup(data.teams, data.lineups, data.roster);
+    for (const player of courtPlayers) delete player.el.dataset.handler;
     return;
   }
   $('ticker').textContent = [play.clock, play.text].filter(Boolean).join(' · ');
-  const homeAttacks = play.team === teams[1];
+  applyLineup(data.teams, play.lineup, data.roster);
+  const homeAttacks = play.team === data.teams[1].id;
   const direction = homeAttacks ? 1 : -1;
   const hoop = {x:homeAttacks ? 744 : 56, y:190};
   const [width, depth] = play.court || [25, 18];
   const handler = courtPosition(hoop.x - direction * (depth * 7.3 + 15), 34 + width * 6.2);
-  const attacking = homeAttacks ? 5 : 0;
+  const offenseSide = homeAttacks ? 1 : 0;
+  const actorIndex = play.actor ? courtPlayers.findIndex(player => player.side === offenseSide && player.id === play.actor) : -1;
+  const attacking = actorIndex === -1 ? offenseSide * 5 : actorIndex;
+  courtPlayers.forEach((player, index) => player.el.dataset.handler = String(index === actorIndex));
   const starts = courtPlayers.map(player => player.position);
   const targets = courtPlayers.map((player, index) => {
-    const offense = Math.floor(index / 5) === attacking / 5;
+    const offense = player.side === offenseSide;
     const slot = index % 5;
     if (index === attacking) return handler;
     const spacing = [[90,0],[125,-115],[125,115],[210,-65],[210,65]][slot];
@@ -329,7 +446,7 @@ function playBasketballSequence(plays, teams, latest) {
     const jump = release && !reduced ? 15 * Math.sin((progress - .48) / .34 * Math.PI) : 0;
     courtPlayers.forEach((player, i) => {
       const point = interpolate(starts[i], targets[i], pace);
-      const offense = Math.floor(i / 5) === attacking / 5;
+      const offense = player.side === offenseSide;
       const stride = move < 1 && Math.floor(elapsed / 155 + i) % 2;
       drawBasketballPose(player, point, offense ? direction : -direction,
         release && i === attacking ? 'shot' : stride ? 'run' : 'ready', i === attacking ? jump : 0);
@@ -347,7 +464,7 @@ function playBasketballSequence(plays, teams, latest) {
       drawBall(point);
     }
     if (progress < 1) animationFrame = requestAnimationFrame(frame);
-    else playBasketballSequence(plays, teams, latest);
+    else playBasketballSequence(plays, data, latest);
   }
   animationFrame = requestAnimationFrame(frame);
 }

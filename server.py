@@ -35,7 +35,7 @@ def public_asset(asset):
     if asset not in {
         'sw.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png',
         'splash.png', 'icon.svg', 'owner.webmanifest', 'owner-icon-192.png', 'owner-icon-512.png',
-        'livecast-hoopers.webp',
+        'livecast-hoopers.webp', 'livecast-roster.webp',
     }:
         return jsonify(error='Not found'), 404
     return send_from_directory(ROOT/'static', asset)
@@ -420,6 +420,62 @@ def watch_page():
                            owner=private_paid_test(account()))
 
 
+def basketball_lineups(boxscore, plays, pregame):
+    """Use provider on-court flags and reconstruct earlier groups from recorded substitutions."""
+    roster, on_court, starters = {}, {}, {}
+    for team in boxscore.get('players') or []:
+        team_id = str((team.get('team') or {}).get('id') or '')
+        if not team_id:
+            continue
+        active, starting = [], []
+        for group in team.get('statistics') or []:
+            for row in group.get('athletes') or []:
+                athlete = row.get('athlete') or {}
+                player_id = str(athlete.get('id') or '')
+                if not player_id or not athlete.get('displayName') or player_id in roster:
+                    continue
+                headshot = athlete.get('headshot') or {}
+                roster[player_id] = {'name': athlete['displayName'], 'short': athlete.get('shortName'),
+                                     'number': athlete.get('jersey'), 'photo': headshot.get('href'),
+                                     'team': team_id}
+                if row.get('active') is True:
+                    active.append(player_id)
+                if row.get('starter') is True:
+                    starting.append(player_id)
+        if len(active) == 5:
+            on_court[team_id] = active
+        if len(starting) == 5:
+            starters[team_id] = starting
+
+    history = {}
+    first = next((p for p in plays if isinstance(p, dict)), {})
+    # A feed that starts midgame can't reliably replay substitutions from tipoff.
+    if (first.get('type') or {}).get('text') in ('Jump Ball', 'Start Game', 'Game Start', 'Start Period') or (
+            (first.get('period') or {}).get('number') == 1 and
+            (first.get('clock') or {}).get('displayValue') in ('12:00', '20:00')):
+        running = {team_id: ids.copy() for team_id, ids in starters.items()}
+        for index, play in enumerate(plays):
+            if not isinstance(play, dict):
+                continue
+            team_id = str((play.get('team') or {}).get('id') or '')
+            if team_id in running and (play.get('type') or {}).get('text') == 'Substitution':
+                members = running[team_id]
+                participants = play.get('participants') or []
+                if len(participants) != 2:
+                    running.pop(team_id)
+                else:
+                    incoming, outgoing = [str((p.get('athlete') or {}).get('id') or '') for p in participants]
+                    if outgoing in members and incoming not in members and roster.get(incoming, {}).get('team') == team_id:
+                        members[members.index(outgoing)] = incoming
+                    else:
+                        running.pop(team_id)
+            if index >= len(plays) - 100 and play.get('id'):
+                history[str(play['id'])] = {key: ids.copy() for key, ids in running.items()}
+        for team_id, ids in running.items():
+            on_court.setdefault(team_id, ids)
+    return roster, starters if pregame else on_court, history
+
+
 @app.get('/api/live/gamecast')
 @gamecast_plus_required
 def live_gamecast():
@@ -458,6 +514,9 @@ def live_gamecast():
         if not raw:
             all_drives = (drives.get('previous') or []) + [drives.get('current') or {}]
             raw = [play for drive in all_drives for play in drive.get('plays') or []]
+        boxscore = summary.get('boxscore') or {}
+        basketball = sport in ('NBA', 'COLLEGE BASKETBALL')
+        roster, lineups, lineup_history = basketball_lineups(boxscore, raw, state.get('state') == 'pre') if basketball else ({}, {}, {})
         plays = []
         seen = set()
         for play in reversed(raw):
@@ -472,7 +531,7 @@ def live_gamecast():
             period = play.get('period') or {}
             coordinate = play.get('coordinate') or {}
             x, y = coordinate.get('x'), coordinate.get('y')
-            court = (sport in ('NBA', 'COLLEGE BASKETBALL')
+            court = (basketball
                      and isinstance(x, (int, float)) and isinstance(y, (int, float))
                      and 0 <= x <= 50 and 0 <= y <= 47)
             plays.append({'id': play_id, 'text': str(text_value)[:450],
@@ -482,11 +541,15 @@ def live_gamecast():
                           'shot': bool(play.get('shootingPlay')),
                           'team': str((play.get('team') or {}).get('id') or ''),
                           'court': [x, y] if court else None})
+            if basketball:
+                participants = play.get('participants') or []
+                actor = (participants[0].get('athlete') or {}).get('id') if participants else None
+                plays[-1].update(actor=str(actor) if actor else None, lineup=lineup_history.get(play_id, {}))
             if len(plays) == 80:
                 break
 
         stats = {}
-        for entry in (summary.get('boxscore') or {}).get('teams') or []:
+        for entry in boxscore.get('teams') or []:
             team_id = str((entry.get('team') or {}).get('id') or '')
             for item in entry.get('statistics') or []:
                 key = item.get('name')
@@ -516,7 +579,7 @@ def live_gamecast():
             clock=status.get('displayClock'), period=status.get('period'),
             venue=venue.get('fullName'), broadcasts=[name for name in broadcasts if name],
             official_page=gamecast_official_page(links), drive=(drives.get('current') or {}).get('description'),
-            team_stats=list(stats.values()), leaders=leaders, plays=plays,
+            team_stats=list(stats.values()), leaders=leaders, plays=plays, roster=roster, lineups=lineups,
             observed_at=datetime.now(timezone.utc).isoformat(),
         )
     except (requests.RequestException, ValueError, KeyError, TypeError, AttributeError, IndexError):
