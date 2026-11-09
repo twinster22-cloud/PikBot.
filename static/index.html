@@ -804,7 +804,7 @@ async function browseMemberGames(){
  const btn=document.createElement('button');btn.type='button';btn.className='btn';btn.textContent='Player stats';btn.onclick=()=>browseMemberStats(sport,game.id);row.append(btn);const cast=document.createElement('button');cast.type='button';cast.className='btn';cast.textContent='▶ Watch';cast.onclick=()=>window.location.assign('/watch?'+new URLSearchParams({sport,event_id:String(game.id)}));row.append(cast);
  if(game.official_recap){const link=document.createElement('a');link.href=game.official_recap;link.target='_blank';link.rel='noopener noreferrer';link.textContent=day==='yesterday'?'Official recap / possible highlights':'Official game page';row.append(document.createTextNode(' · '),link);}
  games.append(row);}
- if(autoGameCastPending&&day==='today'){autoGameCastPending=false;const playing=active[0];if(playing){status.textContent='Live now · automatically opening '+playing.name;openGameCast(sport,playing.id,playing.name);}else{status.textContent+=' · No live game in progress to autoplay';}}
+ if(autoGameCastPending&&day==='today'){autoGameCastPending=false;const playing=active[0];if(playing){status.textContent='Live now · automatically opening '+playing.name;window.location.assign('/watch?'+new URLSearchParams({sport,event_id:String(playing.id)}));}else{status.textContent+=' · No live game in progress to autoplay';}}
  if(!entries.length)status.textContent='No '+sport+' games returned for '+day+'. Try another sport or day.';
  }catch(e){status.textContent=e.message;}
 }
@@ -1084,10 +1084,10 @@ configureBroadcastControls('owner');
    const data=await response.json();
    if(!response.ok)throw Error(data.error||'Live games unavailable');
    const active=(data.games||[]).filter(game=>game.state==='in');
-   status.textContent=active.length?active.length+' live game(s). Live player-prop predictions are unavailable until verified in-game lines and a validated model are connected.':'No games currently in progress for '+sport+'.';
+   status.textContent=active.length?active.length+' live game(s). Tap Watch to open the animated GameCast.':'No games currently in progress for '+sport+'.';
    for(const game of active){
     const p=document.createElement('button');p.type='button';p.className='sport';p.style.cssText='display:block;width:100%;min-height:0;margin:9px 0;padding:15px;text-align:left;border-color:#a85bff;background:linear-gradient(120deg,#211038,#0b1416);color:#fff';
-    p.textContent='▶ Watch · '+(game.name||game.matchup||game.title||'Live game')+' · '+(game.status||'LIVE');
+    p.textContent='▶ Watch GameCast · '+(game.name||game.matchup||game.title||'Live game')+' · '+(game.status||'LIVE');
     p.onclick=()=>{if(!game.id){status.textContent='This game has no available event identifier.';return;}window.location.assign('/watch?'+new URLSearchParams({sport,event_id:String(game.id)}));};
     if(pikbotCanWatch)list.append(p);
    }
