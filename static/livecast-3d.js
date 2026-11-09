@@ -742,14 +742,16 @@ function plantFoot(leg, forward, drop, outward, toe, alpha) {
   flexSkin(leg.skin,leg.knee.rotation.x);
 }
 
+const releasePoses = new Set(['shot','throw','pitch','swing','sweep']);
+
 function animateAthlete(athlete,t,alpha,dt,reduced,ball) {
   const {root,target,rig,body,face,arms,legs,index,pose} = athlete;
   const dx = target.x-root.position.x, dz = target.z-root.position.z;
   const step = Math.hypot(dx,dz)*(reduced ? 1 : alpha);
   const moving = !reduced && Math.hypot(dx,dz) > .13;
-  const shooting = pose === 'shot';
-  const batting = shooting && athlete.sport === 'baseball';
-  const throwing = shooting && athlete.sport === 'football';
+  const shooting = releasePoses.has(pose);
+  const batting = pose === 'swing';
+  const throwing = pose === 'throw' || pose === 'pitch';
   const guarding = athlete.sport === 'fight';
   const turning = moving && !shooting;
   root.position.lerp(target,reduced ? 1 : alpha);
@@ -899,19 +901,38 @@ function tintPhotoSkin(ctx, mask, tone) {
   ctx.putImageData(pixels,0,0);
 }
 
+// A subdivided billboard lets the photo bend at the hips and shoulders.
+const photoGeometry = new PlaneGeometry(1,1,16,18).translate(0,.475,0);
+
 function setPhotoPlayer(athlete, atlas, mask, shadowMaterial, layout) {
   const artWidth = layout ? 384 : 256;
   const playerArt = canvas(artWidth,448), mirroredArt = canvas(artWidth,448);
   const front = texture(playerArt), reverse = texture(mirroredArt);
-  const material = new SpriteMaterial({map:front,transparent:true,alphaTest:.23,depthWrite:false,toneMapped:false});
-  const portrait = new Sprite(material);
-  portrait.center.set(.5,.025);
+  const material = new MeshBasicMaterial({map:front,transparent:true,alphaTest:.23,depthWrite:false,toneMapped:false});
+  const motion = {value:[0,0,0,0]};
+  material.onBeforeCompile = shader => {
+    shader.uniforms.photoMotion = motion;
+    shader.vertexShader = 'uniform vec4 photoMotion;\n' + shader.vertexShader.replace(
+      '#include <begin_vertex>', `#include <begin_vertex>
+        float y = position.y + .025;
+        float leg = 1.0 - smoothstep(.04, .52, y);
+        float side = smoothstep(-.28, .28, position.x) * 2.0 - 1.0;
+        float arm = smoothstep(.08, .36, abs(position.x)) *
+          smoothstep(.35, .54, y) * (1.0 - smoothstep(.70, .92, y));
+        float armSwing = photoMotion.y - side * photoMotion.x * .65;
+        transformed.x += leg * side * photoMotion.x + arm * armSwing + y * y * photoMotion.z;
+        transformed.y += max(0.0, leg * side * photoMotion.x) * .48 +
+          arm * abs(armSwing) * .42 - y * photoMotion.w;`
+    );
+  };
+  const portrait = new Mesh(photoGeometry,material);
+  portrait.frustumCulled = false;
   portrait.scale.set(1.35,2.35,1);
   position(portrait,0,.035,0);
   athlete.root.add(portrait);
   const shadow = model(athlete.root,new PlaneGeometry(1.4,1.0),shadowMaterial,[1,1,1],[0,.023,0],false);
   shadow.rotation.x = -PI/2;
-  athlete.photo = {portrait,material,front,reverse,playerArt,mirroredArt,atlas,mask,shadow,layout};
+  athlete.photo = {portrait,material,motion,front,reverse,playerArt,mirroredArt,atlas,mask,shadow,layout};
   athlete.rig.visible = false;
   paintPhotoPlayer(athlete);
 }
@@ -947,22 +968,34 @@ function paintPhotoPlayer(athlete) {
   front.needsUpdate = true;
   reverse.needsUpdate = true;
 }
-function animatePhotoPlayer(athlete, t, alpha, reduced) {
+function animatePhotoPlayer(athlete, camera, t, alpha, reduced) {
   const {root,target,photo,index,pose,rig} = athlete;
   const distance = root.position.distanceTo(target);
   const moving = !reduced && distance > .12;
   athlete.distance += moving ? distance*alpha : 0;
   root.position.lerp(target,reduced ? 1 : alpha);
-  const gait = Math.sin(athlete.distance*7+index);
-  const idle = reduced ? 0 : Math.sin(t*2+index)*.009;
+  const skating = athlete.sport === 'hockey';
+  const fighting = athlete.sport === 'fight';
+  const gait = Math.sin(athlete.distance*(skating ? 4.5 : 7)+index);
+  const idle = !reduced && t ? Math.sin(t*(fighting ? 6 : 2.6)+index) : 0;
   const jump = reduced ? 0 : athlete.jump/24;
   const scale = rig.scale.y || 1;
   const flip = athlete.facing < 0;
+  const direction = flip ? -1 : 1;
   const map = flip ? photo.reverse : photo.front;
   if (photo.material.map !== map) photo.material.map = map;
-  photo.portrait.position.y = .035 + jump + (moving ? Math.abs(gait)*.055 : idle);
-  photo.portrait.scale.set((photo.layout ? 2.04 : 1.36)*rig.scale.x,2.38*scale*(pose==='shot' ? 1.07 : 1),1);
-  photo.material.rotation = moving ? (flip ? 1 : -1) * (.07 + gait*.035) : 0;
+  const action = !reduced && releasePoses.has(pose);
+  const reach = pose === 'swing' ? .24 : pose === 'sweep' ? .18 : .15;
+  const drive = moving ? gait*(skating ? .13 : .19) : fighting ? idle*.047 : 0;
+  const [stride,arm,lean,flex] = photo.motion.value;
+  const easing = reduced ? 1 : alpha;
+  photo.motion.value[0] = blend(stride,drive,easing);
+  photo.motion.value[1] = blend(arm,direction*(action ? reach : -drive*.28 + idle*.026),easing);
+  photo.motion.value[2] = blend(lean,direction*(action ? .085 : moving ? .057 : idle*.017),easing);
+  photo.motion.value[3] = blend(flex,action ? -.026 : moving ? .024 : idle*.014,easing);
+  photo.portrait.position.y = .035 + jump + (moving ? Math.abs(gait)*(skating ? .019 : .072) : idle*.034);
+  photo.portrait.scale.set((photo.layout ? 2.04 : 1.36)*rig.scale.x,2.38*scale,1);
+  photo.portrait.quaternion.copy(camera.quaternion);
   photo.shadow.scale.setScalar(1-jump*.27);
   athlete.label.visible = athlete.actor && Boolean(athlete.identity);
 }
@@ -1114,10 +1147,6 @@ export function mountCourt(container, stage, teams, reducedMotion, onReady, fiel
     const pace = 1 - Math.exp(-Math.max(.001,dt)*14);
     const t = time/1000;
     animateCrowd(t,time<cheerUntil,reduced);
-    for (const player of players) {
-      if (player.photo) animatePhotoPlayer(player,playActive ? t : 0,pace,reduced);
-      else animateAthlete(player,playActive ? t : 0,pace,dt,reduced,ball.visible ? ball.position : null);
-    }
     ball.position.lerp(ballTarget,reduced ? 1 : Math.min(1,pace*1.7));
     if (!reduced && playActive) {ball.rotation.x += dt*5; ball.rotation.z += dt*2;}
     const mode = stage.dataset.view || 'broadcast';
@@ -1145,6 +1174,10 @@ export function mountCourt(container, stage, teams, reducedMotion, onReady, fiel
     camera.position.lerp(nextCamera,cameraPace);
     look.lerp(focus,cameraPace);
     camera.lookAt(look);
+    for (const player of players) {
+      if (player.photo) animatePhotoPlayer(player,camera,playActive ? t : 0,pace,reduced);
+      else animateAthlete(player,playActive ? t : 0,pace,dt,reduced,ball.visible ? ball.position : null);
+    }
     try {
       renderer.render(scene,camera);
       if (!ready) {ready = true; stage.dataset.webgl = 'true'; onReady(true);}

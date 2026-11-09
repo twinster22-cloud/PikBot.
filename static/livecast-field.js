@@ -49,19 +49,21 @@
       const pass = /pass|punt|kick/i.test(text);
       const advance = clamp(Number.isFinite(play.yards) ? play.yards * 4.5 : pass ? 92 : 31, -75, 220);
       return {actor:side * football.length + 8, movement:pass ? 31 : advance,
-        direction, from:[side ? 477 : 323, 180], to:[400 + direction * advance, pass ? 95 : 197], lift:pass ? 54 : 0};
+        direction, pose:pass ? 'throw' : 'run', from:[side ? 477 : 323, 180],
+        to:[400 + direction * advance, pass ? 95 : 197], lift:pass ? 54 : 0};
     }
     if (surface === 'hockey') {
       if (!play.shot && !/faceoff|goal|shot|save|blocked|missed/i.test(text)) return;
       const shot = !/faceoff/i.test(text);
-      return {actor:side * hockey.length + 4, movement:shot ? 94 : 15, direction,
+      return {actor:side * hockey.length + 4, movement:shot ? 94 : 15, direction, pose:shot ? 'sweep' : 'run',
         from:[400 - direction * 97, 176], to:[shot ? 400 + direction * 324 : 400, 190], lift:0};
     }
     if (surface === 'baseball') {
       if (!/pitch|strike|ball|single|double|triple|home run|homer|ground|fly|line|foul|walk|out/i.test(text)) return;
       const hit = /singles?|doubles?|triples?|home run|homers?/i.test(text);
-      return {actor:9, movement:hit ? 83 : 0, vertical:hit ? -92 : 0, direction:1, from:[400,218],
-        to:hit ? [508,125] : [400,327], lift:hit ? 60 : 10};
+      const swing = hit || /foul|swing|in play/i.test(text);
+      return {actor:9, movement:hit ? 83 : 0, vertical:hit ? -92 : 0, direction:1,
+        pitch:[400,218], from:[400,327], to:hit ? [508,125] : null, swing, lift:hit ? 60 : 10};
     }
   }
 
@@ -120,7 +122,7 @@
       }
       if (!loading3D && container) {
         loading3D = true;
-        import('/livecast-3d.js?v=photo-players').then(({mountCourt}) => {
+        import('/livecast-3d.js?v=photo-motion').then(({mountCourt}) => {
           field3D = mountCourt(container,stage,data.teams,motionPreference,onReady,
             {surface,sides:players.map((_,index)=>sideFor(index))});
           points.forEach((point,index)=>field3D.player(index,point,sideFor(index)?-1:1,'ready',0));
@@ -132,6 +134,7 @@
       if (surface==='baseball' && field3D) players.forEach((_,index)=>field3D.side(index,sideFor(index)));
       if (!action || paused || data.state === 'pre') {
         cancelAnimationFrame(frameId);
+        previousAction = undefined;
         ball.setAttribute('hidden', '');
         field3D?.ball(null);
         players.forEach((player, index) => {
@@ -147,30 +150,46 @@
       cancelAnimationFrame(frameId);
       const started = performance.now();
       const frame = now => {
-        const progress = motionPreference.matches ? 1 : clamp((now - started) / 1750, 0, 1);
+        const elapsed = Math.max(0, now - started);
+        const sparring = surface === 'fight' && !motionPreference.matches;
+        const progress = motionPreference.matches ? 1 : sparring ? (elapsed % 4200) / 4200 : clamp(elapsed / 1750, 0, 1);
         const pace = Math.sin(progress * Math.PI);
+        const baseball = surface === 'baseball';
+        const run = baseball ? clamp((progress - .43) / .57, 0, 1) : pace;
         players.forEach((player, index) => {
           const [x, y] = positions[index];
           const featured = index === action.actor;
-          const move = surface === 'fight' ? (index ? -1 : 1) * 29
+          const move = surface === 'fight' ? (index ? -1 : 1) * 37
             : featured ? action.direction * action.movement
-            : surface === 'baseball' ? 0 : (index < half ? 1 : -1) * (index % 3 + 1) * 8;
+            : baseball ? 0 : (index < half ? 1 : -1) * (index % 3 + 1) * 8;
           const stride = Math.sin(progress * Math.PI * 8) * pace * 6;
-          const vertical = featured ? (action.vertical || 0) * pace : 0;
-          const lift = featured || surface === 'fight' ? Math.abs(stride) : 0;
-          movePlayer(index,x + move*pace,y + vertical-lift,
+          const vertical = sparring ? Math.sin(progress*Math.PI*2) * (index ? -15 : 15)
+            : featured ? (action.vertical || 0) * run : 0;
+          const lift = featured ? Math.abs(stride) : 0;
+          const pose = baseball
+            ? index === 1 && progress < .28 ? 'pitch'
+              : featured && action.swing && progress > .22 && progress < .49 ? 'swing' : 'ready'
+            : featured && progress > .12 && progress < .52 ? action.pose : 'ready';
+          movePlayer(index,x + move*run,y + vertical,
             move ? Math.sign(move) : sideFor(index)?-1:1,
-            featured && action.lift > 0 && progress < .45 ? 'shot' : 'ready',lift*.35);
+            pose,lift*.35);
           player.legs.setAttribute('transform', `rotate(${move ? stride * 3 : 0})`);
           player.arm.setAttribute('transform', `rotate(${featured ? pace * -35 : 0} 7 -16)`);
         });
         if (action.from) {
-          const travel = Math.min(1, progress / .8);
-          const x = action.from[0] + (action.to[0] - action.from[0]) * travel;
-          const y = action.from[1] + (action.to[1] - action.from[1]) * travel - Math.sin(Math.PI * travel) * action.lift;
-          place(ball, x, y);
-          ball.toggleAttribute('hidden', progress === 1);
-          field3D?.ball(progress===1?null:{x,y:y+Math.sin(Math.PI*travel)*action.lift},.19+Math.sin(Math.PI*travel)*action.lift*.065);
+          const pitching = baseball && progress < .34;
+          const from = pitching ? action.pitch : action.from;
+          const to = pitching ? action.from : action.to;
+          const travel = pitching ? progress / .34 : baseball ? (progress - .34) / .66 : Math.min(1,progress / .8);
+          const visible = Boolean(to) && progress < 1;
+          if (visible) {
+            const x = from[0] + (to[0] - from[0]) * travel;
+            const y = from[1] + (to[1] - from[1]) * travel;
+            const arc = Math.sin(Math.PI * travel) * (pitching ? 9 : action.lift);
+            place(ball,x,y-arc);
+            field3D?.ball({x,y},.19+arc*.065);
+          } else field3D?.ball(null);
+          ball.toggleAttribute('hidden',!visible);
         }
         if (progress < 1) frameId = requestAnimationFrame(frame);
       };
