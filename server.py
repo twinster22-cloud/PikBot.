@@ -437,9 +437,12 @@ def basketball_lineups(boxscore, plays, pregame):
                 player_id = str(athlete.get('id') or '')
                 if not player_id or not athlete.get('displayName') or player_id in roster:
                     continue
-                headshot = athlete.get('headshot') or {}
+                headshot = athlete.get('headshot')
+                number = athlete.get('jersey')
+                if number is None:
+                    number = row.get('jersey')
                 roster[player_id] = {'name': athlete['displayName'], 'short': athlete.get('shortName'),
-                                     'number': athlete.get('jersey'), 'photo': headshot.get('href'),
+                                     'number': number, 'photo': headshot.get('href') if isinstance(headshot, dict) else headshot,
                                      'position': (athlete.get('position') or {}).get('abbreviation'),
                                      'team': team_id}
                 if row.get('active') is True:

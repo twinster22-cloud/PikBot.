@@ -287,6 +287,7 @@ let highlightedTeam;
 let basketLogo;
 let court3D;
 let court3DLoading = false;
+let sourcePhotoAtlas;
 const photoKits = [];
 let liveMotion = false;
 let currentActor = -1;
@@ -296,14 +297,14 @@ const sceneNode = $('scene');
 function startCourt3D(teams) {
   if (court3DLoading) return;
   court3DLoading = true;
-  import('/livecast-3d.js?v=photo-players').then(({mountCourt}) => {
+  import('/livecast-3d.js?v=roster-tone').then(({mountCourt}) => {
     court3D = mountCourt($('arena-3d'), sceneNode, teams, motionPreference,
       enabled => $('dimension').hidden = !enabled);
     for (const [index, player] of courtPlayers.entries()) {
       court3D.player(index, player.position, player.facing, player.pose, player.jump);
       court3D.lineup(index, player.person);
     }
-    for (const [side,kit] of photoKits.entries()) court3D.photoKit(side,kit);
+    for (const [side,kit] of photoKits.entries()) court3D.photoKit(side,kit,sourcePhotoAtlas);
     if (physicalBall) court3D.ball(...physicalBall);
     court3D.handler(currentActor);
     court3D.motion(liveMotion);
@@ -325,6 +326,7 @@ function loadRosterArt(teams) {
   rosterColors = key;
   const atlas = new Image();
   atlas.onload = () => {
+    sourcePhotoAtlas = atlas;
     const canvas = document.createElement('canvas');
     canvas.width = atlas.naturalWidth;
     canvas.height = atlas.naturalHeight;
@@ -351,7 +353,7 @@ function loadRosterArt(teams) {
       teamArt.height = canvas.height;
       teamArt.getContext('2d').drawImage(canvas,0,0);
       photoKits[side] = teamArt;
-      court3D?.photoKit(side,teamArt);
+      court3D?.photoKit(side,teamArt,atlas);
       for (const image of document.querySelectorAll('[data-roster-kit="' + side + '"]')) image.setAttribute('href', kit);
     }
     rosterArtReady = true;
@@ -365,10 +367,12 @@ function updatePlayerSprite(player, pose) {
 }
 function applyLineup(teams, groups, roster) {
   for (const [side, team] of teams.entries()) {
-    const ids = groups?.[team.id] || [];
-    for (let i = 0; i < 5; i++) {
-      const figure = courtPlayers[side * 5 + i];
-      figure.id = ids[i] || '';
+    const ids = [...new Set(groups?.[team.id] || [])];
+    const figures = courtPlayers.slice(side*5,side*5+5);
+    const assigned = figures.map(figure => ids.includes(figure.id) ? figure.id : '');
+    const entering = ids.filter(id => !assigned.includes(id));
+    for (const [i,figure] of figures.entries()) {
+      figure.id = assigned[i] || entering.shift() || '';
       const player = roster[figure.id];
       figure.number.textContent = player?.number ?? '';
       figure.title.textContent = player?.name || 'Illustrated player';
@@ -379,7 +383,8 @@ function applyLineup(teams, groups, roster) {
 }
 function renderLineup(data) {
   const host = $('live-lineups');
-  const key = JSON.stringify([data.lineups, data.state]);
+  const key = JSON.stringify([data.state, data.teams.map(team =>
+    (data.lineups?.[team.id] || []).map(id => data.roster[id]))]);
   if (host.dataset.key === key) return;
   host.dataset.key = key;
   host.hidden = false;

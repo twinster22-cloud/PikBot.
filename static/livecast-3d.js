@@ -84,9 +84,24 @@ function loadFaceMaterials() {
 }
 
 function applyFaceMaterial(athlete) {
-  if (!faceMaterials || athlete.faceStyle == null) return;
-  athlete.head.material = faceMaterials[athlete.faceStyle];
-  athlete.skin.color.set(faceSwatches[athlete.faceStyle]);
+  let style = athlete.faceStyle;
+  if (athlete.skinTone) {
+    const [r,g,b] = athlete.skinTone;
+    athlete.skin.color.setRGB(r/255,g/255,b/255,SRGBColorSpace);
+    let closest = Infinity;
+    for (const [index,hex] of faceSwatches.entries()) {
+      const [red,green,blue] = hex.slice(1).match(/../g).map(channel=>parseInt(channel,16));
+      const distance = (red-r)**2+(green-g)**2+(blue-b)**2;
+      if (distance < closest) {
+        closest = distance;
+        style = index;
+      }
+    }
+  } else if (style != null) {
+    athlete.skin.color.set(faceSwatches[style]);
+  }
+  if (!faceMaterials || style == null) return;
+  athlete.head.material = faceMaterials[style];
   for (const detail of athlete.fallbackFace) detail.visible = false;
 }
 
@@ -435,11 +450,18 @@ function buildAthlete(scene, index, jersey, team) {
 }
 
 function identify(athlete, person) {
-  const key = person ? [person.id,person.short,person.name,person.number,person.position].join('|') : '';
+  const key = person ? [person.id,person.short,person.name,person.number,person.position,person.photo].join('|') : '';
   if (key === athlete.identity) return;
   athlete.identity = key;
   athlete.number = person?.number;
+  athlete.skinTone = null;
   paintPhotoPlayer(athlete);
+  if (person?.photo) samplePlayerSkin(person.photo).then(tone => {
+    if (!tone || athlete.identity !== key) return;
+    athlete.skinTone = tone;
+    if (!athlete.photo) applyFaceMaterial(athlete);
+    paintPhotoPlayer(athlete);
+  });
   let seed = athlete.index + 1;
   for (const ch of String(person?.id || '')) seed = (Math.imul(seed,31)+ch.charCodeAt(0)) >>> 0;
   const rng = random(seed);
@@ -590,7 +612,80 @@ function createPhotoShadow() {
   return new MeshBasicMaterial({map:texture(image),transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1});
 }
 
-function setPhotoPlayer(athlete, atlas, shadowMaterial) {
+const headshotTones = new Map();
+const clampUnit = value => Math.max(0,Math.min(1,value));
+const lightness = (r,g,b) => r*.2126+g*.7152+b*.0722;
+
+function midtone(samples) {
+  if (samples.length < 20) return null;
+  samples.sort((a,b)=>lightness(...a)-lightness(...b));
+  const middle = samples.slice(Math.floor(samples.length*.42),Math.ceil(samples.length*.68));
+  const sums = middle.reduce((sum,pixel)=>sum.map((value,i)=>value+pixel[i]),[0,0,0]);
+  return sums.map(value=>value/middle.length);
+}
+function samplePlayerSkin(url) {
+  if (!/^https:\/\/a\.espncdn\.com\/i\/headshots\/[a-z-]+\/players\/full\/\d+\.png(?:\?[^#]*)?$/i.test(url)) {
+    return Promise.resolve(null);
+  }
+  if (!headshotTones.has(url)) headshotTones.set(url,new Promise(resolve => {
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => {
+      try {
+        const shot = canvas(112,96);
+        const context = shot.getContext('2d',{willReadFrequently:true});
+        context.drawImage(image,0,0,112,96);
+        const {data} = context.getImageData(0,0,112,96);
+        const cheeks = [];
+        for (let y=35;y<54;y++) {
+          for (let x=46;x<66;x++) {
+            if (x>52 && x<60) continue;
+            const i = (y*112+x)*4;
+            const r = data[i], g = data[i+1], b = data[i+2];
+            if (data[i+3]>242 && r>36 && r-g>5 && g-b>1) cheeks.push([r,g,b]);
+          }
+        }
+        resolve(midtone(cheeks));
+      } catch (_) {resolve(null);}
+    };
+    image.onerror = () => resolve(null);
+    image.src = url;
+  }));
+  return headshotTones.get(url);
+}
+
+function skinMask(source, variant) {
+  const width = source.naturalWidth/5, height = source.naturalHeight;
+  const cutout = canvas(256,448);
+  const ctx = cutout.getContext('2d',{willReadFrequently:true});
+  ctx.drawImage(source,variant*width,0,width,height,0,0,256,448);
+  const {data} = ctx.getImageData(0,0,256,448);
+  const alpha = new Uint8Array(256*448);
+  const samples = [];
+  for (let i=0;i<data.length;i+=4) {
+    const r = data[i], g = data[i+1], b = data[i+2];
+    if (data[i+3]<96 || r<=g || g<=b) continue;
+    const amount = clampUnit((r-g-4)/14)*clampUnit((g-b-2)/11)*clampUnit((r-32)/30);
+    alpha[i/4] = Math.round(255*amount);
+    if (amount>.85 && data[i+3]>242 && i/4%3===0) samples.push([r,g,b]);
+  }
+  return {alpha,reference:midtone(samples)};
+}
+
+function tintPhotoSkin(ctx, mask, tone) {
+  if (!mask?.reference || !tone) return;
+  const pixels = ctx.getImageData(0,0,256,448);
+  const ratios = tone.map((value,i)=>Math.max(.42,Math.min(1.85,value/mask.reference[i])));
+  for (let i=0;i<mask.alpha.length;i++) {
+    const weight = mask.alpha[i]/255;
+    if (!weight) continue;
+    const offset = i*4;
+    for (let c=0;c<3;c++) pixels.data[offset+c] *= 1+(ratios[c]-1)*weight;
+  }
+  ctx.putImageData(pixels,0,0);
+}
+
+function setPhotoPlayer(athlete, atlas, mask, shadowMaterial) {
   const playerArt = canvas(256,448), mirroredArt = canvas(256,448);
   const front = texture(playerArt), reverse = texture(mirroredArt);
   const material = new SpriteMaterial({map:front,transparent:true,alphaTest:.23,depthWrite:false,toneMapped:false});
@@ -601,37 +696,36 @@ function setPhotoPlayer(athlete, atlas, shadowMaterial) {
   athlete.root.add(portrait);
   const shadow = model(athlete.root,new PlaneGeometry(1.4,1.0),shadowMaterial,[1,1,1],[0,.023,0],false);
   shadow.rotation.x = -PI/2;
-  athlete.photo = {portrait,material,front,reverse,playerArt,mirroredArt,atlas,shadow};
+  athlete.photo = {portrait,material,front,reverse,playerArt,mirroredArt,atlas,mask,shadow};
   athlete.rig.visible = false;
   paintPhotoPlayer(athlete);
 }
 function paintPhotoPlayer(athlete) {
   if (!athlete.photo) return;
-  const {playerArt,mirroredArt,atlas,front,reverse} = athlete.photo;
+  const {playerArt,mirroredArt,atlas,mask,front,reverse} = athlete.photo;
   const variant = (athlete.index + Math.floor(athlete.index/5)*2)%5;
   const tileWidth = atlas.width/5;
   const [chestX,chestY] = [[65,84],[73,66],[48,99],[77,81],[79,74]][variant];
-  for (const [image,flip] of [[playerArt,false],[mirroredArt,true]]) {
-    const ctx = image.getContext('2d');
-    ctx.clearRect(0,0,image.width,image.height);
-    ctx.save();
-    if (flip) {
-      ctx.translate(image.width,0);
-      ctx.scale(-1,1);
-    }
-    ctx.drawImage(atlas,variant*tileWidth,0,tileWidth,atlas.height,0,0,image.width,image.height);
-    ctx.restore();
-    if (athlete.number != null) {
-      const x = (flip ? 128-chestX : chestX)*2;
-      ctx.font = '900 31px system-ui';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = '#221731';
-      ctx.fillStyle = '#fff9f1';
-      ctx.strokeText(String(athlete.number),x,chestY*2);
-      ctx.fillText(String(athlete.number),x,chestY*2);
-    }
+  const base = playerArt.getContext('2d',{willReadFrequently:true});
+  const flipped = mirroredArt.getContext('2d');
+  base.clearRect(0,0,256,448);
+  base.drawImage(atlas,variant*tileWidth,0,tileWidth,atlas.height,0,0,256,448);
+  tintPhotoSkin(base,mask,athlete.skinTone);
+  flipped.clearRect(0,0,256,448);
+  flipped.save();
+  flipped.translate(256,0);
+  flipped.scale(-1,1);
+  flipped.drawImage(playerArt,0,0);
+  flipped.restore();
+  if (athlete.number != null) for (const [ctx,x] of [[base,chestX*2],[flipped,(128-chestX)*2]]) {
+    ctx.font = '900 31px system-ui';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#221731';
+    ctx.fillStyle = '#fff9f1';
+    ctx.strokeText(String(athlete.number),x,chestY*2);
+    ctx.fillText(String(athlete.number),x,chestY*2);
   }
   front.needsUpdate = true;
   reverse.needsUpdate = true;
@@ -695,6 +789,7 @@ export function mountCourt(container, stage, teams, reducedMotion, onReady) {
     }
   });
   const photoShadow = createPhotoShadow();
+  const photoMasks = [];
   const ball = makeBall(scene);
   const ballTarget = new Vector3(0,.18,0);
   ball.visible = false;
@@ -768,9 +863,12 @@ export function mountCourt(container, stage, teams, reducedMotion, onReady) {
       if (!ready) player.root.position.copy(player.target);
       Object.assign(player,{facing,pose,jump});
     },
-    photoKit(side,atlas) {
+    photoKit(side,atlas,source) {
       for (const athlete of players.slice(side*5,side*5+5)) {
-        if (!athlete.photo) setPhotoPlayer(athlete,atlas,photoShadow);
+        if (athlete.photo) continue;
+        const variant = (athlete.index + side*2)%5;
+        if (source && !photoMasks[variant]) photoMasks[variant] = skinMask(source,variant);
+        setPhotoPlayer(athlete,atlas,photoMasks[variant],photoShadow);
       }
     },
     lineup(index,person) {identify(players[index],person);},
