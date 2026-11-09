@@ -22,7 +22,7 @@
 <section id="bills" hidden><div class="panel"><h2>Bills to pay</h2><p class="notice warning">Adding a bill or marking it paid changes bookkeeping only. No payment is sent.</p><form id="bill-form"><h3 id="bill-form-title">Add a bill</h3><div class="form-grid"><label>Bill / provider<input name="title" required maxlength="120" placeholder="Enter a real bill"></label><label>Amount (USD)<input name="amount" type="number" step="0.01" min="0.01" required></label><label>Due date<input name="due_date" type="date" required></label></div><button class="primary" id="bill-submit">Add bill</button> <button type="button" id="bill-cancel" hidden>Cancel edit</button></form></div><div class="panel"><form class="searchform" id="bills-search"><input type="search" name="q" maxlength="120" aria-label="Search bills" placeholder="Search bills"><select name="state" aria-label="Filter bills"><option value="">Active bills</option><option value="unpaid">Unpaid</option><option value="paid">Paid</option><option value="archived">Archived</option></select><button>Search</button></form><div id="bills-table" class="scroll"></div><div class="pages"><button data-prev="bills">Previous</button><span id="bills-page"></span><button data-next="bills">Next</button></div></div></section>
 <section id="pick-results" hidden><div class="panel">
 <h2>Previous Pick Results</h2>
-<p class="muted">Saved trial and member predictions across all accounts, grouped by game start in Eastern time. Repeated views of the same source, player, stat, line, and side are grouped. Only picks with a final grade are shown. Results refresh every minute while this tab is open.</p>
+<p class="muted">Saved trial and member predictions across all accounts, grouped by game start in Eastern time. Repeated views of the same source, player, stat, line, and side are grouped. Only picks with a final grade are shown. Newer picks jumps to the latest results for yesterday’s games. Results refresh every minute while this tab is open.</p>
 <label for="pick-results-day">Game day (Eastern)</label>
 <select id="pick-results-day">
   <option value="recent">Past 48 hours</option>
@@ -31,7 +31,7 @@
 </select>
 <p id="pick-results-status" role="status"></p>
 <div id="pick-results-table" class="scroll"></div>
-<div class="pages"><button id="pick-results-newer" disabled>Newer picks</button><button id="pick-results-refresh">Refresh results</button><button id="pick-results-older" disabled>Older picks</button></div>
+<div class="pages"><button id="pick-results-newer" type="button">Newer picks</button><button id="pick-results-refresh">Refresh results</button><button id="pick-results-older" disabled>Older picks</button></div>
 </div></section>
 <section id="accuracy" hidden><div class="panel"><h2>Accuracy & specialist team</h2><p class="notice warning">Research mode. No 75% win-rate claim is validated. Specialist checks share historical data; agreement does not guarantee an outcome. Lineup/injury verification and live prediction modeling remain incomplete.</p><p>Data reviewer · Projection reviewer · Trend reviewer · Playing-time reviewer · Sport-specific availability reviewer · Market-pricing reviewer · Validation reviewer</p><p>New projections are recorded before game time with model version, source timestamp, history fingerprint, score, and review evidence. Repeated views count once. Old predictions remain in Previous Pick Results for 48 hours; this separate private audit starts with this release.</p><button id="accuracy-sync" class="primary">Check recorded predictions against final stats</button> <button id="accuracy-refresh">Refresh accuracy report</button><p id="accuracy-status" role="status"></p><div id="accuracy-summary" class="scroll"></div><h3>Raw score vs actual results</h3><div id="accuracy-bands" class="scroll"></div><h3>Results by sport</h3><div id="accuracy-sports" class="scroll"></div><h3>Results by model version</h3><div id="accuracy-versions" class="scroll"></div><p id="accuracy-note" class="muted"></p><h3>Entry EV calculator · research only</h3><p>Enter decimal probabilities and the exact total-return multipliers shown for your entry. Assumes independent picks, no pushes or voids, and correct probabilities. Correlated selections invalidate this calculation. A market estimate is not a verified probability.</p><label>Probabilities, separated by commas<input id="ev-probabilities" placeholder="0.5, 0.5"></label><label>Payout table as JSON (number correct: total return)<input id="ev-payouts" placeholder='{"2":3}'></label><button id="ev-calculate">Calculate hypothetical entry EV</button><p id="ev-result" role="status"></p></div></section>
 <dialog id="refund-dialog"><h2>Review a refund</h2><p class="notice warning">This can return real money. Refunding a payment does not cancel the member's subscription.</p><form id="refund-review"><label>Invoice<input name="invoice_id" id="refund-invoice" readonly required></label><label>Refund amount (USD)<input name="amount" id="refund-amount" type="number" min="0.01" step="0.01" required></label><button class="primary">Verify refund details</button></form><div id="refund-confirmation" hidden><p id="refund-details"></p><label>Type REFUND to confirm<input id="refund-word" autocomplete="off" spellcheck="false"></label><button id="refund-confirm" class="danger">Confirm refund</button></div><p id="refund-status" role="status"></p><button id="refund-close" style="margin-top:16px">Close</button></dialog>
@@ -133,7 +133,7 @@ async function load(){
   }catch(error){if(version===loadVersion)notice(error.message,true)}
 }
 let resultsPage=0, resultsLoading=false, resultsHaveMore=false;
-async function loadPickResults(page){
+async function loadPickResults(page, skipEmpty=false){
   if(resultsLoading)return;
   resultsLoading=true;
   const status=$('pick-results-status');
@@ -145,7 +145,12 @@ async function loadPickResults(page){
   $('pick-results-newer').disabled=true;
   $('pick-results-older').disabled=true;
   try{
-    const result=await api('/api/owner/pick-results?'+new URLSearchParams({page,day}));
+    let result=await api('/api/owner/pick-results?'+new URLSearchParams({page,day}));
+    const lastPage=skipEmpty?page+4:page;
+    while(!result.picks.length&&result.has_more&&page<lastPage){
+      page++;
+      result=await api('/api/owner/pick-results?'+new URLSearchParams({page,day}));
+    }
     resultsPage=page;
     resultsHaveMore=result.has_more;
     const labels={WIN:'Passed',LOSS:'Failed',PUSH:'Push',VOID:'Void'};
@@ -162,24 +167,28 @@ async function loadPickResults(page){
     resultsLoading=false;
     dayFilter.disabled=false;
     $('pick-results-refresh').disabled=false;
-    $('pick-results-newer').disabled=resultsPage===0;
+    $('pick-results-newer').disabled=false;
     $('pick-results-older').disabled=!resultsHaveMore;
   }
 }
-$('pick-results-day').onchange=()=>{
+function resetPickResults(){
   resultsPage=0;
   resultsHaveMore=false;
   $('pick-results-table').replaceChildren();
-  loadPickResults(0);
-};
+  loadPickResults(0,true);
+}
+$('pick-results-day').onchange=resetPickResults;
 $('pick-results-refresh').onclick=()=>loadPickResults(resultsPage);
 function refreshVisiblePickResults(){
   if(activeTab==='pick-results'&&!document.hidden)loadPickResults(resultsPage);
 }
 setInterval(refreshVisiblePickResults,60000);
 document.addEventListener('visibilitychange',refreshVisiblePickResults);
-$('pick-results-newer').onclick=()=>loadPickResults(resultsPage-1);
-$('pick-results-older').onclick=()=>loadPickResults(resultsPage+1);
+$('pick-results-newer').onclick=()=>{
+  $('pick-results-day').value='yesterday';
+  resetPickResults();
+};
+$('pick-results-older').onclick=()=>loadPickResults(resultsPage+1,true);
 
 
 let accuracyBusy=false;
@@ -229,7 +238,7 @@ function switchTab(tab){
   document.querySelectorAll('[data-tab]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.tab===tab)));
   for(const id of ['overview','pick-results','accuracy','live-center',...Object.keys(pages)])$(id).hidden=id!==tab;
   if(tab in pages)list(tab);
-  if(tab==='pick-results')loadPickResults(0);
+  if(tab==='pick-results')loadPickResults(0,true);
   if(tab==='accuracy')loadAccuracy();
   if(tab==='live-center')loadOwnerLive();
 }
