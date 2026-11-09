@@ -868,13 +868,13 @@ function samplePlayerSkin(url) {
   return headshotTones.get(url);
 }
 
-function skinMask(source, variant) {
-  const width = source.naturalWidth/5, height = source.naturalHeight;
-  const cutout = canvas(256,448);
+function skinMask(source, variant, count=5) {
+  const width = source.naturalWidth/count, height = source.naturalHeight;
+  const cutout = canvas(count===5 ? 256 : 384,448);
   const ctx = cutout.getContext('2d',{willReadFrequently:true});
-  ctx.drawImage(source,variant*width,0,width,height,0,0,256,448);
-  const {data} = ctx.getImageData(0,0,256,448);
-  const alpha = new Uint8Array(256*448);
+  ctx.drawImage(source,variant*width,0,width,height,0,0,cutout.width,cutout.height);
+  const {data} = ctx.getImageData(0,0,cutout.width,cutout.height);
+  const alpha = new Uint8Array(cutout.width*cutout.height);
   const samples = [];
   for (let i=0;i<data.length;i+=4) {
     const r = data[i], g = data[i+1], b = data[i+2];
@@ -899,8 +899,9 @@ function tintPhotoSkin(ctx, mask, tone) {
   ctx.putImageData(pixels,0,0);
 }
 
-function setPhotoPlayer(athlete, atlas, mask, shadowMaterial) {
-  const playerArt = canvas(256,448), mirroredArt = canvas(256,448);
+function setPhotoPlayer(athlete, atlas, mask, shadowMaterial, layout) {
+  const artWidth = layout ? 384 : 256;
+  const playerArt = canvas(artWidth,448), mirroredArt = canvas(artWidth,448);
   const front = texture(playerArt), reverse = texture(mirroredArt);
   const material = new SpriteMaterial({map:front,transparent:true,alphaTest:.23,depthWrite:false,toneMapped:false});
   const portrait = new Sprite(material);
@@ -910,36 +911,38 @@ function setPhotoPlayer(athlete, atlas, mask, shadowMaterial) {
   athlete.root.add(portrait);
   const shadow = model(athlete.root,new PlaneGeometry(1.4,1.0),shadowMaterial,[1,1,1],[0,.023,0],false);
   shadow.rotation.x = -PI/2;
-  athlete.photo = {portrait,material,front,reverse,playerArt,mirroredArt,atlas,mask,shadow};
+  athlete.photo = {portrait,material,front,reverse,playerArt,mirroredArt,atlas,mask,shadow,layout};
   athlete.rig.visible = false;
   paintPhotoPlayer(athlete);
 }
 function paintPhotoPlayer(athlete) {
   if (!athlete.photo) return;
-  const {playerArt,mirroredArt,atlas,mask,front,reverse} = athlete.photo;
-  const variant = (athlete.index + Math.floor(athlete.index/5)*2)%5;
-  const tileWidth = atlas.width/5;
-  const [chestX,chestY] = [[65,84],[73,66],[48,99],[77,81],[79,74]][variant];
+  const {playerArt,mirroredArt,atlas,mask,front,reverse,layout} = athlete.photo;
+  const variant = layout?.variant ?? (athlete.index + Math.floor(athlete.index/5)*2)%5;
+  const tileWidth = atlas.width/(layout?.count || 5);
+  const chest = layout?.chest || [[65,84],[73,66],[48,99],[77,81],[79,74]][variant].map(value=>value*2);
+  const [chestX,chestY] = chest;
+  const width = playerArt.width;
   const base = playerArt.getContext('2d',{willReadFrequently:true});
   const flipped = mirroredArt.getContext('2d');
-  base.clearRect(0,0,256,448);
-  base.drawImage(atlas,variant*tileWidth,0,tileWidth,atlas.height,0,0,256,448);
+  base.clearRect(0,0,width,448);
+  base.drawImage(atlas,variant*tileWidth,0,tileWidth,atlas.height,0,0,width,448);
   tintPhotoSkin(base,mask,athlete.skinTone);
-  flipped.clearRect(0,0,256,448);
+  flipped.clearRect(0,0,width,448);
   flipped.save();
-  flipped.translate(256,0);
+  flipped.translate(width,0);
   flipped.scale(-1,1);
   flipped.drawImage(playerArt,0,0);
   flipped.restore();
-  if (athlete.number != null) for (const [ctx,x] of [[base,chestX*2],[flipped,(128-chestX)*2]]) {
+  if (athlete.number != null && (!layout || athlete.womens)) for (const [ctx,x] of [[base,chestX],[flipped,width-chestX]]) {
     ctx.font = '900 31px system-ui';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.lineWidth = 4;
     ctx.strokeStyle = '#221731';
     ctx.fillStyle = '#fff9f1';
-    ctx.strokeText(String(athlete.number),x,chestY*2);
-    ctx.fillText(String(athlete.number),x,chestY*2);
+    ctx.strokeText(String(athlete.number),x,chestY);
+    ctx.fillText(String(athlete.number),x,chestY);
   }
   front.needsUpdate = true;
   reverse.needsUpdate = true;
@@ -958,11 +961,38 @@ function animatePhotoPlayer(athlete, t, alpha, reduced) {
   const map = flip ? photo.reverse : photo.front;
   if (photo.material.map !== map) photo.material.map = map;
   photo.portrait.position.y = .035 + jump + (moving ? Math.abs(gait)*.055 : idle);
-  photo.portrait.scale.set(1.36*rig.scale.x,2.38*scale*(pose==='shot' ? 1.07 : 1),1);
+  photo.portrait.scale.set((photo.layout ? 2.04 : 1.36)*rig.scale.x,2.38*scale*(pose==='shot' ? 1.07 : 1),1);
   photo.material.rotation = moving ? (flip ? 1 : -1) * (.07 + gait*.035) : 0;
   photo.shadow.scale.setScalar(1-jump*.27);
   athlete.label.visible = athlete.actor && Boolean(athlete.identity);
 }
+const sportPhotoFiles = {
+  football:'livecast-photo-football.webp',
+  baseball:'livecast-photo-baseball.webp',
+  hockey:'livecast-photo-hockey.webp',
+  fight:'livecast-photo-mma.webp',
+  wnba:'livecast-photo-wnba.webp'
+};
+
+function recolorPhotoAtlas(source, color) {
+  const art = canvas(source.width,source.height);
+  const ctx = art.getContext('2d',{willReadFrequently:true});
+  ctx.drawImage(source,0,0);
+  const pixels = ctx.getImageData(0,0,art.width,art.height);
+  const rgb = color.getHexString().match(/../g).map(value=>parseInt(value,16));
+  const data = pixels.data;
+  for (let i=0;i<data.length;i+=4) {
+    if (!data[i+3]) continue;
+    const green = data[i+1]-Math.max(data[i],data[i+2]);
+    const weight = clampUnit((green-9)/29);
+    if (!weight) continue;
+    const shade = .38 + data[i+1]/255;
+    for (let c=0;c<3;c++) data[i+c] = blend(data[i+c],Math.max(18,rgb[c]*shade),weight);
+  }
+  ctx.putImageData(pixels,0,0);
+  return art;
+}
+
 export function mountCourt(container, stage, teams, reducedMotion, onReady, field) {
   const colors = kitColors(teams);
   const renderer = new WebGLRenderer({antialias:true,alpha:false,powerPreference:'low-power'});
@@ -1006,6 +1036,7 @@ export function mountCourt(container, stage, teams, reducedMotion, onReady, fiel
   const players = sides.map((side,index) => {
     const athlete = buildAthlete(scene,index,jerseys[side],teams[side],field?.surface);
     athlete.jersey = jerseys[side];
+    athlete.side = side;
     athlete.womens = womens;
     return athlete;
   });
@@ -1018,6 +1049,28 @@ export function mountCourt(container, stage, teams, reducedMotion, onReady, fiel
   });
   const photoShadow = createPhotoShadow();
   const photoMasks = [];
+  let sportKits;
+  const photoFile = sportPhotoFiles[field?.surface];
+  if (photoFile) {
+    const source = new Image();
+    source.onload = () => {
+      if (source.width !== 1152 || source.height !== 448 || renderFailed) return;
+      try {
+        sportKits = colors.map(color=>recolorPhotoAtlas(source,color));
+        for (const athlete of players) {
+          const variant = field.surface==='baseball'
+            ? athlete.index===9 ? 2 : athlete.index===1 ? 1 : 0
+            : field.surface==='football' ? 1+athlete.index%2 : athlete.index%3;
+          if (womens && !photoMasks[variant]) photoMasks[variant] = skinMask(source,variant,3);
+          setPhotoPlayer(athlete,sportKits[athlete.side],photoMasks[variant],photoShadow,{variant,count:3,chest:[[243,138],[212,157],[216,145]][variant]});
+        }
+        stage.dataset.photoPlayers = 'true';
+      } catch (_) {
+        // Keep the 3D rigs available when the photo texture cannot be read.
+      }
+    };
+    source.src = '/' + photoFile + '?v=1';
+  }
   const ball = fieldSize
     ? model(scene,field.surface==='hockey'?cone:sphere,surface({
         football:'#9b512f', hockey:'#242131', baseball:'#fff3dc', fight:'#ffffff'
@@ -1043,6 +1096,7 @@ export function mountCourt(container, stage, teams, reducedMotion, onReady, fiel
     renderFailed = true;
     cancelAnimationFrame(animation);
     delete stage.dataset.webgl;
+    delete stage.dataset.photoPlayers;
     onReady(false);
     container.replaceChildren();
     observed.disconnect();
@@ -1127,6 +1181,11 @@ export function mountCourt(container, stage, teams, reducedMotion, onReady, fiel
       if (before === jerseys[side]) return;
       athlete.rig.traverse(mesh=>{if(mesh.material===before)mesh.material=jerseys[side];});
       athlete.jersey = jerseys[side];
+      athlete.side = side;
+      if (sportKits && athlete.photo) {
+        athlete.photo.atlas = sportKits[side];
+        paintPhotoPlayer(athlete);
+      }
     },
     cheer() {cheerUntil=performance.now()+3100;},
     motion(active) {playActive = active;}

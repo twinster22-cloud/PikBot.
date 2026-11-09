@@ -39,6 +39,8 @@ def public_asset(asset):
         'splash.png', 'icon.svg', 'owner.webmanifest', 'owner-icon-192.png', 'owner-icon-512.png',
         'livecast-hoopers.webp', 'livecast-roster.webp', 'livecast-3d.js', 'livecast-arena.webp',
         'livecast-face-uv.webp', 'livecast-field.js',
+        'livecast-photo-football.webp', 'livecast-photo-baseball.webp',
+        'livecast-photo-hockey.webp', 'livecast-photo-mma.webp', 'livecast-photo-wnba.webp',
     }:
         return jsonify(error='Not found'), 404
     return send_from_directory(ROOT/'static', asset)

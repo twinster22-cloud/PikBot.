@@ -197,7 +197,7 @@ h1{font-size:1rem;margin:0 0 9px}h2{font-size:1rem;margin:0 0 9px}.stat{display:
 <p class="feed-note">Animated positions and movement are illustrative. {% if sport == 'UFC' %}Fighters follow the reported round status when available. Strike-by-strike replay requires a play feed. {% else %}Replay follows available play-by-play. {% endif %}Scoreboard updates may be delayed. <a id="official" hidden target="_blank" rel="noopener noreferrer">Official game page ↗</a></p>
 </main>
 </div>
-{% if sport not in ('NBA', 'COLLEGE BASKETBALL', 'WNBA') %}<script src="/livecast-field.js?v=3d"></script>{% endif %}
+{% if sport not in ('NBA', 'COLLEGE BASKETBALL', 'WNBA') %}<script src="/livecast-field.js?v=photo-players"></script>{% endif %}
 <script>
 const sport = {{ sport|tojson }};
 const day = {{ day|tojson }};
@@ -300,7 +300,7 @@ const fieldReplay = basketball ? null : window.mountFieldReplay?.(
 function startCourt3D(teams) {
   if (court3DLoading) return;
   court3DLoading = true;
-  import('/livecast-3d.js?v=arenas-crowd').then(({mountCourt}) => {
+  import('/livecast-3d.js?v=photo-players').then(({mountCourt}) => {
     court3D = mountCourt($('arena-3d'), sceneNode, teams, motionPreference,
       enabled => $('dimension').hidden = !enabled, sport === 'WNBA' ? {surface:'wnba'} : undefined);
     for (const [index, player] of courtPlayers.entries()) {

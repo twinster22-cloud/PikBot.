@@ -120,7 +120,7 @@
       }
       if (!loading3D && container) {
         loading3D = true;
-        import('/livecast-3d.js?v=arenas-crowd').then(({mountCourt}) => {
+        import('/livecast-3d.js?v=photo-players').then(({mountCourt}) => {
           field3D = mountCourt(container,stage,data.teams,motionPreference,onReady,
             {surface,sides:players.map((_,index)=>sideFor(index))});
           points.forEach((point,index)=>field3D.player(index,point,sideFor(index)?-1:1,'ready',0));
