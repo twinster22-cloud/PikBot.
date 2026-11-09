@@ -989,14 +989,29 @@ document.getElementById('sport-details-fullscreen').onclick=()=>{const panel=doc
 
 let pikbotGameCastSelection=null;
 async function openGameCast(sport,id,name){
- if(!pikbotCanWatch){alert('Animated GameCast is exclusive to PikBot Plus members and the owner.');return;}
- pikbotGameCastSelection={sport,id};
  const gamecast=document.getElementById('pikbot-gamecast');
- if(gamecast.parentElement!==document.body)document.body.appendChild(gamecast);
- gamecast.hidden=false;gamecast.classList.add('pb-gamecast-overlay');
+ const updated=document.getElementById('pikbot-gamecast-updated');
+ if(!gamecast){alert('GameCast viewer is unavailable. Refresh PikBot.');return;}
+ // Verify access at click time, rather than trusting a stale page-level flag.
+ try{
+  const res=await fetch('/api/account',{cache:'no-store',credentials:'same-origin'});
+  if(!res.ok)throw Error(res.status===401?'Please sign in again.':'Unable to verify Plus/owner access.');
+  const account=await res.json();
+  pikbotCanWatch=account.broadcast_access===true;
+  if(!pikbotCanWatch){alert('Watch is available only to PikBot Plus members and the owner.');return;}
+ }catch(error){alert(error.message||'Could not verify GameCast access.');return;}
+ pikbotGameCastSelection={sport,id:String(id)};
+ // Move the viewer out of any hidden parent before displaying it.
+ document.body.appendChild(gamecast);
+ gamecast.hidden=false;
+ gamecast.removeAttribute('hidden');
+ gamecast.classList.add('pb-gamecast-overlay');
+ gamecast.style.setProperty('display','block','important');
+ gamecast.style.setProperty('visibility','visible','important');
  document.getElementById('pikbot-gamecast-title').textContent='GameCast · '+name;
- document.getElementById('pikbot-gamecast').scrollIntoView({behavior:'smooth',block:'nearest'});
- await refreshGameCast();
+ if(updated)updated.textContent='Loading live game data…';
+ window.scrollTo({top:0,behavior:'instant'});
+ try{await refreshGameCast();}catch(error){if(updated)updated.textContent='GameCast error: '+error.message;}
 }
 async function refreshGameCast(){
  const selected=pikbotGameCastSelection;if(!selected)return;
@@ -1023,7 +1038,7 @@ async function refreshGameCast(){
  }catch(e){if(pikbotGameCastSelection===selected)updated.textContent=e.message;}
 }
 document.getElementById('pikbot-gamecast-refresh').onclick=refreshGameCast;
-document.getElementById('pikbot-gamecast-close').onclick=()=>{pikbotGameCastSelection=null;const panel=document.getElementById('pikbot-gamecast');panel.hidden=true;panel.classList.remove('pb-gamecast-overlay');};
+document.getElementById('pikbot-gamecast-close').onclick=()=>{pikbotGameCastSelection=null;const panel=document.getElementById('pikbot-gamecast');panel.hidden=true;panel.style.removeProperty('display');panel.style.removeProperty('visibility');panel.classList.remove('pb-gamecast-overlay');};
 setInterval(()=>{if(pikbotGameCastSelection&&!document.hidden)refreshGameCast();},15000);
 
 function configureBroadcastControls(prefix){
@@ -1073,7 +1088,7 @@ configureBroadcastControls('owner');
    for(const game of active){
     const p=document.createElement('button');p.type='button';p.className='sport';p.style.cssText='display:block;width:100%;min-height:0;margin:9px 0;padding:15px;text-align:left;border-color:#a85bff;background:linear-gradient(120deg,#211038,#0b1416);color:#fff';
     p.textContent='▶ Watch · '+(game.name||game.matchup||game.title||'Live game')+' · '+(game.status||'LIVE');
-    p.onclick=()=>{if(!game.id){status.textContent='This game has no available event identifier.';return;}const center=document.getElementById('live-center-browser');if(center)center.hidden=false;openGameCast(sport,String(game.id),game.name||'Live game');};
+    p.onclick=async()=>{if(!game.id){status.textContent='This game has no available event identifier.';return;}const center=document.getElementById('live-center-browser');if(center)center.hidden=false;openGameCast(sport,String(game.id),game.name||'Live game');};
     if(pikbotCanWatch)list.append(p);
    }
   }catch(error){status.textContent=error.message||'Live games could not be loaded.'}
