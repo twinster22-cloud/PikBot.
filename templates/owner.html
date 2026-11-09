@@ -197,6 +197,7 @@ $('ev-calculate').onclick=()=>{
 };
 function switchTab(tab){
   activeTab=tab;
+  history.replaceState(null, '', location.pathname+location.search+'#'+tab);
   document.querySelectorAll('[data-tab]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.tab===tab)));
   for(const id of ['overview','pick-results','accuracy','live-center',...Object.keys(pages)])$(id).hidden=id!==tab;
   if(tab in pages)list(tab);
@@ -204,7 +205,8 @@ function switchTab(tab){
   if(tab==='accuracy')loadAccuracy();
   if(tab==='live-center')loadOwnerLive();
 }
-document.querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>switchTab(button.dataset.tab));
+const ownerTabs=[...document.querySelectorAll('[data-tab]')];
+for(const button of ownerTabs)button.onclick=()=>switchTab(button.dataset.tab);
 for(const kind of Object.keys(pages)){
   $(kind+'-search').onsubmit=event=>{event.preventDefault();pages[kind]=0;list(kind)};
   $(kind+'-search').querySelector('select')?.addEventListener('change',()=>{pages[kind]=0;list(kind)});
@@ -305,6 +307,8 @@ async function browseOwnerStats(sport,id){
 document.getElementById('owner-live-load').onclick=browseOwnerGames;
 document.getElementById('owner-live-sport').onchange=browseOwnerGames;
 document.getElementById('owner-live-day').onchange=browseOwnerGames;
+const requestedTab=location.hash.slice(1);
+if(ownerTabs.some(button=>button.dataset.tab===requestedTab))switchTab(requestedTab);
 document.getElementById('owner-live-fullscreen').onclick=()=>{
  const panel=document.getElementById('owner-live-browser');
  if(document.fullscreenElement){document.exitFullscreen?.();return;}

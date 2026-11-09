@@ -92,7 +92,7 @@ h1{font-size:1rem;margin:0 0 9px}h2{font-size:1rem;margin:0 0 9px}.stat{display:
 <nav aria-label="PikBot">
 <a href="/watch" class="active" aria-current="page"><span>◉</span>Live Games</a>
 <a href="{{ '/owner/picks' if owner else '/' }}#pick-timeline"><span>◎</span>PikBot Picks</a>
-<a href="{{ '/owner/picks' if owner else '/' }}#entries"><span>◇</span>My Entries</a>
+{% if owner %}<a href="/owner#pick-results"><span>◇</span>Pick Results</a>{% endif %}
 {% if owner %}<a href="/owner"><span>▦</span>Owner Dashboard</a>{% endif %}
 </nav>
 </aside>
