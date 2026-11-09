@@ -738,8 +738,9 @@ def previous_pick_results():
             LIMIT %s OFFSET %s""", (first_day, first_day, cutoff, end,
                                     pick_results.PAGE_SIZE + 1, page * pick_results.PAGE_SIZE)).fetchall()
     picks = [row['pick'] for row in rows[:pick_results.PAGE_SIZE]]
-    return jsonify(picks=pick_results.grade(picks, now),
-                   has_more=len(rows) > pick_results.PAGE_SIZE,
+    finished = [pick for pick in pick_results.grade(picks, now)
+                if pick['result'] in ('WIN', 'LOSS', 'PUSH', 'VOID')]
+    return jsonify(picks=finished, has_more=len(rows) > pick_results.PAGE_SIZE,
                    checked_at=now.isoformat())
 
 
