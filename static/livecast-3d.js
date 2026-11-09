@@ -1,6 +1,6 @@
 import {
   ACESFilmicToneMapping, BoxGeometry, CanvasTexture, CapsuleGeometry, Color,
-  CylinderGeometry, DirectionalLight, DoubleSide, Fog, Group, HemisphereLight,
+  CylinderGeometry, DirectionalLight, DoubleSide, Fog, Group, HemisphereLight, InstancedMesh, Object3D,
   Mesh, MeshBasicMaterial, MeshStandardMaterial,
   PCFShadowMap, PerspectiveCamera, PlaneGeometry, RepeatWrapping, Scene,
   SphereGeometry, Sprite, SpriteMaterial, SRGBColorSpace, TorusGeometry,
@@ -258,29 +258,8 @@ function buildArena(scene, colors, home) {
     }
   }
 
-  const boardImage = canvas(1024, 96);
-  const ctx = boardImage.getContext('2d');
-  const glow = ctx.createLinearGradient(0,0,1024,96);
-  glow.addColorStop(0,'#200c47'); glow.addColorStop(.5,'#57309a'); glow.addColorStop(1,'#180b37');
-  ctx.fillStyle = glow; ctx.fillRect(0,0,1024,96);
-  ctx.fillStyle = '#a769ed'; ctx.fillRect(0,2,1024,3); ctx.fillRect(0,91,1024,3);
-  ctx.font = 'italic 900 30px system-ui';
-  ctx.textAlign = 'center'; ctx.fillStyle = '#f4e6ff';
-  for (let i = 0; i < 4; i++) ctx.fillText('PIKBOT LIVECAST', 128 + i * 256, 59);
-  const ribbon = new MeshBasicMaterial({map:texture(boardImage)});
-  model(scene, new PlaneGeometry(33,1.2), ribbon, [1,1,1], [0,.66,-8.93], false);
-  model(scene, box, surface('#1b1728'), [34,1.2,.55], [0,.59,-9.24], false);
+  const stands = buildStands(scene,33,-8.93);
   const black = surface('#17121e');
-  model(scene, box, black, [64,13,.6], [0,6.5,-11.3], false);
-  const crowdMaterial = new MeshBasicMaterial({color:'#392d45',toneMapped:false});
-  model(scene,new PlaneGeometry(57,19),crowdMaterial,[1,1,1],[0,9.5,-10.9],false);
-  const backdrop = new Image();
-  backdrop.onload = () => {
-    crowdMaterial.color.set('#ffffff');
-    crowdMaterial.map = texture(backdrop);
-    crowdMaterial.needsUpdate = true;
-  };
-  backdrop.src = '/livecast-arena.webp';
   for (const side of [-1,1]) {
     const bench = group(scene,side*10.5,0,-8.57);
     for (let i=0;i<7;i++) {
@@ -308,8 +287,202 @@ function buildArena(scene, colors, home) {
     };
     emblem.src = home.logo;
   }
+  return stands;
 }
 
+function buildStands(scene, width, front) {
+  const boardImage = canvas(1024, 96);
+  const ctx = boardImage.getContext('2d');
+  const glow = ctx.createLinearGradient(0,0,1024,96);
+  glow.addColorStop(0,'#200c47'); glow.addColorStop(.5,'#57309a'); glow.addColorStop(1,'#180b37');
+  ctx.fillStyle = glow; ctx.fillRect(0,0,1024,96);
+  ctx.fillStyle = '#a769ed'; ctx.fillRect(0,2,1024,3); ctx.fillRect(0,91,1024,3);
+  ctx.font = 'italic 900 30px system-ui';
+  ctx.textAlign = 'center'; ctx.fillStyle = '#f4e6ff';
+  for (let i = 0; i < 4; i++) ctx.fillText('PIKBOT LIVECAST', 128 + i * 256, 59);
+  const ribbon = new MeshBasicMaterial({map:texture(boardImage)});
+  model(scene, new PlaneGeometry(width,1.2), ribbon, [1,1,1], [0,.66,front], false);
+  model(scene, box, surface('#1b1728'), [width+1,1.2,.55], [0,.59,front-.31], false);
+  model(scene, box, surface('#17121e'), [width+31,13,.6], [0,6.5,front-2.37], false);
+  const crowdMaterial = new MeshBasicMaterial({color:'#392d45',toneMapped:false});
+  model(scene,new PlaneGeometry(width+24,19),crowdMaterial,[1,1,1],[0,9.5,front-1.97],false);
+  const backdrop = new Image();
+  backdrop.onload = () => {
+    crowdMaterial.color.set('#ffffff');
+    crowdMaterial.map = texture(backdrop);
+    crowdMaterial.needsUpdate = true;
+  };
+  backdrop.src = '/livecast-arena.webp';
+  return {width, front};
+}
+
+function buildCrowd(scene, stands, colors) {
+  const rng = random(613);
+  const count = 160;
+  const heads = new InstancedMesh(new SphereGeometry(1,8,6), surface('#ffffff'), count);
+  const shirts = new InstancedMesh(limb, surface('#ffffff'), count);
+  const arms = new InstancedMesh(limb, surface('#ffffff'), count*2);
+  const palette = [...colors, ...['#c0afd0','#7e6f91','#4d3b63','#ded2df'].map(value=>new Color(value))];
+  const spectators = Array.from({length:count},(_,index)=>({
+    x:(index%40-19.5)*stands.width/40+(rng()-.5)*.21,
+    y:1.4+Math.floor(index/40)*.62,
+    z:stands.front-.48-Math.floor(index/40)*.35,
+    phase:rng()*PI*2, energy:rng()
+  }));
+  for (let index=0;index<count;index++) {
+    heads.setColorAt(index,new Color(faceSwatches[index%faceSwatches.length]));
+    const color = palette[Math.floor(rng()*palette.length)];
+    shirts.setColorAt(index,color);
+    arms.setColorAt(index,color);
+  }
+  for (const mesh of [heads,shirts,arms]) {
+    mesh.frustumCulled = false;
+    scene.add(mesh);
+  }
+  const dummy = new Object3D();
+  const put = (mesh,index,x,y,z,w,h,d,tilt=0) => {
+    dummy.position.set(x,y,z);
+    dummy.scale.set(w,h,d);
+    dummy.rotation.z = tilt;
+    dummy.updateMatrix();
+    mesh.setMatrixAt(index,dummy.matrix);
+  };
+  let frame = -1;
+  return (t, cheering, reduced) => {
+    const next = reduced ? 0 : Math.floor(t*16)+1;
+    if (frame === next) return;
+    frame = next;
+    for (const [index, spectator] of spectators.entries()) {
+      const {x,y,z,phase,energy} = spectator;
+      const bob = reduced ? 0 : Math.sin(t*3.5+phase)*.035;
+      const wave = reduced ? 0 : cheering ? Math.max(0,Math.sin(t*6+phase))*.97
+        : Math.max(0,Math.sin(t*1.4+phase)-.76)*(energy>.6 ? .76 : 0);
+      put(heads,index,x,y+.32+bob+wave*.10,z,.105,.12,.10);
+      put(shirts,index,x,y+.09+bob+wave*.08,z,.125,.12,.09);
+      for (let side=0;side<2;side++) {
+        const dir = side ? 1 : -1;
+        put(arms,index*2+side,x+dir*(.14+wave*.09),y+.07+bob+wave*.33,z+.01,
+          .046,.091,.048,dir*(.24-wave*2.2));
+      }
+    }
+    for (const mesh of [heads,shirts,arms]) mesh.instanceMatrix.needsUpdate = true;
+  };
+}
+
+const fieldSizes = {football:[41,20], hockey:[34,18], baseball:[32,20], fight:[25,16]};
+function buildFieldArena(scene, sport, colors) {
+  const [width,depth] = fieldSizes[sport];
+  const image = canvas(1200,720);
+  const ink = image.getContext('2d');
+  const rng = random(81);
+  const ice = sport === 'hockey';
+  const combat = sport === 'fight';
+  const base = ice ? '#c3deed' : combat ? '#677288' : '#2c693f';
+  ink.scale(1.5,720/380);
+  ink.fillStyle = base;
+  ink.fillRect(0,0,800,380);
+  for (let i=0;i<19000;i++) {
+    ink.fillStyle = rng()>.5 ? '#ffffff12' : '#08101e16';
+    ink.fillRect(rng()*800,rng()*380,1+rng()*3,.35+rng()*.8);
+  }
+  ink.strokeStyle = '#f8eff0';
+  ink.lineWidth = 2.2;
+  const line = (x,y,toX,toY) => {
+    ink.beginPath();ink.moveTo(x,y);ink.lineTo(toX,toY);ink.stroke();
+  };
+  const circle = (x,y,r,fill) => {
+    ink.beginPath();ink.arc(x,y,r,0,PI*2);
+    if (fill) {ink.fillStyle = fill;ink.fill();} else ink.stroke();
+  };
+  if (sport === 'football') {
+    for (let i=0;i<10;i++) {
+      const x = 70+i*66;
+      if (i%2) {ink.fillStyle='#ffffff12';ink.fillRect(x,36,66,306);}
+      line(x,36,x,342);
+      for (let j=1;j<5;j++) for (const y of [155,224]) line(x+j*13.2,y,x+j*13.2,y+4);
+    }
+    for (const [index,x] of [20,730].entries()) {
+      ink.fillStyle = '#' + colors[index].getHexString();ink.fillRect(x,36,50,306);
+      ink.fillStyle = '#f4edf9';ink.font = 'italic 900 17px system-ui';ink.textAlign = 'center';
+      ink.save();ink.translate(x+25,190);ink.rotate(-PI/2);ink.fillText(index?'HOME':'AWAY',0,6);ink.restore();
+    }
+    ink.strokeRect(20,36,760,306);
+    for (let i=1;i<=9;i++) {
+      ink.fillStyle='#fffc';ink.font='900 15px system-ui';ink.textAlign='center';
+      for (const y of [67,325]) ink.fillText(String(Math.min(i,10-i)*10),70+i*66,y);
+    }
+    const gold = surface('#ffe285');
+    for (const side of [-1,1]) {
+      model(scene,box,gold,[.07,1.5,.07],[side*width*.471,.75,0]);
+      model(scene,box,gold,[.07,.07,2.25],[side*width*.471,1.5,0]);
+      for (const z of [-1.1,1.1]) model(scene,box,gold,[.06,1.95,.06],[side*width*.471,2.47,z]);
+    }
+  } else if (ice) {
+    ink.strokeStyle='#ab3456';
+    line(400,28,400,352);
+    for (const x of [79,721]) line(x,41,x,339);
+    ink.strokeStyle='#2e589e';ink.lineWidth=4;
+    for (const x of [279,521]) line(x,29,x,351);
+    ink.lineWidth=2;circle(400,190,42);
+    for (const x of [177,623]) for (const y of [109,271]) {
+      ink.strokeStyle='#bc5070';circle(x,y,33);circle(x,y,3,'#bc5070');
+    }
+    const boards = surface('#e2e7f2');
+    for (const side of [-1,1]) {
+      model(scene,box,boards,[width,.42,.16],[0,.21,side*depth*.48]);
+      model(scene,box,boards,[.16,.42,depth],[side*width*.49,.21,0]);
+      const goal = surface('#d73b5f');
+      const x=side*width*.408;
+      model(scene,box,goal,[.06,.06,1.55],[x,.73,0]);
+      for (const z of [-.75,.75]) model(scene,box,goal,[.06,.77,.06],[x,.36,z]);
+      const mesh=new MeshStandardMaterial({color:'#f1eaff',transparent:true,opacity:.25});
+      model(scene,box,mesh,[.44,.66,1.47],[x+side*.24,.34,0],false);
+    }
+  } else if (combat) {
+    const octagon = scale => {
+      ink.beginPath();
+      for (let i=0;i<8;i++) {
+        const angle = (i+.5)*PI/4;
+        const x=400+Math.cos(angle)*196*scale, y=190+Math.sin(angle)*157*scale;
+        if(i) ink.lineTo(x,y); else ink.moveTo(x,y);
+      }
+      ink.closePath();
+    };
+    ink.fillStyle='#201b2b';ink.fillRect(0,0,800,380);
+    octagon(1);ink.fillStyle='#8790a6';ink.fill();
+    octagon(.89);ink.strokeStyle='#ece6ff';ink.stroke();
+    circle(400,190,62);
+    ink.fillStyle='#2a233c';ink.font='italic 900 30px system-ui';ink.textAlign='center';ink.fillText('LIVECAST',400,199);
+    const cage = surface('#34293e');
+    for(let i=0;i<8;i++){
+      const a=(i+.5)*PI/4, b=a+PI/4;
+      const x=Math.cos(a)*width*.245,z=Math.sin(a)*depth*.413;
+      const xx=Math.cos(b)*width*.245,zz=Math.sin(b)*depth*.413;
+      model(scene,box,cage,[.09,1.6,.09],[x,.8,z]);
+      for (const y of [.36,1.48]) {
+        const rail=model(scene,box,cage,[Math.hypot(xx-x,zz-z),.04,.04],[(x+xx)/2,y,(z+zz)/2],false);
+        rail.rotation.y=-Math.atan2(zz-z,xx-x);
+      }
+    }
+  } else {
+    for (let x=0;x<800;x+=54) {ink.fillStyle=x%108?'#ffffff12':'#12142910';ink.fillRect(x,0,54,380);}
+    ink.fillStyle='#ac784e';ink.beginPath();ink.moveTo(400,357);ink.lineTo(274,226);
+    ink.quadraticCurveTo(400,105,526,226);ink.closePath();ink.fill();
+    ink.fillStyle='#317248';ink.beginPath();ink.moveTo(400,324);ink.lineTo(320,242);
+    ink.lineTo(400,179);ink.lineTo(480,242);ink.closePath();ink.fill();
+    ink.strokeStyle='#fffae3';line(400,352,98,49);line(400,352,702,49);
+    circle(400,237,16,'#ae7d56');
+    ink.fillStyle='#fff6de';
+    for (const [x,y] of [[400,350],[291,239],[400,133],[509,239]]) {
+      ink.save();ink.translate(x,y);ink.rotate(PI/4);ink.fillRect(-5,-5,10,10);ink.restore();
+    }
+  }
+  const floor = model(scene,new PlaneGeometry(width,depth),
+    new MeshStandardMaterial({map:texture(image),roughness:ice?.33:.8}),[1,1,1],[0,.014,0],false);
+  floor.rotation.x=-PI/2;
+  model(scene,box,surface('#1b1726'),[width+14,.25,depth+15],[0,-.14,0],false);
+  return buildStands(scene,width+5,-depth/2-1.1);
+}
 
 // One continuous skin surface bends across the joint, so the upper and lower limb don't separate.
 function flexibleSkin(parent, material, rings, jointY) {
@@ -347,7 +520,7 @@ const legSkinRings = [[-.257,.102,.097],[-.317,.104,.096],[-.375,.096,.089],[-.4
   [-.498,.078,.079],[-.552,.087,.077],[-.613,.088,.078],[-.677,.077,.071],[-.738,.066,.065],
   [-.800,.059,.055],[-.851,.052,.049]];
 
-function buildAthlete(scene, index, jersey, team) {
+function buildAthlete(scene, index, jersey, team, sport) {
   const root = group(scene,0,0,0);
   const rig = group(root,0,0,0);
   const skin = surface('#ac714d'), hair = surface('#201715');
@@ -356,7 +529,7 @@ function buildAthlete(scene, index, jersey, team) {
   const trim = surface('#ede7f4');
   const seam = surface(jersey.color.clone().lerp(new Color('#ece5f7'),.62));
   const body = group(rig,0,1.15,0);
-  model(body, torsoMesh, jersey, [1,.64,1], [0,.265,0]);
+  model(body, torsoMesh, sport === 'fight' ? skin : jersey, [1,.64,1], [0,.265,0]);
   const waistband = model(body,cuffMesh,seam,[.268,.158,.33],[0,-.021,0]);
   waistband.rotation.x = -PI / 2;
   for (const side of [-1,1]) {
@@ -387,6 +560,10 @@ function buildAthlete(scene, index, jersey, team) {
   const headband = model(face,cuffMesh,trim,[.151,.137,.62],[0,.062,0],false);
   headband.rotation.x = -PI / 2;
   const beard = model(face,sphere,hair,[.107,.056,.075],[0,-.115,.062],false);
+  if (sport === 'wnba') {
+    const ponytail = model(face,limb,hair,[.063,.16,.059],[0,-.009,-.154],false);
+    ponytail.rotation.x = .45;
+  }
 
   const eyes = surface('#251b1b'), lips = surface('#754437');
   fallbackFace.push(model(face,noseMesh,lips,[.036,.008,.007],[0,-.077,.134],false));
@@ -426,6 +603,34 @@ function buildAthlete(scene, index, jersey, team) {
     legs.push({hip,knee,foot,skin:legSkin});
   }
 
+  if (sport === 'football' || sport === 'hockey') {
+    model(face,sphere,jersey,[.164,.145,.151],[0,.055,-.011]);
+    const visor = surface('#2a233a');
+    model(face,box,visor,[.221,.049,.035],[0,.032,.142],false);
+    for (const side of [-1,1]) {
+      model(body,sphere,jersey,[.15,.135,.19],[side*.29,.48,-.012]);
+      model(face,limb,trim,[.017,.062,.019],[side*.101,-.012,.131],false);
+    }
+  }
+  if (sport === 'hockey') {
+    const stick = model(arms[1].wrist,limb,surface('#251d31'),[.027,.35,.026],[0,-.28,.014],false);
+    stick.rotation.x=-.27;
+    model(arms[1].wrist,box,surface('#e6dcea'),[.032,.05,.20],[0,-.90,.19],false);
+    for (const leg of legs) model(leg.foot,box,trim,[.025,.025,.25],[0,-.039,.073],false);
+  }
+  if (sport === 'baseball') {
+    model(face,sphere,jersey,[.156,.082,.145],[0,.11,-.012]);
+    model(face,sphere,jersey,[.124,.022,.113],[0,.067,.116]);
+    for (const leg of legs) model(leg.knee,limb,trim,[.086,.12,.084],[0,-.25,0]);
+    if (index === 9) {
+      const bat = model(arms[1].wrist,limb,surface('#b98755'),[.037,.225,.038],[0,-.19,.17],false);
+      bat.rotation.x = -1.04;
+    }
+  }
+  if (sport === 'fight') {
+    for (const arm of arms) model(arm.wrist,sphere,jersey,[.071,.081,.058],[0,-.047,.011]);
+  }
+
   const printFront = canvas(192,224), printBack = canvas(192,224);
   const frontMap = texture(printFront), backMap = texture(printBack);
   const printPlane = new PlaneGeometry(.45,.50);
@@ -446,7 +651,7 @@ function buildAthlete(scene, index, jersey, team) {
   root.add(label);
   return {root,rig,body,face,head,fallbackFace,skin,hair,scalp,sideHair,crown,twists,headband,beard,shoe,arms,legs,
           printFront,printBack,frontMap,backMap,labelCanvas,labelMap,label,team,
-          target:new Vector3(),facing:1,pose:'ready',jump:0,actor:false,identity:null,index,distance:index*.12,dominant:1,crouch:.10};
+          sport,target:new Vector3(),facing:1,pose:'ready',jump:0,actor:false,identity:null,index,distance:index*.12,dominant:1,crouch:.10};
 }
 
 function identify(athlete, person) {
@@ -485,6 +690,10 @@ function identify(athlete, person) {
   const build = position.startsWith('C') ? [1.09,1.075,1.07] :
     position.startsWith('G') || /[PS]G/.test(position) ? [.89,.94,.93] : [1.00,1.01,.99];
   athlete.rig.scale.set(build[0]+rng()*.12-.06,build[1]+rng()*.06-.03,build[2]+rng()*.12-.06);
+  if (athlete.womens) {
+    athlete.rig.scale.multiply(new Vector3(.88,.96,.90));
+    athlete.beard.visible = false;
+  }
   const lastName = person?.short?.replace(/^(?:[A-Z]\.\s*)+/i,'') || person?.name?.split(' ').at(-1);
   for (const [image,map,heading] of [[athlete.printFront,athlete.frontMap,athlete.team.short],
                                      [athlete.printBack,athlete.backMap,lastName]]) {
@@ -539,6 +748,9 @@ function animateAthlete(athlete,t,alpha,dt,reduced,ball) {
   const step = Math.hypot(dx,dz)*(reduced ? 1 : alpha);
   const moving = !reduced && Math.hypot(dx,dz) > .13;
   const shooting = pose === 'shot';
+  const batting = shooting && athlete.sport === 'baseball';
+  const throwing = shooting && athlete.sport === 'football';
+  const guarding = athlete.sport === 'fight';
   const turning = moving && !shooting;
   root.position.lerp(target,reduced ? 1 : alpha);
   if (moving) athlete.distance += step;
@@ -558,17 +770,19 @@ function animateAthlete(athlete,t,alpha,dt,reduced,ball) {
   rig.position.y = launch-athlete.crouch + (moving ? Math.abs(gait)*.031 : idle*.009);
   body.rotation.x = blend(body.rotation.x,shooting ? -.055 : moving ? .19 : .13,alpha);
   body.rotation.z = moving ? gait*.068 : idle*.012;
+  body.rotation.y = blend(body.rotation.y,batting ? -.48 : throwing ? -.24 : 0,alpha);
   const dribble = athlete.actor && !shooting && !reduced && moving ? Math.sin(t*11.7) : 0;
   for (const [i,arm] of arms.entries()) {
     const {shoulder,elbow,wrist} = arm;
     const primary = i === athlete.dominant;
     const side = i ? 1 : -1;
     const stride = side*gait;
-    const upper = shooting ? (primary ? -2.68 : -2.14) :
+    const upper = batting ? -1.30 : throwing ? (primary ? -2.63 : -.48) :
+      shooting ? (primary ? -2.68 : -2.14) : guarding ? -1.12 :
       athlete.actor && primary ? -.65+dribble*.26 : moving ? stride*.76 : -.44+idle*.035;
     shoulder.rotation.x = blend(shoulder.rotation.x,upper,alpha);
     shoulder.rotation.z = -side*(shooting ? (primary ? .09 : .28) : moving ? .13 : .33);
-    elbow.rotation.x = blend(elbow.rotation.x,shooting ? (primary ? -.13 : -.70) :
+    elbow.rotation.x = blend(elbow.rotation.x,batting||guarding ? -1.35 : shooting ? (primary ? -.13 : -.70) :
       athlete.actor && primary ? -.67-dribble*.35 : moving ? -.83 : -.69,alpha);
     wrist.rotation.x = blend(wrist.rotation.x,shooting && primary ? -.54 : -.085+dribble*.16,alpha);
     flexSkin(arm.skin,elbow.rotation.x);
@@ -749,12 +963,14 @@ function animatePhotoPlayer(athlete, t, alpha, reduced) {
   photo.shadow.scale.setScalar(1-jump*.27);
   athlete.label.visible = athlete.actor && Boolean(athlete.identity);
 }
-export function mountCourt(container, stage, teams, reducedMotion, onReady) {
+export function mountCourt(container, stage, teams, reducedMotion, onReady, field) {
   const colors = kitColors(teams);
   const renderer = new WebGLRenderer({antialias:true,alpha:false,powerPreference:'low-power'});
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1,1.5));
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1,field?.surface === 'football' ? 1.05 : 1.5));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFShadowMap;
+  renderer.shadowMap.autoUpdate = field?.surface !== 'football';
+  renderer.shadowMap.needsUpdate = true;
   renderer.toneMapping = ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.03;
   renderer.domElement.setAttribute('aria-hidden','true');
@@ -770,17 +986,29 @@ export function mountCourt(container, stage, teams, reducedMotion, onReady) {
   lamp.position.set(-4,16,7);
   lamp.castShadow = true;
   lamp.shadow.mapSize.set(1024,1024);
-  Object.assign(lamp.shadow.camera,{left:-19,right:19,top:14,bottom:-14,near:1,far:39});
+  Object.assign(lamp.shadow.camera,{left:field?-26:-19,right:field?26:19,top:field?21:14,bottom:field?-21:-14,near:1,far:field?49:39});
   lamp.shadow.bias = -.00036;
   lamp.shadow.normalBias = .025;
   scene.add(lamp);
   const fill = new DirectionalLight('#bdccff',1.13);
   fill.position.set(-14,10,-12);
   scene.add(fill);
-  buildArena(scene,colors,teams[1]);
+  const fieldSize = field && fieldSizes[field.surface];
+  const womens = field?.surface === 'wnba';
+  const worldX = fieldSize ? x=>(x-400)*fieldSize[0]/800 : courtX;
+  const worldZ = fieldSize ? y=>(y-190)*fieldSize[1]/380 : courtZ;
+  const stands = fieldSize ? buildFieldArena(scene,field.surface,colors) : buildArena(scene,colors,teams[1]);
+  const animateCrowd = buildCrowd(scene,stands,colors);
+  let cheerUntil = 0;
   const fabric = jerseyFabric();
   const jerseys = colors.map(color => new MeshStandardMaterial({color,map:fabric,roughness:.88}));
-  const players = Array.from({length:10},(_,index)=>buildAthlete(scene,index,jerseys[Math.floor(index/5)],teams[Math.floor(index/5)]));
+  const sides = field?.sides || [0,0,0,0,0,1,1,1,1,1];
+  const players = sides.map((side,index) => {
+    const athlete = buildAthlete(scene,index,jerseys[side],teams[side],field?.surface);
+    athlete.jersey = jerseys[side];
+    athlete.womens = womens;
+    return athlete;
+  });
   loadFaceMaterials().then(() => {
     if (!faceMaterials) return;
     for (const athlete of players) {
@@ -790,7 +1018,12 @@ export function mountCourt(container, stage, teams, reducedMotion, onReady) {
   });
   const photoShadow = createPhotoShadow();
   const photoMasks = [];
-  const ball = makeBall(scene);
+  const ball = fieldSize
+    ? model(scene,field.surface==='hockey'?cone:sphere,surface({
+        football:'#9b512f', hockey:'#242131', baseball:'#fff3dc', fight:'#ffffff'
+      }[field.surface]),field.surface==='football'?[.22,.106,.108]:
+      field.surface==='hockey'?[.15,.052,.15]:[.105,.105,.105],[0,.17,0])
+    : makeBall(scene);
   const ballTarget = new Vector3(0,.18,0);
   ball.visible = false;
   const observed = new IntersectionObserver(([entry]) => {visible = entry.isIntersecting;});
@@ -819,13 +1052,14 @@ export function mountCourt(container, stage, teams, reducedMotion, onReady) {
   renderer.domElement.addEventListener('webglcontextlost',failure,{once:true});
   function render(time) {
     animation = requestAnimationFrame(render);
-    if (!visible || document.hidden || renderFailed) return;
+    if (!visible || document.hidden || renderFailed || (fieldSize && ready && time-last<28)) return;
     if (!ready && !size()) return;
     const dt = Math.min(.05,(time-last)/1000 || .016);
     last = time;
     const reduced = reducedMotion.matches;
     const pace = 1 - Math.exp(-Math.max(.001,dt)*14);
     const t = time/1000;
+    animateCrowd(t,time<cheerUntil,reduced);
     for (const player of players) {
       if (player.photo) animatePhotoPlayer(player,playActive ? t : 0,pace,reduced);
       else animateAthlete(player,playActive ? t : 0,pace,dt,reduced,ball.visible ? ball.position : null);
@@ -843,7 +1077,14 @@ export function mountCourt(container, stage, teams, reducedMotion, onReady) {
       aerial:[0, narrow ? 36 : 31, 2.2, 0, 0, 0],
       wide:[0, narrow ? 21.5 : 17.6, narrow ? 24.5 : 22.1, 0, 0, 0]
     };
-    const [cx,cy,cz,fx,fy,fz] = presets[mode] || presets.broadcast;
+    const fieldPresets = fieldSize && {
+      broadcast:[track*.72,fieldSize[0]*.45,fieldSize[0]*.59,track*.60,.55,0],
+      sideline:[track-3.5,fieldSize[0]*.23,fieldSize[0]*.43,track+.55,.72,bz*.18],
+      aerial:[0,fieldSize[0]*(narrow?1.5:1.19),3.2,0,0,0],
+      wide:[0,fieldSize[0]*(narrow?.83:.66),fieldSize[0]*(narrow?.88:.73),0,0,0]
+    };
+    const angles = fieldPresets || presets;
+    const [cx,cy,cz,fx,fy,fz] = angles[mode] || angles.broadcast;
     nextCamera.set(cx,cy,cz);
     focus.set(fx,fy,fz);
     const cameraPace = ready && !reduced ? 1-Math.exp(-dt*3.1) : 1;
@@ -859,11 +1100,12 @@ export function mountCourt(container, stage, teams, reducedMotion, onReady) {
   return {
     player(index,point,facing,pose,jump) {
       const player = players[index];
-      player.target.set(courtX(point.x),0,courtZ(point.y));
+      player.target.set(worldX(point.x),0,worldZ(point.y));
       if (!ready) player.root.position.copy(player.target);
       Object.assign(player,{facing,pose,jump});
     },
     photoKit(side,atlas,source) {
+      if (womens) return;
       for (const athlete of players.slice(side*5,side*5+5)) {
         if (athlete.photo) continue;
         const variant = (athlete.index + side*2)%5;
@@ -874,10 +1116,19 @@ export function mountCourt(container, stage, teams, reducedMotion, onReady) {
     lineup(index,person) {identify(players[index],person);},
     handler(index) {players.forEach(player=>{player.actor = index === player.index;});},
     ball(point,height) {
-      ballTarget.set(courtX(point.x),Math.max(.15,height),courtZ(point.y));
+      if (!point) {ball.visible=false;return;}
+      ballTarget.set(worldX(point.x),Math.max(.08,height),worldZ(point.y));
       if (!ball.visible) ball.position.copy(ballTarget);
       ball.visible = true;
     },
+    side(index,side) {
+      const athlete = players[index];
+      const before = athlete.jersey;
+      if (before === jerseys[side]) return;
+      athlete.rig.traverse(mesh=>{if(mesh.material===before)mesh.material=jerseys[side];});
+      athlete.jersey = jerseys[side];
+    },
+    cheer() {cheerUntil=performance.now()+3100;},
     motion(active) {playActive = active;}
   };
 }

@@ -113,9 +113,7 @@ h1{font-size:1rem;margin:0 0 9px}h2{font-size:1rem;margin:0 0 9px}.stat{display:
 <section class="stage" id="broadcast-stage" aria-label="GameCast scoreboard and animated arena">
 <div class="scene" id="scene" data-view="broadcast" data-surface="football" aria-hidden="true">
 <div class="crowd"></div>
-{% if sport in ('NBA', 'COLLEGE BASKETBALL', 'WNBA') %}
 <div class="arena-3d" id="arena-3d"></div>
-{% endif %}
 <svg class="arena" viewBox="0 0 800 380" xmlns="http://www.w3.org/2000/svg">
 <defs>
 <linearGradient id="maple" x2="0" y2="1"><stop stop-color="#d8a26a"/><stop offset=".5" stop-color="#f7d397"/><stop offset="1" stop-color="#bd864e"/></linearGradient>
@@ -199,7 +197,7 @@ h1{font-size:1rem;margin:0 0 9px}h2{font-size:1rem;margin:0 0 9px}.stat{display:
 <p class="feed-note">Animated positions and movement are illustrative. {% if sport == 'UFC' %}Fighters follow the reported round status when available. Strike-by-strike replay requires a play feed. {% else %}Replay follows available play-by-play. {% endif %}Scoreboard updates may be delayed. <a id="official" hidden target="_blank" rel="noopener noreferrer">Official game page ↗</a></p>
 </main>
 </div>
-{% if sport not in ('NBA', 'COLLEGE BASKETBALL', 'WNBA') %}<script src="/livecast-field.js?v=1"></script>{% endif %}
+{% if sport not in ('NBA', 'COLLEGE BASKETBALL', 'WNBA') %}<script src="/livecast-field.js?v=3d"></script>{% endif %}
 <script>
 const sport = {{ sport|tojson }};
 const day = {{ day|tojson }};
@@ -296,14 +294,15 @@ let currentActor = -1;
 let physicalBall;
 const sceneNode = $('scene');
 const fieldReplay = basketball ? null : window.mountFieldReplay?.(
-  $('field-players'), sceneNode.dataset.surface, motionPreference);
+  $('field-players'), sceneNode.dataset.surface, motionPreference,
+  $('arena-3d'), sceneNode, enabled=>$('dimension').hidden=!enabled);
 
 function startCourt3D(teams) {
   if (court3DLoading) return;
   court3DLoading = true;
-  import('/livecast-3d.js?v=roster-tone').then(({mountCourt}) => {
+  import('/livecast-3d.js?v=arenas-crowd').then(({mountCourt}) => {
     court3D = mountCourt($('arena-3d'), sceneNode, teams, motionPreference,
-      enabled => $('dimension').hidden = !enabled);
+      enabled => $('dimension').hidden = !enabled, sport === 'WNBA' ? {surface:'wnba'} : undefined);
     for (const [index, player] of courtPlayers.entries()) {
       court3D.player(index, player.position, player.facing, player.pose, player.jump);
       court3D.lineup(index, player.person);
@@ -312,6 +311,7 @@ function startCourt3D(teams) {
     if (physicalBall) court3D.ball(...physicalBall);
     court3D.handler(currentActor);
     court3D.motion(liveMotion);
+    if (basketballSnapshot?.plays[0]?.scoring) court3D.cheer();
   }).catch(() => {});
 }
 
@@ -506,6 +506,7 @@ function playBasketballSequence() {
     return;
   }
   showPlay(play);
+  if(play.scoring)court3D?.cheer();
   applyLineup(data.teams, play.lineup, data.roster);
   const homeAttacks = play.team === data.teams[1].id;
   const direction = homeAttacks ? 1 : -1;

@@ -65,7 +65,7 @@
     }
   }
 
-  window.mountFieldReplay = (host, surface, motionPreference) => {
+  window.mountFieldReplay = (host, surface, motionPreference, container, stage, onReady) => {
     const positions = {
       football:[...football, ...mirror(football)],
       hockey:[...hockey, ...mirror(hockey)],
@@ -88,6 +88,16 @@
     if (surface !== 'fight') host.append(ball);
     let previousAction;
     let frameId;
+    let field3D;
+    let loading3D = false;
+    const sideFor = index => surface === 'baseball'
+      ? Number(players[index].body.classList.contains('home')) : Number(index >= half);
+    const points = positions.map(([x,y])=>({x,y}));
+    const movePlayer = (index,x,y,facing,pose,jump=0) => {
+      place(players[index].body,x,y);
+      points[index] = {x,y};
+      field3D?.player(index,points[index],facing,pose,jump);
+    };
 
     return (data, paused) => {
       host.toggleAttribute('hidden', data.teams.length !== 2);
@@ -98,7 +108,7 @@
         : data.plays.map(play => {
             const side = data.teams.findIndex(team => team.id === play.team);
             const movement = side >= 0 || surface === 'baseball' ? fieldAction(surface, play, Math.max(side, 0)) : null;
-            return movement && {...movement, key:play.id || [play.period,play.clock,play.text].join('|'), side};
+            return movement && {...movement, scoring:play.scoring, key:play.id || [play.period,play.clock,play.text].join('|'), side};
           }).find(Boolean);
       if (surface === 'baseball') {
         for (const [index, player] of players.entries()) {
@@ -108,11 +118,24 @@
           player.body.classList.toggle('away', side === 0);
         }
       }
+      if (!loading3D && container) {
+        loading3D = true;
+        import('/livecast-3d.js?v=arenas-crowd').then(({mountCourt}) => {
+          field3D = mountCourt(container,stage,data.teams,motionPreference,onReady,
+            {surface,sides:players.map((_,index)=>sideFor(index))});
+          points.forEach((point,index)=>field3D.player(index,point,sideFor(index)?-1:1,'ready',0));
+          field3D.motion(data.state==='in'&&!paused);
+          if(action?.scoring)field3D.cheer();
+        }).catch(()=>{});
+      }
+      field3D?.motion(data.state==='in'&&!paused);
+      if (surface==='baseball' && field3D) players.forEach((_,index)=>field3D.side(index,sideFor(index)));
       if (!action || paused || data.state === 'pre') {
         cancelAnimationFrame(frameId);
         ball.setAttribute('hidden', '');
+        field3D?.ball(null);
         players.forEach((player, index) => {
-          place(player.body, ...positions[index]);
+          movePlayer(index,...positions[index],sideFor(index)?-1:1,'ready');
           player.legs.removeAttribute('transform');
           player.arm.removeAttribute('transform');
         });
@@ -120,6 +143,7 @@
       }
       if (action.key === previousAction) return;
       previousAction = action.key;
+      if(action.scoring)field3D?.cheer();
       cancelAnimationFrame(frameId);
       const started = performance.now();
       const frame = now => {
@@ -134,7 +158,9 @@
           const stride = Math.sin(progress * Math.PI * 8) * pace * 6;
           const vertical = featured ? (action.vertical || 0) * pace : 0;
           const lift = featured || surface === 'fight' ? Math.abs(stride) : 0;
-          place(player.body, x + move * pace, y + vertical - lift);
+          movePlayer(index,x + move*pace,y + vertical-lift,
+            move ? Math.sign(move) : sideFor(index)?-1:1,
+            featured && action.lift > 0 && progress < .45 ? 'shot' : 'ready',lift*.35);
           player.legs.setAttribute('transform', `rotate(${move ? stride * 3 : 0})`);
           player.arm.setAttribute('transform', `rotate(${featured ? pace * -35 : 0} 7 -16)`);
         });
@@ -144,6 +170,7 @@
           const y = action.from[1] + (action.to[1] - action.from[1]) * travel - Math.sin(Math.PI * travel) * action.lift;
           place(ball, x, y);
           ball.toggleAttribute('hidden', progress === 1);
+          field3D?.ball(progress===1?null:{x,y:y+Math.sin(Math.PI*travel)*action.lift},.19+Math.sin(Math.PI*travel)*action.lift*.065);
         }
         if (progress < 1) frameId = requestAnimationFrame(frame);
       };
