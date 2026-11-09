@@ -1,6 +1,6 @@
 """Resolve player portraits by exact player identity; photos never gate picks."""
 import csv
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from functools import lru_cache
 from io import StringIO
@@ -12,6 +12,9 @@ from urllib.parse import urlparse
 import player_history as history
 
 NFL_LOCK = Lock()
+PHOTO_LOCK = Lock()
+PHOTO_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix='pikbot-photos')
+PHOTO_BATCH = {}
 
 
 def normalize(value):
@@ -80,7 +83,14 @@ def player_photo(sport, player, stat, week):
 def attach_photos(picks):
     week = int(datetime.now(timezone.utc).timestamp() // (7 * 86400))
     identities = list(dict.fromkeys((p['sport'], p['player'], p['stat']) for p in picks))[:24]
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        urls = dict(zip(identities, pool.map(lambda key: player_photo(*key, week), identities)))
+    with PHOTO_LOCK:
+        # Keep a single bounded batch in flight. Slow photo lookups continue warming the cache.
+        if all(future.done() for future in PHOTO_BATCH.values()):
+            PHOTO_BATCH.clear()
+            PHOTO_BATCH.update({key: PHOTO_POOL.submit(player_photo, *key, week) for key in identities})
+        futures = {key: PHOTO_BATCH[key] for key in identities if key in PHOTO_BATCH}
+    completed, _ = wait(futures.values(), timeout=1)
+    urls = {key: future.result() for key, future in futures.items()
+            if future in completed and future.exception() is None}
     for pick in picks:
         pick['photo_url'] = urls.get((pick['sport'], pick['player'], pick['stat']))
