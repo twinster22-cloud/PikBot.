@@ -30,8 +30,13 @@
 .player-portrait{position:relative;display:inline-grid;place-items:center;overflow:hidden;border:1px solid #547760;border-radius:7px;background:radial-gradient(ellipse at top,#385f43,#15232c);isolation:isolate}.portrait-initials{color:#c8ff9c;font-weight:900}.player-portrait img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center top;background:#19272c}.player-portrait.pick-avatar{width:88px;height:94px}.selected-portrait{width:100%;height:100%;border:0;border-radius:4px}.player-monogram{padding:0;width:96px;height:110px;flex-basis:96px}@media(max-width:480px){.player-monogram{width:78px;height:92px;flex-basis:78px}.player-portrait.pick-avatar{width:76px;height:84px}}
 .trial-plan #selected-prop-content,.trial-plan .hero,.trial-plan #sports,.trial-plan .sports-heading,.trial-plan .nav{display:none!important}.trial-plan .top-pick-card{cursor:default}
 [data-owner-only][hidden],[data-tab="betting-sites"][hidden],#open-unlimited-picks[hidden],#betting-sites[hidden]{display:none!important}
-#betting-site-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(136px,1fr));gap:8px}
-#betting-site-options .btn{min-height:44px}
+#betting-sites{padding:12px;margin-bottom:12px;border:1px solid #344b42;background:#0c151b;border-radius:7px}
+#betting-sites h3{margin:0 0 8px}
+#betting-site-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+#betting-site-options .btn{min-height:44px;padding:6px;white-space:normal;font-size:12px;line-height:1.25}
+#betting-site-options .btn[aria-pressed="true"]{background:#a4ff52;color:#0a1709;border-color:#a4ff52}
+#current-line-source{margin:8px 0 0;font-size:12px}
+.top-pick-card .pick-book{color:#c8ff9c;font-size:12px;font-weight:800}
 #player-props{width:min(calc(100% - 24px),480px);max-height:calc(100dvh - 24px);padding:0;border:1px solid #426156;border-radius:18px;background:#111d23;color:#effff3;overflow:auto;overscroll-behavior:contain}
 #player-props::backdrop{background:#040909cc}
 .player-sheet-body{padding:16px}
@@ -106,22 +111,21 @@ document.addEventListener('DOMContentLoaded',()=>{const manage=document.getEleme
 <p><a href="https://www.nba.com/watch" target="_blank" rel="noopener noreferrer">NBA Watch</a> · <a href="https://www.espn.com/watch/" target="_blank" rel="noopener noreferrer">ESPN Watch</a> · <a href="https://www.nfl.com/watch/" target="_blank" rel="noopener noreferrer">NFL Watch</a> · <a href="https://www.mlb.com/live-stream-games" target="_blank" rel="noopener noreferrer">MLB.TV</a></p>
 </section>
 
-<section id="betting-sites" class="panel" aria-labelledby="betting-sites-title" hidden>
-  <h2 id="betting-sites-title">Unlimited Picks</h2>
-  <h3>Line sources</h3>
-  <p class="muted">Choose a line source, sport, and matchup. Tap a player to see their available props.</p>
-  <div id="betting-site-options" role="group" aria-label="Choose a line source">
+<div class="section-head"><h2>PLAYER PROPS ANALYSIS</h2><span class="tag" id="selected-sport">NBA · RESEARCH</span></div><div class="panel props-console"><div class="console-brand"><span>PB</span><strong>PLAYER PROPS ANALYSIS</strong><small>PIKBOT</small></div>
+<section id="betting-sites" aria-labelledby="betting-sites-title" hidden>
+  <h3 id="betting-sites-title">Picks by platform</h3>
+  <div id="betting-site-options" role="group" aria-labelledby="betting-sites-title">
     <button type="button" class="btn primary" data-bookmaker="prizepicks" aria-pressed="true">PrizePicks</button>
+    <button type="button" class="btn" data-bookmaker="fanduel" aria-pressed="false">FanDuel</button>
     <button type="button" class="btn" data-bookmaker="underdog" aria-pressed="false">Underdog Fantasy</button>
     <button type="button" class="btn" data-bookmaker="pick6" aria-pressed="false">DraftKings Pick6</button>
     <button type="button" class="btn" data-bookmaker="draftkings" aria-pressed="false">DraftKings Sportsbook</button>
-    <button type="button" class="btn" data-bookmaker="fanduel" aria-pressed="false">FanDuel</button>
     <button type="button" class="btn" data-bookmaker="betmgm" aria-pressed="false">BetMGM</button>
   </div>
+  <p id="current-line-source" class="muted" aria-live="polite">Line source · PrizePicks</p>
 </section>
-<div class="section-head"><h2>PLAYER PROPS ANALYSIS</h2><span class="tag" id="selected-sport">NBA · RESEARCH</span></div><div class="panel props-console"><div class="console-brand"><span>PB</span><strong>PLAYER PROPS ANALYSIS</strong><small>PIKBOT</small></div><div class="analysis-controls"><div><label for="today-sport">Today's sports</label>
+<div class="analysis-controls"><div><label for="today-sport">Today's sports</label>
 <select id="today-sport" disabled><option value="">Choose a sport</option></select>
-<p id="current-line-source" class="muted">Line source · PrizePicks</p>
 <p id="today-status" role="status"></p>
 <div id="today-matchups"></div><section id="live-performance" class="chartbox" hidden><h3>Game performance tracker</h3><p id="performance-status" role="status"></p><button type="button" class="btn" id="performance-refresh">Refresh observed stats</button><div id="performance-table" class="scroll"></div></section></div>
 </div><p class="notice"><strong>Pick disclaimer.</strong> PikBot provides independent sports analysis. Picks are estimates. Lines and availability can change. PikBot does not accept wagers or guarantee results.</p><section id="live-player-picks" aria-live="polite" hidden><div class="feature-head"><h3>TOP PLAYER PICKS</h3><span id="daily-picks-label" class="tag" hidden>3 PICKS DAILY</span><button id="all-player-props" class="btn" type="button" hidden>Tap for all props</button></div><div id="live-player-cards"></div><button id="retry-current-lines" class="btn" type="button" hidden>Retry current lines</button></section><div id="selected-prop-content" hidden><div class="analysis-top"><div class="player-monogram" id="player-monogram">PB</div><div class="player-identity"><h3 id="player-heading">Player Intelligence</h3><p id="player-matchup" class="muted">Choose an upcoming matchup</p></div><span class="chip" id="data-label">AWAITING DATA</span></div>
@@ -168,7 +172,10 @@ function showTab(id){
   const panel=id==='betting-sites'?'dashboard':id;
   for(const name of ['dashboard','data','about'])$(name).classList.toggle('hidden',name!==panel);
 }
-document.querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>showTab(button.dataset.tab));
+document.querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>{
+  showTab(button.dataset.tab);
+  if(activeTab==='betting-sites')$('betting-sites').scrollIntoView({block:'start'});
+});
 $('open-unlimited-picks').onclick=()=>{
   showTab('betting-sites');
   if(activeTab==='betting-sites')$('betting-sites').scrollIntoView({block:'start'});
@@ -276,7 +283,6 @@ function focusLivePick(data,index){
     options.before(chart);
     $('player-props-title').textContent=pick.player;
     $('player-sheet-sport').textContent=pick.sport;
-    $('player-props-source').textContent='Line source · '+(pick.bookmaker||data.source);
     $('player-sheet-matchup').textContent=pick.matchup;
     $('player-sheet-time').textContent=pick.starts_at?'Scheduled '+gameTime(pick.starts_at):'';
     $('player-sheet-portrait').innerHTML=portraitMarkup(pick,'');
@@ -288,6 +294,7 @@ function focusLivePick(data,index){
       '<span class="prop-lean">Model · '+(prop.side==='LESS'?'↓ Less':'↑ More')+'</span></button></div>'
     )).join('');
   }
+  $('player-props-source').textContent='Line source · '+(pick.bookmaker||selectedBookmaker.textContent);
   paintPlayerChart(pick);
   options.querySelectorAll('[data-prop-index]').forEach(button=>{
     const expanded=Number(button.dataset.propIndex)===index;
@@ -481,6 +488,7 @@ let accessBlocked=true;
 let trialExpiryTimer;
 const livePickCache=new Map();
 const lastSportMatchup=new Map();
+let requestedMatchup;
 function easternDay(){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
 function gameTime(value){
   if(!value)return '—';
@@ -529,7 +537,7 @@ async function openInitialPick(){
     if(generation!==autoPickGeneration||ok===null)return;
     if(ok){
       $('today-sport').value=league.name;showMatchups(league.name);
-      $('today-status').textContent='Current picks loaded · Tap a player card to change the analysis.';
+      $('today-status').textContent='Current '+selectedBookmaker.textContent+' picks loaded · Tap a player card for details.';
       return;
     }
   }
@@ -543,6 +551,7 @@ async function loadSportPicks(sport){
   const generation=++autoPickGeneration;
   liveRequest++;
   liveLineRequest?.abort();
+  requestedMatchup=null;
   picksExpire=0;
   $('all-player-props').hidden=true;
   $('retry-current-lines').hidden=true;
@@ -567,7 +576,7 @@ async function loadSportPicks(sport){
     const ok=await openMatchup({dataset:{league:sport,game:game.id}},true);
     if(generation!==autoPickGeneration||ok===null)return;
     if(ok){
-      $('today-status').textContent=sport+' picks loaded · Tap a player card to view its analysis.';
+      $('today-status').textContent=selectedBookmaker.textContent+' · '+sport+' picks loaded · Tap a player card for details.';
       return;
     }
   }
@@ -581,20 +590,21 @@ $('betting-site-options').onclick=event=>{
   const button=event.target.closest('[data-bookmaker]');
   if(!button||button===selectedBookmaker||trialOnly||accessBlocked)return;
   selectBookmaker(button);
-  const league=todaysSlate.find(item=>item.name===selected);
-  const game=league?.matchups.find(item=>item.id===lastSportMatchup.get(selected)
+  const sport=requestedMatchup?.league||selected;
+  const league=todaysSlate.find(item=>item.name===sport);
+  const game=league?.matchups.find(item=>item.id===(requestedMatchup?.game||lastSportMatchup.get(sport))
     &&!item.started&&Date.parse(item.starts_at)>Date.now());
   if(game){
     const generation=++autoPickGeneration;
     $('today-status').textContent='Checking '+button.textContent+' for this matchup…';
-    openMatchup({dataset:{league:selected,game:game.id}},true).then(loaded=>{
+    openMatchup({dataset:{league:sport,game:game.id}},true).then(loaded=>{
       if(generation!==autoPickGeneration||loaded===null)return;
       $('today-status').textContent=loaded
         ?button.textContent+' picks loaded · Tap a player card to view its analysis.'
         :'No '+button.textContent+' picks loaded for this matchup. See the feed message below.';
     });
   }else{
-    loadSportPicks(selected);
+    loadSportPicks(sport);
   }
 };
 function openPlayerProps(data,index){
@@ -610,6 +620,7 @@ $('all-player-props').onclick=()=>{
 async function openMatchup(button,automatic=false){
   if(accessBlocked)return false;
   if(!button||button.disabled)return false;
+  requestedMatchup={league:button.dataset.league,game:button.dataset.game};
   if(!automatic){
     autoPickGeneration++;
     lastSportMatchup.set(button.dataset.league,button.dataset.game);
@@ -629,6 +640,7 @@ async function openMatchup(button,automatic=false){
   const book=trialOnly?bookmakerButtons[0]:selectedBookmaker;
   const bookmaker=book.dataset.bookmaker;
   cards.textContent='Checking current '+book.textContent+' lines…';
+  $('today-status').textContent=cards.textContent;
   if(!automatic||activeTab!=='betting-sites')section.scrollIntoView({block:'nearest'});
   try{
     const query=new URLSearchParams({sport:button.dataset.league,event_id:button.dataset.game,bookmaker});
@@ -657,14 +669,12 @@ async function openMatchup(button,automatic=false){
       if(request!==liveRequest)return;
     }
     if(request!==liveRequest)return;
-    if(!response.ok){
-      if(response.status===404){
-        cards.textContent=data.error||'No current picks are available for this matchup.';
-        return false;
-      }
-      throw Error(data.error||'Picks are unavailable.');
+    if(response.status===404||(response.ok&&!data?.picks?.length)){
+      cards.textContent=data?.error||'No '+book.textContent+' picks are available for this matchup.';
+      $('today-status').textContent=book.textContent+' picks are unavailable for this matchup.';
+      return false;
     }
-    if(!data?.picks?.length){cards.textContent='No current picks are available for this matchup.';return false;}
+    if(!response.ok)throw Error(data.error||'Picks are unavailable.');
     if(easternDay()!==slateDay){section.hidden=true;loadToday();return}
     picksExpire=data.daily_board?Date.now()+86400000:valid?cached.expires:Math.min(Date.now()+15*60*1000,Date.parse(data.picks[0].starts_at));
     livePickCache.set(cacheKey,{data,expires:picksExpire,day:easternDay()});
@@ -682,17 +692,18 @@ async function openMatchup(button,automatic=false){
     cards.innerHTML='<p class="muted pick-game">'+esc(data.picks[0].matchup)+' · '+esc(gameTime(data.picks[0].starts_at))+'</p><div class="top-pick-rail">'+
       [...players.values()].map(({pick:p,index,count},rank)=>'<button type="button" class="top-pick-card" data-pick-index="'+index+'" aria-pressed="false" aria-controls="player-props" aria-haspopup="dialog">'+
         '<span class="pick-rank">TOP '+(rank+1)+'</span>'+portraitMarkup(p,'pick-avatar')+
-        '<strong>'+esc(p.player)+'</strong><span class="pick-line '+(p.side==='LESS'?'pick-less':'')+'">'+(p.side==='LESS'?'↓':'↑')+' '+esc(p.side)+' '+esc(p.line)+' '+esc(p.stat)+'</span>'+
+        '<strong>'+esc(p.player)+'</strong><span class="pick-book">'+esc(p.bookmaker||book.textContent)+'</span>'+
+        '<span class="pick-line '+(p.side==='LESS'?'pick-less':'')+'">'+(p.side==='LESS'?'↓':'↑')+' '+esc(p.side)+' '+esc(p.line)+' '+esc(p.stat)+'</span>'+
         '<span class="pick-estimate">'+'Research <small>NOT APPROVED</small></span><span class="pick-projection">'+count+' '+(count===1?'prop':'props')+' · View all</span></button>').join('')+'</div><p class="muted">'+esc(data.source)+' · Uncalibrated estimates</p>';
     if(data.daily_board){
-      cards.innerHTML='<div class="top-pick-rail">'+data.picks.map((p,i)=>'<article class="top-pick-card"><span class="pick-rank">DAILY PICK '+(i+1)+'</span><strong>'+esc(p.player)+'</strong><span class="pick-line '+(p.side==='LESS'?'pick-less':'')+'">'+esc(p.side)+' '+esc(p.line)+' '+esc(p.stat)+'</span><p class="muted">'+esc(p.sport)+' · '+esc(p.matchup)+' · '+esc(gameTime(p.starts_at))+'</p></article>').join('')+'</div>';
+      cards.innerHTML='<div class="top-pick-rail">'+data.picks.map((p,i)=>'<article class="top-pick-card"><span class="pick-rank">DAILY PICK '+(i+1)+'</span><strong>'+esc(p.player)+'</strong><span class="pick-book">'+esc(p.bookmaker||book.textContent)+'</span><span class="pick-line '+(p.side==='LESS'?'pick-less':'')+'">'+esc(p.side)+' '+esc(p.line)+' '+esc(p.stat)+'</span><p class="muted">'+esc(p.sport)+' · '+esc(p.matchup)+' · '+esc(gameTime(p.starts_at))+'</p></article>').join('')+'</div>';
       cards.onclick=null;
     }
     if(data.daily_board)cards.insertAdjacentHTML('afterbegin','<p class="notice">Your 3 daily PikBot selections · Selected '+esc(new Date(data.selected_at).toLocaleString())+'. Lines are captured at selection time. Next set: midnight Eastern.</p>');
     bindPortraitFallbacks(cards);
     focusLivePick(data,0);
     $('all-player-props').hidden=trialOnly||data.daily_board;
-    $('today-status').textContent='Current picks loaded.';
+    $('today-status').textContent='Current '+book.textContent+' picks loaded.';
     if(!automatic&&!trialOnly)document.querySelector('.props-console').scrollIntoView({block:'start',behavior:'smooth'});
     return true;
   }catch(error){
@@ -700,7 +711,7 @@ async function openMatchup(button,automatic=false){
     cards.textContent=controller.signal.aborted
       ?'The line feed is taking longer than expected. Try again or choose another matchup.'
       :error.message||'Picks are unavailable.';
-    $('today-status').textContent='Current lines are unavailable for this matchup.';
+    $('today-status').textContent=book.textContent+' lines are unavailable for this matchup.';
     retryButton.hidden=false;
     return null;
   }finally{

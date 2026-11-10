@@ -263,7 +263,7 @@ def todays_predictions():
         prediction_audit.archive(result['picks'], datetime.now(timezone.utc))
     except (psycopg.Error, ValueError):
         return jsonify(error='Predictions could not be recorded before game time. Please refresh the matchup.'), 503
-    result['source'] = f'{book_label} via The Odds API' + (' · Stats: ' + stats_source if stats_source else '')
+    result['source'] = book_label + (' · Stats: ' + stats_source if stats_source else '')
     result['disclaimer'] = f'Research projections for {book_label} lines. Team review is active; no picks are approved as validated recommendations. Raw scores are not verified win probabilities.'
     if 'SportsDataverse' in stats_source:
         result['disclaimer'] += ' Reserve stats: SportsDataverse contributors, CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Player game records transformed into PikBot estimates.'
