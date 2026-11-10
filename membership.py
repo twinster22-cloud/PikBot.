@@ -6,6 +6,7 @@ import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from functools import wraps
+from html import escape
 from threading import BoundedSemaphore, Thread
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
@@ -282,13 +283,26 @@ def send_password_reset(email, serializer, origin, api_key, sender, owner_email=
             return
         token = serializer.dumps([email, record['password_version']])
         reset_path = '/owner/reset-password/email' if owner_email else '/reset-password'
+        reset_page = origin + reset_path
+        reset_link = f'{reset_page}#{token}'
+        expiration = f'This reset expires in {RESET_LINK_SECONDS // 60} minutes.'
+        ignore = 'If you did not request this, you can ignore this email.'
         response = requests.post(
             'https://api.brevo.com/v3/smtp/email', headers={'api-key': api_key},
             json={'sender': {'email': sender, 'name': 'PikBot'}, 'to': [{'email': email}],
                   'subject': 'Reset your PikBot password',
-                  'textContent': f'Reset your PikBot password within 30 minutes:\n\n'
-                                 f'{origin}{reset_path}#{token}\n\n'
-                                 'If you did not request this, you can ignore this email.'},
+                  'textContent': f'Reset your PikBot password\n\n{reset_link}\n\n{expiration}\n\n'
+                                 f'If the link will not open, go to {reset_page} and paste the reset code below.\n\n'
+                                 f'{token}\n\n{ignore}',
+                  'htmlContent': '<html><body><h2>Reset your PikBot password</h2>'
+                                 f'<p><a href="{escape(reset_link)}" style="display:inline-block;'
+                                 'background:#136d3a;color:#fff;padding:12px 18px;border-radius:6px;'
+                                 'font-weight:bold">Reset password</a></p>'
+                                 f'<p>{expiration}</p>'
+                                 f'<p>If the button will not open, go to {escape(reset_page)} '
+                                 'and paste the reset code below.</p>'
+                                 f'<p style="overflow-wrap:anywhere;word-break:break-all"><code>{escape(token)}</code></p>'
+                                 f'<p>{ignore}</p></body></html>'},
             timeout=(3, 8),
         )
         response.raise_for_status()
@@ -347,7 +361,7 @@ def forgot_password():
         if not config:
             error = 'Password reset email is temporarily unavailable. Please try again later.'
         else:
-            notice = 'If that email matches an eligible account, a reset link will be sent.'
+            notice = 'If that email matches an eligible account, PikBot will send a reset link and code.'
             if (len(email) <= 254 and re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', email)
                     and allow_attempt(email, 'password-reset') and RESET_EMAIL_SLOTS.acquire(blocking=False)):
                 serializer = password_reset_serializer(owner_email)
@@ -373,16 +387,22 @@ def reset_password():
     token = error = None
     if request.method == 'POST':
         check_csrf()
-        token = request.form.get('token', '')
+        submitted = request.form.get('token', '')
         try:
+            if len(submitted) > 2048:
+                raise BadSignature('Invalid reset token')
+            token = ''.join(submitted.split())
+            if token.startswith('https://'):
+                pasted = urlsplit(token)
+                token = pasted.fragment if pasted.path == request.path else ''
             if not token or len(token) > 1024:
                 raise BadSignature('Invalid reset token')
             serializer = password_reset_serializer(owner_email)
             email, version = serializer.loads(token, max_age=RESET_LINK_SECONDS)
             if owner_account({'email': email}) != owner_email:
                 raise BadSignature('Invalid reset account')
-        except BadSignature:
-            error = 'This link is invalid or expired. Request a new reset link.'
+        except (BadSignature, ValueError):
+            error = 'This reset link or code is invalid or expired. Request a new reset email.'
             token = None
         else:
             password = request.form.get('password', '')
@@ -405,7 +425,7 @@ def reset_password():
                     session.clear()
                     login_path = '/owner/login' if owner_email else '/login'
                     return redirect(f'{login_path}?password_reset=1', code=303)
-                error = 'This link is invalid or expired. Request a new reset link.'
+                error = 'This reset link or code has expired or already been used. Request a new reset email.'
                 token = None
     return render_template('login.html', reset_view='change', csrf=csrf_token(), error=error,
                            token=token, owner_email_reset=owner_email)
