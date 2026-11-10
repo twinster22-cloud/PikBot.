@@ -66,6 +66,32 @@ def test_conflicting_game_values_are_rejected():
     assert engine.predict(h,o).empty
 
 
+def test_reserve_nba_excludes_all_star_games_from_points_history(monkeypatch):
+    import player_history
+
+    player = 'Test Player'
+    games = pd.DataFrame([
+        {'game_id': str(index), 'game_date': date, 'athlete_id': '7',
+         'athlete_display_name': player, 'athlete_headshot_href': None,
+         'team_id': 18, 'opponent_team_id': 15, 'minutes': 30,
+         'points': 25, 'rebounds': 4, 'assists': 5, 'did_not_play': False}
+        for index, date in enumerate(pd.date_range('2026-10-20', periods=15))
+    ])
+    exhibitions = games.iloc[[0, 0]].assign(game_id=['ex1', 'ex2'],
+        team_id=132375, opponent_team_id=132374, minutes=[7, 8], points=[2, 8])
+    monkeypatch.setattr(player_history, 'reserve_nba_season', lambda season, day:
+        games if season == 2027 else exhibitions)
+    offers = pd.DataFrame([{'as_of': NOW, 'sport': 'NBA', 'player': player,
+                            'stat': stat, 'line': line}
+                           for stat, line in [('PTS', 24.5), ('PA', 29.5)]])
+
+    history = player_history.reserve_nba_history(offers, NOW)
+    picks = engine.predict(history, offers, include_history=True)
+    assert set(picks['stat']) == {'PTS', 'PA'}
+    assert picks['games'].eq(15).all()
+    assert set(picks.loc[picks['stat'] == 'PTS', 'projection']) == {25.0}
+
+
 def test_backtest_counts_one_side_and_grades_selected_less():
     rows=[]
     for i in range(2):

@@ -278,6 +278,7 @@ def additional_history(sport, offers, now):
 
 RESERVE_LOCK = Lock()
 DUNK_RESERVE_UNTIL = 0
+ESPN_NBA_FRANCHISE_IDS = range(1, 31)
 
 
 @lru_cache(maxsize=2)
@@ -287,7 +288,7 @@ def reserve_nba_season(season, _day):
     try:
         response = requests.get(url, timeout=15)
         response.raise_for_status()
-        columns = ['game_id', 'game_date', 'athlete_id', 'athlete_display_name',
+        columns = ['game_id', 'game_date', 'team_id', 'opponent_team_id', 'athlete_id', 'athlete_display_name',
                    'did_not_play', 'minutes', 'points', 'rebounds', 'assists',
                    'athlete_headshot_href']
         extra = {'three_point_field_goals_made', 'blocks', 'steals'}
@@ -309,6 +310,10 @@ def reserve_nba_history(offers, now):
             raise FeedError('The free NBA reserve has not published sufficiently recent games.')
         previous = reserve_nba_season(season - 1, now.date().isoformat())
     frame = pd.concat([previous, current], ignore_index=True)
+    # ESPN includes All-Star mini-games in this dataset, sometimes with the
+    # regular-season flag. Require two NBA franchises before using a box score.
+    frame = frame[frame['team_id'].isin(ESPN_NBA_FRANCHISE_IDS)
+                  & frame['opponent_team_id'].isin(ESPN_NBA_FRANCHISE_IDS)].copy()
     frame['date'] = pd.to_datetime(frame['game_date'], utc=True, errors='coerce')
     frame = frame[(frame['date'] < now.replace(hour=0, minute=0, second=0, microsecond=0))
                   & (frame['date'] >= now - timedelta(days=365))]

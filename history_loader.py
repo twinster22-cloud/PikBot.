@@ -19,7 +19,7 @@ def cache_key(sport, offers, now):
     players = sorted(str(p) for p in offers['player'].drop_duplicates())
     identity = [sport, now.date().isoformat(), players, 'team-minutes-v1']
     if sport == 'NBA':
-        identity.append('nba-box-v2')
+        identity.append('nba-franchise-box-v3')
     return sha256(json.dumps(identity).encode()).hexdigest()
 
 
