@@ -635,16 +635,26 @@ async function openMatchup(button,automatic=false){
     const cacheKey=button.dataset.league+'|'+button.dataset.game+'|'+bookmaker;
     const cached=livePickCache.get(cacheKey);
     const valid=cached&&cached.day===easternDay()&&Date.now()<cached.expires;
-    let response=valid?{ok:true}:await fetch('/api/today/predictions?'+query,{cache:'no-store',signal:controller.signal});
-    let data=valid?cached.data:await response.json();
-    for(let retry=0;!response.ok&&/is loading|is refreshing|temporarily unavailable/i.test(String(data.error||''))&&retry<2;retry++){
-      if(request!==liveRequest)return false;
-      cards.textContent='Loading '+button.dataset.league+' player data… Picks will appear automatically when ready.';
-      $('today-status').textContent=button.dataset.league+' data is refreshing · Checking again automatically.';
+    let response={ok:true},data=cached?.data;
+    if(!valid)for(let attempt=0;attempt<3;attempt++){
+      let interrupted=false;
+      try{
+        response=await fetch('/api/today/predictions?'+query,{cache:'no-store',signal:controller.signal});
+        data=await response.json();
+      }catch(error){
+        if(controller.signal.aborted)throw error;
+        interrupted=true;
+      }
+      if(request!==liveRequest)return;
+      const refreshing=!interrupted&&response.status===503&&/is loading|is refreshing|temporarily unavailable/i.test(String(data?.error||''));
+      if(!interrupted&&!refreshing&&![502,504].includes(response.status))break;
+      if(attempt===2){
+        if(interrupted)throw Error('The connection to current lines was interrupted. Tap Retry current lines to check again.');
+        break;
+      }
+      cards.textContent='Loading '+button.dataset.league+' player data… Checking again automatically.';
       await new Promise(resolve=>setTimeout(resolve,3000));
-      if(request!==liveRequest)return false;
-      response=await fetch('/api/today/predictions?'+query,{cache:'no-store',signal:controller.signal});
-      data=await response.json();
+      if(request!==liveRequest)return;
     }
     if(request!==liveRequest)return;
     if(!response.ok){
@@ -654,6 +664,7 @@ async function openMatchup(button,automatic=false){
       }
       throw Error(data.error||'Picks are unavailable.');
     }
+    if(!data?.picks?.length){cards.textContent='No current picks are available for this matchup.';return false;}
     if(easternDay()!==slateDay){section.hidden=true;loadToday();return}
     picksExpire=data.daily_board?Date.now()+86400000:valid?cached.expires:Math.min(Date.now()+15*60*1000,Date.parse(data.picks[0].starts_at));
     livePickCache.set(cacheKey,{data,expires:picksExpire,day:easternDay()});
@@ -681,6 +692,7 @@ async function openMatchup(button,automatic=false){
     bindPortraitFallbacks(cards);
     focusLivePick(data,0);
     $('all-player-props').hidden=trialOnly||data.daily_board;
+    $('today-status').textContent='Current picks loaded.';
     if(!automatic&&!trialOnly)document.querySelector('.props-console').scrollIntoView({block:'start',behavior:'smooth'});
     return true;
   }catch(error){

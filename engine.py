@@ -1,5 +1,6 @@
 import itertools
 import math
+from functools import lru_cache
 import numpy as np
 import pandas as pd
 from scipy.stats import norm
@@ -73,27 +74,42 @@ def predict(history, offers, min_games=12, max_age_days=30, *, include_history=F
     h['value']=pd.to_numeric(h['value'],errors='coerce'); o['line']=pd.to_numeric(o['line'],errors='coerce')
     if include_history:
         h = add_nba_combo_history(h, o)
+    groups = h.groupby(KEYS, sort=False)
+
+    @lru_cache(maxsize=256)
+    def profile(key, as_of):
+        if key not in groups.indices:
+            return None
+        s = groups.get_group(key)
+        # Date-only box scores lack completion timestamps. Exclude the entire offer day.
+        s = s[(s['date'] < as_of.normalize()) & (s['date'] >= as_of - pd.Timedelta(days=365))]
+        s = s.dropna(subset=['value', 'date']).sort_values('date').drop_duplicates(['date', 'value'])
+        if s['date'].duplicated().any():
+            return None
+        x = s['value'].tail(50).to_numpy(float)
+        if len(x) < min_games or np.any(x < 0) or (as_of - s['date'].max()).days > max_age_days:
+            return None
+        baseline = weighted_recent(x)
+        mu = baseline
+        playing_time = nba_playing_time(s) if include_history and key[0] == 'NBA' else None
+        if playing_time and playing_time['adjusted']:
+            mu = (mu + mu * playing_time['projected'] / playing_time['baseline']) / 2
+        sd = max(float(np.std(x, ddof=1)), .2 * max(mu, 1), 1)
+        recent = ({
+            'recent_games': [{'date': date.date().isoformat(), 'value': float(value)}
+                             for date, value in s[['date', 'value']].tail(10).itertuples(index=False, name=None)],
+            'playing_time': playing_time,
+        } if include_history else {})
+        return x, baseline, mu, sd, np.allclose(x, np.round(x)), recent
+
     output=[]
     for _,r in o.iterrows():
         if pd.isna(r['as_of']) or pd.isna(r['line']) or r['line']<0: continue
-        s=h.copy()
-        for k in KEYS:s=s[s[k]==r[k]]
-        # Date-only box scores lack completion timestamps. Exclude the entire offer day.
-        s=s[(s['date']<r['as_of'].normalize()) & (s['date']>=r['as_of']-pd.Timedelta(days=365))].dropna(subset=['value','date']).sort_values('date')
-        s=s.drop_duplicates(['date','value'])
-        if s['date'].duplicated().any():continue
-        x=s['value'].tail(50).to_numpy(float)
-        if len(x)<min_games or np.any(x<0):continue
-        if (r['as_of']-s['date'].max()).days>max_age_days:continue
-        baseline = weighted_recent(x)
-        mu = baseline
-        playing_time = nba_playing_time(s) if include_history and r['sport'] == 'NBA' else None
-        if playing_time and playing_time['adjusted']:
-            minutes_adjusted = mu * playing_time['projected'] / playing_time['baseline']
-            mu = (mu + minutes_adjusted) / 2
-        sd=max(float(np.std(x,ddof=1)),.2*max(mu,1),1)
+        sample = profile(tuple(r[k] for k in KEYS), r['as_of'])
+        if sample is None:
+            continue
+        x, baseline, mu, sd, integer, recent = sample
         line=float(r['line'])
-        integer=np.allclose(x,np.round(x))
         if integer:
             more_cutoff = math.floor(line) + .5
             less_cutoff = math.ceil(line) - .5
@@ -113,10 +129,6 @@ def predict(history, offers, min_games=12, max_age_days=30, *, include_history=F
         reliability = min(1.0, len(x) / 50.0)
         more = .5 + (float(more) - .5) * reliability
         less = .5 + (float(less) - .5) * reliability
-        recent = ({'recent_games': [
-            {'date': date.date().isoformat(), 'value': float(value)}
-            for date, value in s[['date', 'value']].tail(10).itertuples(index=False, name=None)
-        ], 'playing_time': playing_time} if include_history else {})
         for side,p in [('MORE',more),('LESS',less)]:
             output.append({**recent, **{k:r[k] for k in KEYS},'line':line,'as_of':r['as_of'], 'event_id':str(r.get('event_id','')),
                 'side':side,'p_raw':float(p),'p_push':float(push),'projection':float(mu),'games':len(x),

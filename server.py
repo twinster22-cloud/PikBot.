@@ -1,4 +1,5 @@
 from functools import lru_cache
+from gzip import compress
 import requests
 import secrets
 import json
@@ -49,6 +50,12 @@ def public_asset(asset):
 def prevent_private_caching(response):
     if request.path in ('/', '/owner', '/watch') or request.path.startswith(('/api/', '/login', '/owner/', '/billing/', '/logout')):
         response.headers['Cache-Control'] = 'no-store, private'
+    if (request.endpoint == 'todays_predictions' and request.method == 'GET'
+            and response.status_code == 200 and response.is_json):
+        response.vary.add('Accept-Encoding')
+        if request.accept_encodings.quality('gzip') > 0 and (response.content_length or 0) > 4096:
+            response.set_data(compress(response.get_data(), compresslevel=3, mtime=0))
+            response.headers['Content-Encoding'] = 'gzip'
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['Referrer-Policy'] = 'no-referrer'
@@ -137,7 +144,7 @@ def analyze(h,o,run_backtest, *, trial_live=False, live=False):
             pred = daily_trial_picks(pred)
             if pred.empty:
                 return jsonify(error='Your three live picks for today have been used. The limit resets at midnight Eastern.'), 429
-        entries=evaluate(pred,min_prob=.75,max_entries=10)
+        entries=pd.DataFrame() if live else evaluate(pred,min_prob=.75,max_entries=10)
         picks = pred.sort_values('p_raw', ascending=False) if not pred.empty else pred
         if live and not picks.empty:
             picks = picks.drop_duplicates(['sport', 'event_id', 'player', 'stat', 'line'])
@@ -215,9 +222,9 @@ def todays_predictions():
     response = app.make_response(analyze(history, offers, False, live=True))
     if response.status_code != 200:
         return response
-    if not response.is_json or not response.json.get('picks'):
+    result = response.get_json(silent=True)
+    if not result or not result.get('picks'):
         return jsonify(error='There is not enough matching recent player history.'), 404
-    result = response.json
     stats_source = {'NBA': 'BALLDONTLIE', 'NFL': 'nflverse', 'COLLEGE FOOTBALL': 'CollegeFootballData', 'COLLEGE BASKETBALL': 'CollegeBasketballData'}.get(sport, '') if not (path and path.is_file()) else ''
     if not (path and path.is_file()) and sport in player_history.DUNK_LEAGUES and (os.getenv('DUNKAPI_API_KEY') or os.getenv('DUNKAPI_KEY')):
         stats_source = 'DunkAPI'
@@ -233,14 +240,15 @@ def todays_predictions():
     history_digest = sha256(history.to_csv(index=False).encode()).hexdigest()
     benchmarks = today.benchmark_lines(sport,result['picks'][0]['event_id'],now,
                                       expanded=g.membership_access != 'trial')
+    offers_by_line = {}
+    for offer in available:
+        offers_by_line.setdefault((offer['event_id'], offer['player'], offer['stat'], offer['line']), offer)
     for pick in result['picks']:
         game = matchups.get(pick['event_id'], {})
         pick['matchup'] = ' at '.join(filter(None, (game.get('away_team'), game.get('home_team'))))
         pick['starts_at'] = game.get('commence_time')
         pick['bookmaker'] = book_label
-        offer = next((row for row in available if row['event_id'] == pick['event_id']
-                      and row['player'] == pick['player'] and row['stat'] == pick['stat']
-                      and row['line'] == pick['line']), {})
+        offer = offers_by_line.get((pick['event_id'], pick['player'], pick['stat'], pick['line']), {})
         pick['line_updated_at'] = offer.get('line_updated_at')
         pick['stats_source'] = stats_source
         pick['history_digest'] = history_digest

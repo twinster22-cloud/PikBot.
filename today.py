@@ -47,7 +47,7 @@ def timestamp(value):
         return None
 
 
-def get(path, **params):
+def get(path, *, timeout=None, **params):
     """Use one coherent event-ID namespace per request cycle.
 
     PropLine is primary when configured, avoiding cross-provider event ID
@@ -63,7 +63,7 @@ def get(path, **params):
                 'https://api.prop-line.com/v1/sports' + path,
                 headers={'X-API-Key': propline},
                 params={k: v for k, v in params.items() if k != 'oddsFormat'},
-                timeout=8)
+                timeout=8 if timeout is None else timeout)
             response.raise_for_status()
             return response.json()
         except requests.HTTPError as exc:
@@ -86,7 +86,8 @@ def get(path, **params):
     last_status = None
     for key in keys:
         try:
-            response = requests.get(BASE + path, params={'apiKey': key, **params}, timeout=5)
+            response = requests.get(BASE + path, params={'apiKey': key, **params},
+                                    timeout=5 if timeout is None else timeout)
             response.raise_for_status()
             return response.json()
         except requests.HTTPError as exc:
@@ -132,7 +133,8 @@ def event_offers(sport, event_id, _window, bookmaker=DEFAULT_BOOK, expanded=Fals
     if expanded and sport == 'NBA':
         markets = {**markets, **NBA_EXTRA}
     try:
-        return get(f'/{key}/events/{event_id}/odds', bookmakers=bookmaker,
+        return get(f'/{key}/events/{event_id}/odds', timeout=2 if bookmaker == 'pinnacle' else None,
+                   bookmakers=bookmaker,
                    markets=','.join(markets), oddsFormat='decimal')
     except FeedError as exc:
         return {'error': str(exc)}
@@ -198,8 +200,12 @@ def benchmark_lines(sport, event_id, now, expanded=False):
     _, markets = SPORTS[sport]
     if expanded and sport == 'NBA':
         markets = {**markets, **NBA_EXTRA}
-    with LOCK:
+    if not LOCK.acquire(blocking=False):
+        return {}
+    try:
         payload = event_offers(sport,event_id,bucket(5),'pinnacle',expanded)
+    finally:
+        LOCK.release()
     if payload.get('error') or payload.get('id') != event_id:
         return {}
     result = {}
