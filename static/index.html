@@ -122,7 +122,7 @@ document.addEventListener('DOMContentLoaded',()=>{const manage=document.getEleme
     <button type="button" class="btn" data-bookmaker="draftkings" aria-pressed="false">DraftKings Sportsbook</button>
     <button type="button" class="btn" data-bookmaker="betmgm" aria-pressed="false">BetMGM</button>
   </div>
-  <p id="current-line-source" class="muted" aria-live="polite">Line source · PrizePicks</p>
+  <p id="current-line-source" class="muted" aria-live="polite">Line source · PrizePicks standard lines</p>
 </section>
 <div class="analysis-controls"><div><label for="today-sport">Today's sports</label>
 <select id="today-sport" disabled><option value="">Choose a sport</option></select>
@@ -158,7 +158,8 @@ function selectBookmaker(button){
     choice.classList.toggle('primary',active);
     choice.setAttribute('aria-pressed',String(active));
   }
-  $('current-line-source').textContent='Line source · '+button.textContent;
+  $('current-line-source').textContent='Line source · '+button.textContent+
+    (button.dataset.bookmaker==='prizepicks'?' standard lines':'');
 }
 function showTab(id){
   if((id==='data'&&!ownerMode)||(id==='betting-sites'&&(trialOnly||accessBlocked)))return;
@@ -289,12 +290,14 @@ function focusLivePick(data,index){
     bindPortraitFallbacks($('player-sheet-portrait'));
     options.innerHTML=data.picks.map((prop,i)=>prop.player!==pick.player?'':(
       '<div class="player-prop-row"><button type="button" class="btn player-prop-option" data-prop-index="'+i+'" aria-expanded="false">'+
-      '<strong class="prop-name">'+esc(prop.line)+' · '+esc(propLabels[prop.stat]||prop.stat)+'</strong>'+
-      '<small>Projected '+esc(fmt(prop.projection))+'</small>'+
+      '<strong class="prop-name">'+esc(propLabels[prop.stat]||prop.stat)+'</strong>'+
+      '<small>'+esc(prop.bookmaker||selectedBookmaker.textContent)+' line: '+esc(prop.line)+
+      ' · PikBot estimate: '+esc(fmt(prop.projection))+'</small>'+
       '<span class="prop-lean">Model · '+(prop.side==='LESS'?'↓ Less':'↑ More')+'</span></button></div>'
     )).join('');
   }
-  $('player-props-source').textContent='Line source · '+(pick.bookmaker||selectedBookmaker.textContent);
+  $('player-props-source').textContent='Line source · '+(pick.bookmaker||selectedBookmaker.textContent)+
+    (pick.line_updated_at?' · Feed updated '+gameTime(pick.line_updated_at):'');
   paintPlayerChart(pick);
   options.querySelectorAll('[data-prop-index]').forEach(button=>{
     const expanded=Number(button.dataset.propIndex)===index;
@@ -617,7 +620,7 @@ $('all-player-props').onclick=()=>{
   const index=dataset?.picks.indexOf(focusedPick)??-1;
   if(index>=0)openPlayerProps(dataset,index);
 };
-async function openMatchup(button,automatic=false){
+async function openMatchup(button,automatic=false,refresh=false){
   if(accessBlocked)return false;
   if(!button||button.disabled)return false;
   requestedMatchup={league:button.dataset.league,game:button.dataset.game};
@@ -630,7 +633,7 @@ async function openMatchup(button,automatic=false){
   const retryButton=$('retry-current-lines');
   $('all-player-props').hidden=true;
   retryButton.hidden=true;
-  retryButton.onclick=()=>openMatchup(button);
+  retryButton.onclick=()=>openMatchup(button,false,true);
   liveLineRequest?.abort();
   const controller=new AbortController();
   liveLineRequest=controller;
@@ -639,14 +642,18 @@ async function openMatchup(button,automatic=false){
   picksExpire=0;
   const book=trialOnly?bookmakerButtons[0]:selectedBookmaker;
   const bookmaker=book.dataset.bookmaker;
+  const prizepicks=bookmaker==='prizepicks'&&!trialOnly;
+  retryButton.textContent=prizepicks?'Refresh PrizePicks lines':'Retry current lines';
   cards.textContent='Checking current '+book.textContent+' lines…';
   $('today-status').textContent=cards.textContent;
   if(!automatic||activeTab!=='betting-sites')section.scrollIntoView({block:'nearest'});
   try{
     const query=new URLSearchParams({sport:button.dataset.league,event_id:button.dataset.game,bookmaker});
     const cacheKey=button.dataset.league+'|'+button.dataset.game+'|'+bookmaker;
+    if(refresh)livePickCache.delete(cacheKey);
     const cached=livePickCache.get(cacheKey);
-    const valid=cached&&cached.day===easternDay()&&Date.now()<cached.expires;
+    const valid=!refresh&&cached&&cached.day===easternDay()&&Date.now()<cached.expires&&
+      (!prizepicks||Date.now()-cached.checkedAt<60000);
     let response={ok:true},data=cached?.data;
     if(!valid)for(let attempt=0;attempt<3;attempt++){
       let interrupted=false;
@@ -661,7 +668,7 @@ async function openMatchup(button,automatic=false){
       const refreshing=!interrupted&&response.status===503&&/is loading|is refreshing|temporarily unavailable/i.test(String(data?.error||''));
       if(!interrupted&&!refreshing&&![502,504].includes(response.status))break;
       if(attempt===2){
-        if(interrupted)throw Error('The connection to current lines was interrupted. Tap Retry current lines to check again.');
+        if(interrupted)throw Error('The connection to current lines was interrupted. Tap '+retryButton.textContent+' to check again.');
         break;
       }
       cards.textContent='Loading '+button.dataset.league+' player data… Checking again automatically.';
@@ -672,12 +679,23 @@ async function openMatchup(button,automatic=false){
     if(response.status===404||(response.ok&&!data?.picks?.length)){
       cards.textContent=data?.error||'No '+book.textContent+' picks are available for this matchup.';
       $('today-status').textContent=book.textContent+' picks are unavailable for this matchup.';
+      retryButton.hidden=!prizepicks;
       return false;
     }
     if(!response.ok)throw Error(data.error||'Picks are unavailable.');
     if(easternDay()!==slateDay){section.hidden=true;loadToday();return}
-    picksExpire=data.daily_board?Date.now()+86400000:valid?cached.expires:Math.min(Date.now()+15*60*1000,Date.parse(data.picks[0].starts_at));
-    livePickCache.set(cacheKey,{data,expires:picksExpire,day:easternDay()});
+    const checkedAt=valid?cached.checkedAt:Date.now();
+    picksExpire=data.daily_board?checkedAt+86400000:Math.min(
+      checkedAt+(prizepicks?120000:900000),Date.parse(data.picks[0].starts_at),
+      Date.parse(data.line_expires_at)||Infinity);
+    if(prizepicks&&Date.now()>=picksExpire){
+      picksExpire=0;
+      cards.textContent='These PrizePicks lines need a fresh feed update.';
+      $('today-status').textContent=cards.textContent;
+      retryButton.hidden=false;
+      return false;
+    }
+    livePickCache.set(cacheKey,{data,expires:picksExpire,day:easternDay(),checkedAt});
     lastSportMatchup.set(button.dataset.league,button.dataset.game);
     const players=new Map();
     data.picks.forEach((pick,index)=>{
@@ -693,7 +711,7 @@ async function openMatchup(button,automatic=false){
       [...players.values()].map(({pick:p,index,count},rank)=>'<button type="button" class="top-pick-card" data-pick-index="'+index+'" aria-pressed="false" aria-controls="player-props" aria-haspopup="dialog">'+
         '<span class="pick-rank">TOP '+(rank+1)+'</span>'+portraitMarkup(p,'pick-avatar')+
         '<strong>'+esc(p.player)+'</strong><span class="pick-book">'+esc(p.bookmaker||book.textContent)+'</span>'+
-        '<span class="pick-line '+(p.side==='LESS'?'pick-less':'')+'">'+(p.side==='LESS'?'↓':'↑')+' '+esc(p.side)+' '+esc(p.line)+' '+esc(p.stat)+'</span>'+
+        '<span class="pick-line '+(p.side==='LESS'?'pick-less':'')+'">'+(p.side==='LESS'?'↓':'↑')+' '+esc(p.side)+' '+esc(p.line)+' '+esc(propLabels[p.stat]||p.stat)+'</span>'+
         '<span class="pick-estimate">'+'Research <small>NOT APPROVED</small></span><span class="pick-projection">'+count+' '+(count===1?'prop':'props')+' · View all</span></button>').join('')+'</div><p class="muted">'+esc(data.source)+' · Uncalibrated estimates</p>';
     if(data.daily_board){
       cards.innerHTML='<div class="top-pick-rail">'+data.picks.map((p,i)=>'<article class="top-pick-card"><span class="pick-rank">DAILY PICK '+(i+1)+'</span><strong>'+esc(p.player)+'</strong><span class="pick-book">'+esc(p.bookmaker||book.textContent)+'</span><span class="pick-line '+(p.side==='LESS'?'pick-less':'')+'">'+esc(p.side)+' '+esc(p.line)+' '+esc(p.stat)+'</span><p class="muted">'+esc(p.sport)+' · '+esc(p.matchup)+' · '+esc(gameTime(p.starts_at))+'</p></article>').join('')+'</div>';
@@ -703,6 +721,7 @@ async function openMatchup(button,automatic=false){
     bindPortraitFallbacks(cards);
     focusLivePick(data,0);
     $('all-player-props').hidden=trialOnly||data.daily_board;
+    retryButton.hidden=!prizepicks;
     $('today-status').textContent='Current '+book.textContent+' picks loaded.';
     if(!automatic&&!trialOnly)document.querySelector('.props-console').scrollIntoView({block:'start',behavior:'smooth'});
     return true;
@@ -764,13 +783,13 @@ function checkSlateAge(){
     $('all-player-props').hidden=true;
     if($('player-props').open)$('player-props').close();
     $('retry-current-lines').hidden=false;
-    $('live-player-cards').textContent='These lines have expired. Tap Retry current lines for an updated check.';
+    $('live-player-cards').textContent='These lines have expired. Refresh to check for current lines.';
   }
 }
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='visible'){showMembership();checkSlateAge();}
 });
-setInterval(checkSlateAge,60000);
+setInterval(checkSlateAge,15000);
 $('member-feedback').onsubmit=async event=>{event.preventDefault();const form=new FormData(event.target);form.set('csrf',feedbackCsrf);try{const response=await fetch('/api/feedback',{method:'POST',body:form});const result=await response.json();if(!response.ok)throw Error(result.error);$('feedback-status').textContent=result.message;event.target.reset()}catch(error){$('feedback-status').textContent=error.message}};
 showMembership();
 setInterval(showMembership,60000);

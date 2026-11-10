@@ -9,6 +9,7 @@ import requests
 
 BASE = 'https://api.the-odds-api.com/v4/sports'
 DEFAULT_BOOK = 'prizepicks'
+PRIZEPICKS_MAX_LINE_AGE = timedelta(minutes=5)
 BOOKMAKERS = {
     DEFAULT_BOOK: 'PrizePicks',
     'underdog': 'Underdog Fantasy',
@@ -147,6 +148,9 @@ def offers(sport, now, event_id=None, *, next_slate=False, bookmaker=DEFAULT_BOO
         markets = {**markets, **NBA_EXTRA}
     result = {}
     offered_sides = {}
+    latest_snapshot = {}
+    prizepicks = bookmaker == DEFAULT_BOOK
+    max_age = PRIZEPICKS_MAX_LINE_AGE if prizepicks else timedelta(minutes=60)
     slate = events(sport, bucket(30)) if next_slate else today_events(sport, now)
     upcoming = sorted((event for event in slate
                        if (start := timestamp(event.get('commence_time'))) and start > now),
@@ -156,7 +160,7 @@ def offers(sport, now, event_id=None, *, next_slate=False, bookmaker=DEFAULT_BOO
     for event in upcoming[:1]:
         event_id = event['id']
         with LOCK:
-            window = bucket(5)
+            window = bucket(1 if prizepicks else 5)
             if expanded:
                 payload = event_offers(sport, event_id, window, bookmaker, True)
             elif bookmaker == DEFAULT_BOOK:
@@ -165,34 +169,61 @@ def offers(sport, now, event_id=None, *, next_slate=False, bookmaker=DEFAULT_BOO
                 payload = event_offers(sport, event_id, window, bookmaker)
         if payload.get('error'):
             raise FeedError(payload['error'])
+        if prizepicks and payload.get('id') is not None and str(payload['id']) != str(event_id):
+            raise FeedError('The PrizePicks feed returned a different matchup. Please refresh.')
+        if prizepicks and (start := timestamp(payload.get('commence_time'))) and start <= now:
+            continue
         for book in payload.get('bookmakers', []):
             if book.get('key') != bookmaker:
                 continue
             for market in book.get('markets', []):
                 stat = markets.get(market.get('key'))
                 updated = timestamp(market.get('last_update') or book.get('last_update'))
-                if not stat or not updated or not (now-timedelta(minutes=60) <= updated <= now+timedelta(minutes=2)):
+                if not stat or not updated or not (now-max_age <= updated <= now+timedelta(minutes=2)):
+                    continue
+                if prizepicks and market.get('line_type') not in (None, 'main'):
                     continue
                 for outcome in market.get('outcomes', []):
                     player = outcome.get('description')
                     line = outcome.get('point')
                     if not player or not isinstance(line, (float, int)) or not 0 <= line < float('inf'):
                         continue
-                    offer_id = f'{event_id}:{player}:{stat}:{line}'
-                    offered_sides.setdefault(offer_id, set()).add(str(outcome.get('name', '')).casefold())
-                    prices = result.get(offer_id, {}).get('prices', {})
                     side = str(outcome.get('name', '')).casefold()
+                    if prizepicks:
+                        if (outcome.get('dfs_odds_type') not in (None, 'standard')
+                                or outcome.get('line_type') not in (None, 'main')
+                                or side not in {'over', 'more', 'under', 'less'}):
+                            continue
+                        player_stat = (player.casefold(), stat)
+                        latest_snapshot[player_stat] = max(updated, latest_snapshot.get(player_stat, updated))
+                        if market.get('suspended_at'):
+                            continue
+                        if outcome.get('last_seen_at') is not None:
+                            last_seen = timestamp(outcome['last_seen_at'])
+                            if not last_seen or not updated <= last_seen <= now + timedelta(minutes=2):
+                                continue
+                    offer_id = f'{event_id}:{player}:{stat}:{line}'
+                    # Never pair opposite sides from different PrizePicks snapshots.
+                    key = (offer_id, updated) if prizepicks else offer_id
+                    offered_sides.setdefault(key, set()).add(side)
+                    prices = result.get(key, {}).get('prices', {})
                     if side in {'over','more','under','less'}:
                         prices['MORE' if side in {'over','more'} else 'LESS'] = outcome.get('price')
-                    result[offer_id] = {'sport': sport, 'player': player, 'stat': stat,
+                    result[key] = {'sport': sport, 'player': player, 'stat': stat,
                                         'line': line, 'as_of': now, 'offer_id': offer_id,
                                         'event_id': event_id, 'starts_at': event['commence_time'],
                                         'line_updated_at': updated.isoformat(), 'prices':prices}
-    if bookmaker == DEFAULT_BOOK:
-        return list(result.values())
-    return [offer for offer_id, offer in result.items()
-            if offered_sides[offer_id] & {'over', 'more'}
-            and offered_sides[offer_id] & {'under', 'less'}]
+    if prizepicks:
+        latest = {}
+        for key, offer in result.items():
+            player_stat = (offer['player'].casefold(), offer['stat'])
+            if key[1] == latest_snapshot[player_stat]:
+                latest.setdefault(player_stat, []).append(key)
+        # Ambiguous or partially withdrawn lines cannot be matched to the board.
+        result = {keys[0]: result[keys[0]] for keys in latest.values() if len(keys) == 1}
+    return [offer for key, offer in result.items()
+            if offered_sides[key] & {'over', 'more'}
+            and offered_sides[key] & {'under', 'less'}]
 
 
 def benchmark_lines(sport, event_id, now, expanded=False):
