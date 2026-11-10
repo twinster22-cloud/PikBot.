@@ -32,9 +32,11 @@
 [data-owner-only][hidden],[data-tab="betting-sites"][hidden],#open-unlimited-picks[hidden],#betting-sites[hidden]{display:none!important}
 #betting-sites{padding:12px;margin-bottom:12px;border:1px solid #344b42;background:#0c151b;border-radius:7px}
 #betting-sites h3{margin:0 0 8px}
-#betting-site-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
-#betting-site-options .btn{min-height:44px;padding:6px;white-space:normal;font-size:12px;line-height:1.25}
-#betting-site-options .btn[aria-pressed="true"]{background:#a4ff52;color:#0a1709;border-color:#a4ff52}
+#betting-site-options{display:grid;gap:6px;margin:0;padding:0;list-style:none}
+#betting-site-options .btn{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:44px;padding:10px 12px;text-align:left;white-space:normal;font-size:14px;line-height:1.25}
+#betting-site-options .btn[aria-pressed="true"]{background:#263b20;color:#eaffdc;border-color:#a4ff52}
+#betting-site-options .platform-check{width:16px;height:16px;flex:0 0 16px;border:1px solid #779688;border-radius:50%}
+#betting-site-options [aria-pressed="true"] .platform-check{border:5px solid #a4ff52}
 #current-line-source{margin:8px 0 0;font-size:12px}
 .top-pick-card .pick-book{color:#c8ff9c;font-size:12px;font-weight:800}
 #player-props{width:min(calc(100% - 24px),480px);max-height:calc(100dvh - 24px);padding:0;border:1px solid #426156;border-radius:18px;background:#111d23;color:#effff3;overflow:auto;overscroll-behavior:contain}
@@ -114,14 +116,14 @@ document.addEventListener('DOMContentLoaded',()=>{const manage=document.getEleme
 <div class="section-head"><h2>PLAYER PROPS ANALYSIS</h2><span class="tag" id="selected-sport">NBA · RESEARCH</span></div><div class="panel props-console"><div class="console-brand"><span>PB</span><strong>PLAYER PROPS ANALYSIS</strong><small>PIKBOT</small></div>
 <section id="betting-sites" aria-labelledby="betting-sites-title" hidden>
   <h3 id="betting-sites-title">Picks by platform</h3>
-  <div id="betting-site-options" role="group" aria-labelledby="betting-sites-title">
-    <button type="button" class="btn primary" data-bookmaker="prizepicks" aria-pressed="true">PrizePicks</button>
-    <button type="button" class="btn" data-bookmaker="fanduel" aria-pressed="false">FanDuel</button>
-    <button type="button" class="btn" data-bookmaker="underdog" aria-pressed="false">Underdog Fantasy</button>
-    <button type="button" class="btn" data-bookmaker="pick6" aria-pressed="false">DraftKings Pick6</button>
-    <button type="button" class="btn" data-bookmaker="draftkings" aria-pressed="false">DraftKings Sportsbook</button>
-    <button type="button" class="btn" data-bookmaker="betmgm" aria-pressed="false">BetMGM</button>
-  </div>
+  <ul id="betting-site-options" role="list" aria-labelledby="betting-sites-title">
+    <li><button type="button" class="btn primary" data-bookmaker="prizepicks" aria-pressed="true">PrizePicks<span class="platform-check" aria-hidden="true"></span></button></li>
+    <li><button type="button" class="btn" data-bookmaker="fanduel" aria-pressed="false">FanDuel<span class="platform-check" aria-hidden="true"></span></button></li>
+    <li><button type="button" class="btn" data-bookmaker="underdog" aria-pressed="false">Underdog Fantasy<span class="platform-check" aria-hidden="true"></span></button></li>
+    <li><button type="button" class="btn" data-bookmaker="pick6" aria-pressed="false">DraftKings Pick6<span class="platform-check" aria-hidden="true"></span></button></li>
+    <li><button type="button" class="btn" data-bookmaker="draftkings" aria-pressed="false">DraftKings Sportsbook<span class="platform-check" aria-hidden="true"></span></button></li>
+    <li><button type="button" class="btn" data-bookmaker="betmgm" aria-pressed="false">BetMGM<span class="platform-check" aria-hidden="true"></span></button></li>
+  </ul>
   <p id="current-line-source" class="muted" aria-live="polite">Line source · PrizePicks standard lines</p>
 </section>
 <div class="analysis-controls"><div><label for="today-sport">Today's sports</label>
