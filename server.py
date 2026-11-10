@@ -213,8 +213,10 @@ def todays_predictions():
         if not set(player_history.COLUMNS).issubset(history.columns):
             return jsonify(error='The player history has invalid columns.'), 503
     except today.FeedError as exc:
+        app.logger.error('Player picks provider failure: sport=%s bookmaker=%s reason=%s', sport, bookmaker, str(exc))
         return jsonify(error=str(exc)), 503
-    except (OSError, ValueError, KeyError):
+    except (OSError, ValueError, KeyError) as exc:
+        app.logger.exception('Player picks history failure: sport=%s bookmaker=%s', sport, bookmaker)
         return jsonify(error='Recent player stats could not be read.'), 503
     if offers.empty:
         return jsonify(error='No current lines match the available player stats.'), 404
