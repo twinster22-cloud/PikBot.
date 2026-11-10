@@ -9,10 +9,10 @@ import pandas as pd
 
 from today import FeedError
 
-POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix='pikbot-history')
+POOL = ThreadPoolExecutor(max_workers=3, thread_name_prefix='pikbot-history')
 LOCK = Lock()
 JOBS = {}
-MAX_JOBS = 12
+MAX_JOBS = 24
 
 
 def cache_key(sport, offers, now):
@@ -52,13 +52,14 @@ def load(sport, offers, now, provider, read_cache=None, write_cache=None):
         else:
             future, _ = job
         if not future.done():
+            # Allow a brief wait for fast cache/provider responses without tying up workers indefinitely.
             raise FeedError('Player history is loading. Picks will appear when the provider finishes.')
         try:
             return future.result()
         except Exception as exc:
             _, expiry = JOBS[key]
-            if expiry > monotonic() + 15:
-                JOBS[key] = (future, monotonic() + 15)
+            # A failed future must not poison the same player's subsequent requests.
+            JOBS.pop(key, None)
             # Errors are bounded; do not expose provider URLs or secret query parameters.
             if isinstance(exc, FeedError):
                 raise exc
