@@ -956,6 +956,19 @@ def check_next_projection(sport, _window):
         return {'verified': False, 'reason': 'The provider data could not be matched or scored.'}
 
 
+@app.get('/api/pick-test')
+@premium_required
+def member_pick_test():
+    """Non-wagering, non-quota-consuming validation of current prop inputs."""
+    if g.membership_access not in ('plus', 'owner') and not private_paid_test(account()):
+        return jsonify(error='Pick Test is available to Plus and Owner accounts.'), 403
+    sport = request.args.get('sport', 'NBA')
+    if sport not in today.SPORTS:
+        return jsonify(error='Choose a supported sport.'), 400
+    result = check_next_projection(sport, today.bucket(1))
+    return jsonify(sport=sport, **result, note='Diagnostic only. This does not place wagers or guarantee outcomes.')
+
+
 @app.get('/api/next-projection-check')
 @owner_required
 def next_projection_check():
