@@ -1220,6 +1220,91 @@ def scan_history():
 
 
 
+# Sponsor inventory is owner-controlled; no sponsor is billed automatically.
+def sponsor_table(conn):
+    conn.execute("""CREATE TABLE IF NOT EXISTS pikbot_sponsors (
+        id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, target_url TEXT NOT NULL,
+        message TEXT NOT NULL, monthly_price INTEGER NOT NULL DEFAULT 49,
+        start_date DATE NOT NULL, end_date DATE NOT NULL,
+        active BOOLEAN NOT NULL DEFAULT FALSE, paid BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())""")
+
+@app.get('/api/sponsors/active')
+def active_sponsor():
+    if getattr(g, 'membership_access', None) in ('plus', 'owner'):
+        return jsonify(sponsors=[])
+    try:
+        with database() as conn:
+            sponsor_table(conn)
+            rows=conn.execute("""SELECT name,target_url,message FROM pikbot_sponsors
+                WHERE active AND paid AND CURRENT_DATE BETWEEN start_date AND end_date
+                ORDER BY id DESC LIMIT 1""").fetchall()
+        return jsonify(sponsors=[dict(row) for row in rows])
+    except psycopg.Error:
+        app.logger.exception('Sponsor inventory unavailable')
+        return jsonify(sponsors=[])
+
+@app.route('/api/owner/sponsors', methods=['GET','POST'])
+@owner_required
+def owner_sponsors():
+    if request.method=='POST':
+        check_csrf()
+        data=request.get_json(silent=True) or {}
+        name=str(data.get('name','')).strip()[:100]
+        message=str(data.get('message','')).strip()[:220]
+        url=str(data.get('target_url','')).strip()
+        start=str(data.get('start_date',''))
+        end=str(data.get('end_date',''))
+        price=data.get('monthly_price',49)
+        if not name or not message or not url.startswith('https://') or len(url)>500:
+            return jsonify(error='Name, message and HTTPS sponsor URL are required.'),400
+        try:
+            from datetime import date
+            if date.fromisoformat(end)<date.fromisoformat(start): raise ValueError()
+            price=int(price)
+            if price not in (49,99,199): raise ValueError()
+            date.fromisoformat(start)
+        except (ValueError,TypeError):
+            return jsonify(error='Choose valid dates and a sponsorship package.'),400
+        try:
+            with database() as conn:
+                sponsor_table(conn)
+                conn.execute("""INSERT INTO pikbot_sponsors
+                    (name,target_url,message,monthly_price,start_date,end_date)
+                    VALUES (%s,%s,%s,%s,%s,%s)""",
+                    (name,url,message,price,start,end))
+            return jsonify(ok=True,note='Sponsor saved as inactive and unpaid until owner approval.'),201
+        except psycopg.Error:
+            app.logger.exception('Sponsor creation failed')
+            return jsonify(error='Sponsor could not be saved.'),503
+    try:
+        with database() as conn:
+            sponsor_table(conn)
+            rows=conn.execute("""SELECT id,name,target_url,message,monthly_price,
+                 start_date::text,end_date::text,active,paid FROM pikbot_sponsors
+                 ORDER BY id DESC LIMIT 100""").fetchall()
+        return jsonify(sponsors=[dict(row) for row in rows])
+    except psycopg.Error:
+        app.logger.exception('Sponsor listing failed')
+        return jsonify(error='Sponsor list unavailable.'),503
+
+@app.post('/api/owner/sponsors/<int:sponsor_id>/status')
+@owner_required
+def sponsor_status(sponsor_id):
+    check_csrf()
+    data=request.get_json(silent=True) or {}
+    if not isinstance(data.get('active'),bool) or not isinstance(data.get('paid'),bool):
+        return jsonify(error='Active and paid must be true or false.'),400
+    try:
+        with database() as conn:
+            sponsor_table(conn)
+            row=conn.execute("""UPDATE pikbot_sponsors SET active=%s,paid=%s
+                WHERE id=%s RETURNING id""",(data['active'],data['paid'],sponsor_id)).fetchone()
+        return jsonify(ok=bool(row)) if row else (jsonify(error='Sponsor not found'),404)
+    except psycopg.Error:
+        return jsonify(error='Sponsor update unavailable.'),503
+
+
 @app.get('/api/picks/auto-ticket')
 @premium_required
 def auto_pick_ticket():
