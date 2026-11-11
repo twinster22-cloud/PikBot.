@@ -959,14 +959,37 @@ def check_next_projection(sport, _window):
 @app.get('/api/pick-test')
 @premium_required
 def member_pick_test():
-    """Non-wagering, non-quota-consuming validation of current prop inputs."""
+    """Today’s recorded, graded pregame predictions grouped by original line source."""
     if broadcast_entitlement(account()) not in ('plus', 'owner'):
         return jsonify(error='Pick Test is available to Plus and Owner accounts.'), 403
-    sport = request.args.get('sport', 'NBA')
-    if sport not in today.SPORTS:
-        return jsonify(error='Choose a supported sport.'), 400
-    result = check_next_projection(sport, today.bucket(1))
-    return jsonify(sport=sport, **result, note='Diagnostic only. This does not place wagers or guarantee outcomes.')
+    from zoneinfo import ZoneInfo
+    eastern = ZoneInfo('America/New_York')
+    day = datetime.now(eastern).date()
+    start = datetime.combine(day, datetime.min.time(), tzinfo=eastern).astimezone(timezone.utc)
+    end = datetime.combine(day + timedelta(days=1), datetime.min.time(), tzinfo=eastern).astimezone(timezone.utc)
+    with database() as conn:
+        rows = conn.execute('''SELECT payload, result, actual, issued_at
+            FROM pikbot_prediction_audit WHERE issued_at >= %s AND issued_at < %s
+            ORDER BY issued_at DESC LIMIT 10000''', (start, end)).fetchall()
+    by_platform = {}
+    details = []
+    for row in rows:
+        pick = row['payload'] or {}
+        source = str(pick.get('bookmaker') or 'unknown').lower()
+        group = by_platform.setdefault(source, {'passed':0,'failed':0,'pending':0,'push':0,'void':0,'total':0})
+        outcome = {'WIN':'passed','LOSS':'failed','PENDING':'pending','PUSH':'push','VOID':'void'}.get(row['result'], 'pending')
+        group[outcome] += 1
+        group['total'] += 1
+        details.append({'platform':source,'sport':pick.get('sport'),'player':pick.get('player'),
+                        'stat':pick.get('stat'),'side':pick.get('side'),'line':pick.get('line'),
+                        'result':row['result'],'actual':row['actual']})
+    totals = {name:sum(group[name] for group in by_platform.values()) for name in ('passed','failed','pending','push','void','total')}
+    for group in [totals, *by_platform.values()]:
+        settled = group['passed'] + group['failed']
+        group['win_rate'] = round(100 * group['passed'] / settled, 1) if settled else None
+    return jsonify(day=day.isoformat(), timezone='America/New_York', totals=totals,
+                   platforms=by_platform, picks=details,
+                   note='Only predictions saved before games and verified box-score results are counted. Pending results require settlement; unavailable platforms are not invented.')
 
 
 @app.get('/api/next-projection-check')
