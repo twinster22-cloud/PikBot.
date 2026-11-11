@@ -71,3 +71,57 @@ def comparison(pick, offer, benchmark, now):
         except ValueError:
             pass
     return result
+
+
+def sportsbook_kelly(probability, odds, fmt='decimal', fraction=0.25, cap=0.02):
+    """Conservative fractional Kelly; model probability is an estimate, not truth."""
+    if isinstance(probability,bool) or not isinstance(probability,(int,float)) or not math.isfinite(probability) or not 0 <= probability <= 1:
+        raise ValueError('Probability must be between zero and one.')
+    if not 0 <= fraction <= 1 or not 0 <= cap <= 1:
+        raise ValueError('Invalid fractional Kelly settings.')
+    b = decimal_odds(odds,fmt)-1
+    full = max(0., (b*probability-(1-probability))/b)
+    return {'full_kelly':full,'fractional_kelly':min(cap,full*fraction),
+            'expected_value':probability*(b+1)-1,
+            'note':'Estimated, not guaranteed. Default quarter Kelly capped at 2%.'}
+
+
+def flex_kelly(probabilities, payouts, fraction=0.25, cap=0.02):
+    """Optimize expected log growth across complete DFS return outcomes.
+
+    Assumes independent legs, no pushes or voids, and verified total-return
+    multipliers for every winning-leg count. Not valid for correlated slips.
+    """
+    if not 0 <= fraction <= 1 or not 0 <= cap <= 1:
+        raise ValueError('Invalid fractional Kelly settings.')
+    # Validate inputs using the existing payout and probability checks.
+    ev = entry_ev(probabilities,payouts)
+    n=len(probabilities)
+    if any(k not in payouts for k in range(n+1)):
+        raise ValueError('Complete payout table required, including zero-return outcomes.')
+    distribution=[1.]
+    for p in probabilities:
+        nxt=[0.]*(len(distribution)+1)
+        for k,mass in enumerate(distribution):
+            nxt[k]+=mass*(1-p)
+            nxt[k+1]+=mass*p
+        distribution=nxt
+    if ev <= 0:
+        return {'full_kelly':0.,'fractional_kelly':0.,'expected_value':ev,
+                'note':'No positive estimated edge; no stake indicated.'}
+    def derivative(f):
+        return sum(mass*(payouts[k]-1)/(1+f*(payouts[k]-1))
+                   for k,mass in enumerate(distribution))
+    # Keep a buffer away from total ruin for zero-return outcomes.
+    lo,hi=0.,1.-1e-10
+    if derivative(hi)>0:
+        full=hi
+    else:
+        for _ in range(75):
+            mid=(lo+hi)/2
+            if derivative(mid)>0:lo=mid
+            else:hi=mid
+        full=(lo+hi)/2
+    return {'full_kelly':full,'fractional_kelly':min(cap,full*fraction),
+            'expected_value':ev,
+            'note':'Assumes independent legs and exact payout table; correlated entries require a joint-outcome model.'}
