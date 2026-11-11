@@ -184,16 +184,16 @@ def todays_sports():
 
 @app.get('/api/today/predictions')
 @premium_required
-def todays_predictions():
+def todays_predictions(_sport=None, _bookmaker=None):
     if g.membership_access == 'trial':
         board = trial_daily_board()
         if board:
             return jsonify(error='Today’s saved trial selections were issued by the earlier unvalidated model. No team-approved replacements are available.'), 404
-    sport = request.args.get('sport', '')
+    sport = _sport if _sport is not None else request.args.get('sport', '')
     if sport not in today.SPORTS:
         return jsonify(error='Choose a supported sport.'), 400
     bookmaker = (today.DEFAULT_BOOK if g.membership_access == 'trial'
-                 else request.args.get('bookmaker', today.DEFAULT_BOOK))
+                 else (_bookmaker if _bookmaker is not None else request.args.get('bookmaker', today.DEFAULT_BOOK)))
     if bookmaker not in today.BOOKMAKERS:
         return jsonify(error='Choose a supported line source.'), 400
     book_label = today.BOOKMAKERS[bookmaker]
@@ -1210,6 +1210,43 @@ def scan_history():
         app.logger.exception('Scan history unavailable')
         return jsonify(error='Scan history unavailable'),503
 
+
+
+@app.get('/api/picks/auto-ticket')
+@premium_required
+def auto_pick_ticket():
+    """Build an optional, unplaced research slip from current reviewed offers."""
+    sport = request.args.get('sport', 'NBA').upper()
+    bookmaker = request.args.get('bookmaker', today.DEFAULT_BOOK).lower()
+    if sport not in today.SPORTS or bookmaker not in today.BOOKMAKERS:
+        return jsonify(error='Choose a supported sport and platform.'), 400
+    response = app.make_response(todays_predictions(sport, bookmaker))
+    if response.status_code != 200:
+        return response
+    payload = response.get_json(silent=True) or {}
+    candidates = [p for p in payload.get('picks', [])
+                  if p.get('team_review', {}).get('approved') is True
+                  and p.get('player') and p.get('stat') and p.get('line') is not None
+                  and p.get('side') and p.get('line_updated_at')]
+    # Do not put conflicting outcomes or multiple legs from one game on the same slip.
+    selected, seen_events, seen_players = [], set(), set()
+    for pick in candidates:
+        event = pick.get('event_id')
+        player = str(pick['player']).casefold()
+        if not event or event in seen_events or player in seen_players:
+            continue
+        selected.append({key:pick.get(key) for key in
+                         ('player','sport','stat','line','side','bookmaker','matchup',
+                          'starts_at','line_updated_at','reason')})
+        seen_events.add(event)
+        seen_players.add(player)
+        if len(selected) == 3:
+            break
+    if not selected:
+        return jsonify(ticket=[], status='no_approved_picks',
+                       note='No currently reviewed and approved selections meet the safeguards. No ticket was generated.'), 200
+    return jsonify(ticket=selected,status='research_only',placed=False,
+                   note='Auto Pick research slip only. Not a winning guarantee, not a placed wager. Confirm all lines directly with the platform before use.')
 
 
 @app.post('/api/owner/scan/run')
