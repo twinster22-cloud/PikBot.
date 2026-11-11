@@ -960,7 +960,7 @@ def check_next_projection(sport, _window):
 @premium_required
 def member_pick_test():
     """Non-wagering, non-quota-consuming validation of current prop inputs."""
-    if g.membership_access not in ('plus', 'owner') and not private_paid_test(account()):
+    if broadcast_entitlement(account()) not in ('plus', 'owner'):
         return jsonify(error='Pick Test is available to Plus and Owner accounts.'), 403
     sport = request.args.get('sport', 'NBA')
     if sport not in today.SPORTS:
