@@ -1273,7 +1273,7 @@ def owner_manual_scan():
                 eligible.append(offer)
         _record_scan_event('manual_scanned', schedule, sport, bookmaker, len(eligible))
         return jsonify(status='scanned',sport=sport,bookmaker=bookmaker,
-                       fresh_offers=len(eligible),published=0,wagers_placed=0)
+                       fresh_offers=len(eligible),published=0,wagers_placed=0,offers=[{key:offer.get(key) for key in ('player','stat','line','bookmaker','event_id','starts_at','line_updated_at')} for offer in eligible[:30]],note='Fresh provider offers are not automatically approved recommendations. Use Auto Pick to build a reviewed research ticket.')
     except (today.FeedError, ValueError, KeyError) as exc:
         _record_scan_event('feed_unavailable',schedule,sport,bookmaker,0,'Provider data unavailable')
         app.logger.warning('Manual scan unavailable: %s',exc)
