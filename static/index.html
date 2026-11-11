@@ -1269,4 +1269,59 @@ for(const role of ['member','owner']){
   ticket.scrollIntoView({behavior:'auto',block:'start'});
  });
 })();
+</script><script id="pikbot-plus-navigation-recovery">
+/* Independent Plus navigation: remains usable if the main dashboard initialization fails. */
+(function(){
+ if(location.pathname.startsWith('/owner'))return;
+ const destinations={
+  'jump-live-games':'pikbot-live',
+  'shortcut-live-games':'pikbot-live',
+  'jump-pregame-picks':'pick-timeline',
+  'shortcut-pregame-picks':'pick-timeline',
+  'broadcast-open-gamecast':'pikbot-live',
+  'open-unlimited-picks':'betting-sites',
+  'auto-pick-nav':'auto-pick-ticket'
+ };
+ function reveal(id){
+  const dashboard=document.getElementById('dashboard');
+  const target=document.getElementById(id);
+  if(!target)return false;
+  for(const sectionId of ['dashboard','about','data']){
+   const section=document.getElementById(sectionId);
+   if(!section)continue;
+   const visible=sectionId==='dashboard';
+   section.classList.toggle('hidden',!visible);
+   if(visible)section.hidden=false;
+  }
+  if(dashboard){dashboard.classList.remove('hidden');dashboard.hidden=false;}
+  target.classList.remove('hidden');
+  target.hidden=false;
+  if(id==='betting-sites'){
+   const panel=document.querySelector('[data-tab="betting-sites"]');
+   if(panel&&panel.hidden)panel.hidden=false;
+  }
+  target.scrollIntoView({behavior:'auto',block:'start'});
+  return true;
+ }
+ document.addEventListener('click',function(event){
+  const button=event.target.closest('button,a');
+  if(!button)return;
+  const id=button.id;
+  if(destinations[id]){
+   if(button.disabled)return;
+   if(reveal(destinations[id])){
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if(id==='broadcast-open-gamecast')document.getElementById('live-center-refresh')?.click();
+   }
+  }else if(button.matches('[data-tab="dashboard"]')){
+   const dashboard=document.getElementById('dashboard');
+   if(dashboard){
+    document.getElementById('about')?.classList.add('hidden');
+    document.getElementById('data')?.classList.add('hidden');
+    dashboard.classList.remove('hidden');dashboard.hidden=false;
+   }
+  }
+ },true);
+})();
 </script></body></html>
