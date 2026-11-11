@@ -325,11 +325,24 @@ $('player-sheet-details').onclick=()=>{
   $('player-props').close();
   $('selected-prop-content').scrollIntoView({block:'start'});
 };
+function pickHistoricalHitRate(p){
+ const values=(p?.recent_games||[]).map(g=>Number(g.value)).filter(v=>Number.isFinite(v)&&v>=0);
+ const line=Number(p?.line);
+ if(!Number.isFinite(line)||!values.length||!['MORE','LESS'].includes(p?.side))return null;
+ const wins=values.filter(v=>p.side==='MORE'?v>line:v<line).length;
+ return {wins,total:values.length,percentage:Math.round(wins/values.length*100)};
+}
+function pickType(p){
+ const name=String(p?.bookmaker||'').toLowerCase();
+ const type=String(p?.line_type||p?.pick_type||p?.tier||'').toLowerCase();
+ return name.includes('prizepicks')&&type==='demon'?'Demon · Higher risk':null;
+}
 function paintPlayer(p){
   $('team-review').innerHTML=(p?.team_review?.checks||[]).map(check=>'<p><strong>'+esc(check.reviewer)+' · '+(check.passed?'Check passed':'Withheld')+'</strong><br>'+esc(check.detail)+'</p>').join('');
   const market=p?.market_review;
   if(market){$('team-review').innerHTML+='<p><strong>Market-pricing reviewer</strong><br>'+esc(market.available?market.reference+' proportional devig estimate '+(100*market.reference_probability).toFixed(1)+'%'+(market.net_ev_per_unit!==null?' · Reference-based net EV '+(100*market.net_ev_per_unit).toFixed(1)+'% per unit':' · Entry EV not calculated'):market.note)+'</p>'+(market.available?'<p class="muted">'+esc(market.note)+'</p>':'');}
-  $('pick-reason').textContent=p?.reason||'A pick explanation will appear when current analysis is available.';
+  const hitRate=pickHistoricalHitRate(p);
+  $('pick-reason').textContent=(p?.reason||'A pick explanation will appear when current analysis is available.')+(hitRate?' · Historical hit rate at this line: '+hitRate.percentage+'% ('+hitRate.wins+'/'+hitRate.total+' games). This is NOT a verified future win probability.':' · Win percentage unavailable until verified history and calibrated forward results exist.');
   $('selected-prop-content').hidden=!p||trialOnly;
   if((!p||trialOnly||!dataset?.source)&&$('player-props').open)$('player-props').close();
   paintSummary(p);
@@ -714,7 +727,7 @@ async function openMatchup(button,automatic=false,refresh=false){
         '<span class="pick-rank">TOP '+(rank+1)+'</span>'+portraitMarkup(p,'pick-avatar')+
         '<strong>'+esc(p.player)+'</strong><span class="pick-book">'+esc(p.bookmaker||book.textContent)+'</span>'+
         '<span class="pick-line '+(p.side==='LESS'?'pick-less':'')+'">'+(p.side==='LESS'?'↓':'↑')+' '+esc(p.side)+' '+esc(p.line)+' '+esc(propLabels[p.stat]||p.stat)+'</span>'+
-        '<span class="pick-estimate">'+'Research <small>NOT APPROVED</small></span><span class="pick-projection">'+count+' '+(count===1?'prop':'props')+' · View all</span></button>').join('')+'</div><p class="muted">'+esc(data.source)+' · Uncalibrated estimates</p>';
+        '<span class="pick-estimate">'+(pickHistoricalHitRate(p)?pickHistoricalHitRate(p).percentage+'% <small>PAST GAMES · NOT WIN ODDS</small>':'Research <small>WIN ODDS UNVERIFIED</small>')+'</span>'+(pickType(p)?'<span class="tag">'+esc(pickType(p))+'</span>':'')<span class="pick-projection">'+count+' '+(count===1?'prop':'props')+' · View all</span></button>').join('')+'</div><p class="muted">'+esc(data.source)+' · Uncalibrated estimates</p>';
     if(data.daily_board){
       cards.innerHTML='<div class="top-pick-rail">'+data.picks.map((p,i)=>'<article class="top-pick-card"><span class="pick-rank">DAILY PICK '+(i+1)+'</span><strong>'+esc(p.player)+'</strong><span class="pick-book">'+esc(p.bookmaker||book.textContent)+'</span><span class="pick-line '+(p.side==='LESS'?'pick-less':'')+'">'+esc(p.side)+' '+esc(p.line)+' '+esc(p.stat)+'</span><p class="muted">'+esc(p.sport)+' · '+esc(p.matchup)+' · '+esc(gameTime(p.starts_at))+'</p></article>').join('')+'</div>';
       cards.onclick=null;
