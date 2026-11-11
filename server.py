@@ -139,7 +139,11 @@ def analyze_endpoint():
 
 def analyze(h,o,run_backtest, *, trial_live=False, live=False):
     try:
-        pred=predict(h,o,include_history=live)
+        # Live quality gate v2: require a meaningful recent sample rather than
+        # publishing low-history estimates. Uploaded historical research retains
+        # the original baseline for apples-to-apples comparison.
+        pred=predict(h,o,min_games=20 if live else 12,
+                     max_age_days=14 if live else 30,include_history=live)
         if trial_live and not pred.empty:
             pred = daily_trial_picks(pred)
             if pred.empty:
