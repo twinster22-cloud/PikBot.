@@ -1036,6 +1036,49 @@ def additional_feed_check():
     return jsonify(check_additional_history(sport, datetime.now(timezone.utc).date().isoformat()))
 
 
+@app.post('/api/scan/cron')
+def scan_cron_trigger():
+    """Authenticated, read-only external scheduler trigger; no wagers or pick publishing."""
+    import hmac
+    from scan_worker import policy
+    configured = os.getenv('PIKBOT_SCAN_TOKEN', '')
+    supplied = request.headers.get('X-PikBot-Scan-Token', '')
+    if not configured or not supplied or not hmac.compare_digest(configured, supplied):
+        return jsonify(error='Unauthorized'), 401
+    now = datetime.now(timezone.utc)
+    schedule = policy(now)
+    if not schedule['sports']:
+        return jsonify(status='idle', schedule=schedule, scanned=0)
+    # Rotate sport and provider to bound each HTTP request's API cost and latency.
+    slot = int(now.timestamp() // 180)
+    sport = schedule['sports'][slot % len(schedule['sports'])]
+    books = ('prizepicks', 'underdog', 'draftkings', 'fanduel', 'betmgm')
+    bookmaker = books[(slot // max(1, len(schedule['sports']))) % len(books)]
+    try:
+        offers = today.offers(sport, now, bookmaker=bookmaker)
+        eligible = []
+        for offer in offers:
+            start = today.timestamp(offer.get('starts_at'))
+            updated = today.timestamp(offer.get('line_updated_at'))
+            if not start or start - now <= timedelta(minutes=5):
+                continue
+            if not updated or updated > now + timedelta(minutes=2):
+                continue
+            max_age = 300 if bookmaker == 'prizepicks' else 900
+            if not 0 <= (now - updated).total_seconds() <= max_age:
+                continue
+            eligible.append(offer)
+        app.logger.info('Cron research scan: sport=%s book=%s eligible=%s', sport, bookmaker, len(eligible))
+        return jsonify(status='scanned', sport=sport, bookmaker=bookmaker,
+                       fresh_offers=len(eligible), schedule=schedule,
+                       published=0, wagers_placed=0,
+                       note='Read-only scan. No verified +EV or approved picks claimed.')
+    except (today.FeedError, ValueError, KeyError) as exc:
+        app.logger.warning('Cron scan failed: sport=%s book=%s error=%s', sport, bookmaker, exc)
+        return jsonify(status='feed_unavailable', sport=sport, bookmaker=bookmaker,
+                       error='Provider data unavailable'), 503
+
+
 @app.get('/api/scan/windows')
 @owner_required
 def scan_windows():
