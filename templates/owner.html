@@ -20,7 +20,7 @@
 <section id="payments" hidden><div class="panel"><h2>Payments & refunds</h2><p class="muted">Only invoices linked to PikBot members and the configured membership price are imported. Refunds return money to the original payment method and do not cancel future subscription charges.</p><form class="searchform" id="payments-search"><input type="search" name="q" maxlength="120" aria-label="Search member or invoice" placeholder="Search member or invoice"><select name="state" aria-label="Filter payments"><option value="">All statuses</option><option value="paid">Paid</option><option value="open">Open</option><option value="draft">Draft</option><option value="void">Void</option><option value="uncollectible">Uncollectible</option></select><button>Search</button></form><div id="payments-table" class="scroll"></div><div class="pages"><button data-prev="payments">Previous</button><span id="payments-page"></span><button data-next="payments">Next</button></div></div><div class="panel"><h3>Refund audit</h3><div id="refund-audit" class="scroll"></div><p class="muted">Use Sync to update payment totals after a refund. A pending refund has not yet been confirmed as completed.</p></div></section>
 <section id="feedback" hidden><div class="panel"><h2>Private reviews & comments</h2><p class="muted">Feedback is sent privately to you. It is not published to other members.</p><p id="feedback-summary" class="muted"></p><form class="searchform" id="feedback-search"><input type="search" name="q" maxlength="120" aria-label="Search feedback" placeholder="Search feedback"><select name="state" aria-label="Filter feedback"><option value="">All messages</option><option value="unread">Unread</option><option value="reviewed">Reviewed</option></select><button>Search</button></form><div id="feedback-table" class="scroll"></div><div class="pages"><button data-prev="feedback">Previous</button><span id="feedback-page"></span><button data-next="feedback">Next</button></div></div></section>
 <section id="bills" hidden><div class="panel"><h2>Bills to pay</h2><p class="notice warning">Adding a bill or marking it paid changes bookkeeping only. No payment is sent.</p><form id="bill-form"><h3 id="bill-form-title">Add a bill</h3><div class="form-grid"><label>Bill / provider<input name="title" required maxlength="120" placeholder="Enter a real bill"></label><label>Amount (USD)<input name="amount" type="number" step="0.01" min="0.01" required></label><label>Due date<input name="due_date" type="date" required></label></div><button class="primary" id="bill-submit">Add bill</button> <button type="button" id="bill-cancel" hidden>Cancel edit</button></form></div><div class="panel"><form class="searchform" id="bills-search"><input type="search" name="q" maxlength="120" aria-label="Search bills" placeholder="Search bills"><select name="state" aria-label="Filter bills"><option value="">Active bills</option><option value="unpaid">Unpaid</option><option value="paid">Paid</option><option value="archived">Archived</option></select><button>Search</button></form><div id="bills-table" class="scroll"></div><div class="pages"><button data-prev="bills">Previous</button><span id="bills-page"></span><button data-next="bills">Next</button></div></div></section>
-<section id="scanner" hidden><div class="panel"><h2>Automatic Scanner · Activity</h2><p class="muted">Owner-only read-only scan history. Fresh offers are not approved or verified +EV picks.</p><label>Sport <select id="manual-scan-sport"><option>NBA</option><option>NFL</option><option>MLB</option><option>NHL</option><option>WNBA</option></select></label> <label>Platform <select id="manual-scan-platform"><option value="prizepicks">PrizePicks</option><option value="underdog">Underdog</option><option value="fanduel">FanDuel</option><option value="draftkings">DraftKings</option><option value="betmgm">BetMGM</option></select></label> <button type="button" id="manual-scan-start" class="primary">Start Scan</button> <button type="button" id="scan-history-refresh">Refresh Scanner History</button><p class="muted">Read-only scan of one sport and platform; no wagers or pick publishing.</p><p id="scan-history-status" role="status">Select this tab to load activity.</p><div class="scroll" id="scan-history-table"></div></div></section><section id="pick-results" hidden><div class="panel">
+<section class="panel" id="pick-temperature"><h2>🔥 Hot / ❄️ Cold Picks</h2><p>Historical player and platform win rates. Hot: 75%+; Cold: 30% or below. At least 10 graded picks required.</p><button type="button" data-temperature-refresh>Refresh Hot / Cold</button><p data-temperature-status role="status">Loading results…</p><div data-temperature-results></div></section><section id="scanner" hidden><div class="panel"><h2>Automatic Scanner · Activity</h2><p class="muted">Owner-only read-only scan history. Fresh offers are not approved or verified +EV picks.</p><label>Sport <select id="manual-scan-sport"><option>NBA</option><option>NFL</option><option>MLB</option><option>NHL</option><option>WNBA</option></select></label> <label>Platform <select id="manual-scan-platform"><option value="prizepicks">PrizePicks</option><option value="underdog">Underdog</option><option value="fanduel">FanDuel</option><option value="draftkings">DraftKings</option><option value="betmgm">BetMGM</option></select></label> <button type="button" id="manual-scan-start" class="primary">Start Scan</button> <button type="button" id="scan-history-refresh">Refresh Scanner History</button><p class="muted">Read-only scan of one sport and platform; no wagers or pick publishing.</p><p id="scan-history-status" role="status">Select this tab to load activity.</p><div class="scroll" id="scan-history-table"></div></div></section><section id="pick-results" hidden><div class="panel">
 <h2>Previous Pick Results</h2>
 <p class="muted">Saved trial and member predictions across all accounts, grouped by game start in Eastern time. Repeated views of the same source, player, stat, line, and side are grouped. Only picks with a final grade are shown. Newer picks jumps to the latest results for yesterday’s games. Results refresh every minute while this tab is open.</p>
 <label for="pick-results-platform">Platform</label><select id="pick-results-platform"><option value="all">All platforms</option><option value="prizepicks">PrizePicks</option><option value="fanduel">FanDuel</option><option value="underdog">Underdog Fantasy</option><option value="pick6">DraftKings Pick6</option><option value="draftkings">DraftKings Sportsbook</option><option value="betmgm">BetMGM</option></select><label for="pick-results-player">Player name</label><select id="pick-results-player"><option value="">All players</option></select><label for="pick-results-day">Game day (Eastern)</label>
@@ -410,4 +410,36 @@ document.getElementById('owner-live-fullscreen').onclick=()=>{
  if(panel.requestFullscreen)panel.requestFullscreen().catch(()=>{document.getElementById('owner-live-browser-status').textContent='Full screen is not supported in this browser. Try landscape orientation.';});
  else document.getElementById('owner-live-browser-status').textContent='Full screen is unavailable in this browser. Try landscape orientation.';
 };
+</script><script>
+(function(){
+ const host=document.getElementById('pick-temperature');
+ if(!host)return;
+ const status=host.querySelector('[data-temperature-status]');
+ const output=host.querySelector('[data-temperature-results]');
+ const button=host.querySelector('[data-temperature-refresh]');
+ function section(label,items){
+  const wrapper=document.createElement('div');
+  const h=document.createElement('h3');h.textContent=label;wrapper.append(h);
+  if(!items.length){const p=document.createElement('p');p.textContent='No players meet this threshold with at least 10 graded picks.';wrapper.append(p);return wrapper;}
+  for(const item of items){
+   const p=document.createElement('p');
+   p.textContent=item.player+' · '+item.platform+' · '+item.win_rate+'% · '+item.wins+' wins / '+item.losses+' losses';
+   wrapper.append(p);
+  }
+  return wrapper;
+ }
+ async function load(){
+  button.disabled=true;status.textContent='Calculating completed pick results…';
+  try{
+   const response=await fetch('/api/picks/temperature',{credentials:'same-origin',cache:'no-store'});
+   const data=await response.json();
+   if(!response.ok)throw Error(data.error||'Results unavailable');
+   output.replaceChildren(section('🔥 Hot · 75% or higher',data.hot||[]),section('❄️ Cold · 30% or lower',data.cold||[]));
+   status.textContent=data.note;
+  }catch(error){status.textContent='Could not load Hot / Cold picks: '+error.message;}
+  finally{button.disabled=false;}
+ }
+ button.addEventListener('click',load);
+ load();
+})();
 </script></body></html>
