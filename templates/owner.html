@@ -20,7 +20,7 @@
 <section id="payments" hidden><div class="panel"><h2>Payments & refunds</h2><p class="muted">Only invoices linked to PikBot members and the configured membership price are imported. Refunds return money to the original payment method and do not cancel future subscription charges.</p><form class="searchform" id="payments-search"><input type="search" name="q" maxlength="120" aria-label="Search member or invoice" placeholder="Search member or invoice"><select name="state" aria-label="Filter payments"><option value="">All statuses</option><option value="paid">Paid</option><option value="open">Open</option><option value="draft">Draft</option><option value="void">Void</option><option value="uncollectible">Uncollectible</option></select><button>Search</button></form><div id="payments-table" class="scroll"></div><div class="pages"><button data-prev="payments">Previous</button><span id="payments-page"></span><button data-next="payments">Next</button></div></div><div class="panel"><h3>Refund audit</h3><div id="refund-audit" class="scroll"></div><p class="muted">Use Sync to update payment totals after a refund. A pending refund has not yet been confirmed as completed.</p></div></section>
 <section id="feedback" hidden><div class="panel"><h2>Private reviews & comments</h2><p class="muted">Feedback is sent privately to you. It is not published to other members.</p><p id="feedback-summary" class="muted"></p><form class="searchform" id="feedback-search"><input type="search" name="q" maxlength="120" aria-label="Search feedback" placeholder="Search feedback"><select name="state" aria-label="Filter feedback"><option value="">All messages</option><option value="unread">Unread</option><option value="reviewed">Reviewed</option></select><button>Search</button></form><div id="feedback-table" class="scroll"></div><div class="pages"><button data-prev="feedback">Previous</button><span id="feedback-page"></span><button data-next="feedback">Next</button></div></div></section>
 <section id="bills" hidden><div class="panel"><h2>Bills to pay</h2><p class="notice warning">Adding a bill or marking it paid changes bookkeeping only. No payment is sent.</p><form id="bill-form"><h3 id="bill-form-title">Add a bill</h3><div class="form-grid"><label>Bill / provider<input name="title" required maxlength="120" placeholder="Enter a real bill"></label><label>Amount (USD)<input name="amount" type="number" step="0.01" min="0.01" required></label><label>Due date<input name="due_date" type="date" required></label></div><button class="primary" id="bill-submit">Add bill</button> <button type="button" id="bill-cancel" hidden>Cancel edit</button></form></div><div class="panel"><form class="searchform" id="bills-search"><input type="search" name="q" maxlength="120" aria-label="Search bills" placeholder="Search bills"><select name="state" aria-label="Filter bills"><option value="">Active bills</option><option value="unpaid">Unpaid</option><option value="paid">Paid</option><option value="archived">Archived</option></select><button>Search</button></form><div id="bills-table" class="scroll"></div><div class="pages"><button data-prev="bills">Previous</button><span id="bills-page"></span><button data-next="bills">Next</button></div></div></section>
-<section id="scanner" hidden><div class="panel"><h2>Automatic Scanner · Activity</h2><p class="muted">Owner-only read-only scan history. Fresh offers are not approved or verified +EV picks.</p><button type="button" id="scan-history-refresh">Refresh Scanner</button><p id="scan-history-status" role="status">Select this tab to load activity.</p><div class="scroll" id="scan-history-table"></div></div></section><section id="pick-results" hidden><div class="panel">
+<section id="scanner" hidden><div class="panel"><h2>Automatic Scanner · Activity</h2><p class="muted">Owner-only read-only scan history. Fresh offers are not approved or verified +EV picks.</p><label>Sport <select id="manual-scan-sport"><option>NBA</option><option>NFL</option><option>MLB</option><option>NHL</option><option>WNBA</option></select></label> <label>Platform <select id="manual-scan-platform"><option value="prizepicks">PrizePicks</option><option value="underdog">Underdog</option><option value="fanduel">FanDuel</option><option value="draftkings">DraftKings</option><option value="betmgm">BetMGM</option></select></label> <button type="button" id="manual-scan-start" class="primary">Start Scan</button> <button type="button" id="scan-history-refresh">Refresh Scanner History</button><p class="muted">Read-only scan of one sport and platform; no wagers or pick publishing.</p><p id="scan-history-status" role="status">Select this tab to load activity.</p><div class="scroll" id="scan-history-table"></div></div></section><section id="pick-results" hidden><div class="panel">
 <h2>Previous Pick Results</h2>
 <p class="muted">Saved trial and member predictions across all accounts, grouped by game start in Eastern time. Repeated views of the same source, player, stat, line, and side are grouped. Only picks with a final grade are shown. Newer picks jumps to the latest results for yesterday’s games. Results refresh every minute while this tab is open.</p>
 <label for="pick-results-platform">Platform</label><select id="pick-results-platform"><option value="all">All platforms</option><option value="prizepicks">PrizePicks</option><option value="fanduel">FanDuel</option><option value="underdog">Underdog Fantasy</option><option value="pick6">DraftKings Pick6</option><option value="draftkings">DraftKings Sportsbook</option><option value="betmgm">BetMGM</option></select><label for="pick-results-day">Game day (Eastern)</label>
@@ -30,7 +30,7 @@
   <option value="today">Today</option>
 </select>
 <p id="pick-results-status" role="status"></p>
-<div id="pick-results-table" class="scroll"></div>
+<h3>Player name list</h3><div id="pick-results-players" class="scroll" aria-live="polite"></div><h3>Individual results</h3><div id="pick-results-table" class="scroll"></div>
 <div class="pages"><button id="pick-results-newer" type="button">Newer picks</button><button id="pick-results-refresh">Refresh results</button><button id="pick-results-older" disabled>Older picks</button></div>
 </div></section>
 <section id="accuracy" hidden><div class="panel"><h2>Accuracy & specialist team</h2><p class="notice warning">Research mode. No 75% win-rate claim is validated. Specialist checks share historical data; agreement does not guarantee an outcome. Lineup/injury verification and live prediction modeling remain incomplete.</p><p>Data reviewer · Projection reviewer · Trend reviewer · Playing-time reviewer · Sport-specific availability reviewer · Market-pricing reviewer · Validation reviewer</p><p>New projections are recorded before game time with model version, source timestamp, history fingerprint, score, and review evidence. Repeated views count once. Old predictions remain in Previous Pick Results for 48 hours; this separate private audit starts with this release.</p><button id="accuracy-sync" class="primary">Check recorded predictions against final stats</button> <button id="accuracy-refresh">Refresh accuracy report</button><p id="accuracy-status" role="status"></p><div id="accuracy-summary" class="scroll"></div><h3>Raw score vs actual results</h3><div id="accuracy-bands" class="scroll"></div><h3>Results by sport</h3><div id="accuracy-sports" class="scroll"></div><h3>Results by model version</h3><div id="accuracy-versions" class="scroll"></div><p id="accuracy-note" class="muted"></p><h3>Entry EV calculator · research only</h3><p>Enter decimal probabilities and the exact total-return multipliers shown for your entry. Assumes independent picks, no pushes or voids, and correct probabilities. Correlated selections invalidate this calculation. A market estimate is not a verified probability.</p><label>Probabilities, separated by commas<input id="ev-probabilities" placeholder="0.5, 0.5"></label><label>Payout table as JSON (number correct: total return)<input id="ev-payouts" placeholder='{"2":3}'></label><button id="ev-calculate">Calculate hypothetical entry EV</button><p id="ev-result" role="status"></p></div></section>
@@ -150,11 +150,14 @@ async function loadPickResults(page, skipEmpty=false){
     const lastPage=skipEmpty?page+4:page;
     while(!result.picks.length&&result.has_more&&page<lastPage){
       page++;
-      result=await api('/api/owner/pick-results?'+new URLSearchParams({page,day}));
+      result=await api('/api/owner/pick-results?'+new URLSearchParams({page,day,platform}));
     }
     resultsPage=page;
     resultsHaveMore=result.has_more;
     const labels={WIN:'Passed',LOSS:'Failed',PUSH:'Push',VOID:'Void'};
+    const names=[...new Set(result.picks.map(p=>p.player).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    const players=$('pick-results-players');players.replaceChildren();
+    if(!names.length){players.textContent='No player names for this selection.';}else{for(const name of names){const chip=document.createElement('span');chip.className='chip';chip.textContent=name;chip.style.margin='4px';players.append(chip);}}
     table('pick-results-table',['Player','Matchup','Start','Source','Pick','Model estimate','Final stat','Result'],result.picks,r=>[
       r.player+' · '+r.sport,r.matchup,when(r.starts_at),r.bookmaker||'PrizePicks',r.side+' '+r.line+' '+r.stat,
       Number.isFinite(r.p_raw)?Math.round(r.p_raw*100)+'%':'—',r.actual,labels[r.result]
@@ -176,6 +179,7 @@ function resetPickResults(){
   resultsPage=0;
   resultsHaveMore=false;
   $('pick-results-table').replaceChildren();
+  $('pick-results-players').replaceChildren();
   loadPickResults(0,true);
 }
 $('pick-results-day').onchange=resetPickResults;
@@ -205,6 +209,18 @@ async function loadScannerHistory(){
  }catch(e){status.textContent='Scanner history unavailable: '+e.message;}
 }
 $('scan-history-refresh').onclick=loadScannerHistory;
+$('manual-scan-start').onclick=async()=>{
+ const button=$('manual-scan-start'),status=$('scan-history-status');
+ button.disabled=true;button.textContent='Scanning…';status.textContent='Checking fresh offers…';
+ try{
+  const response=await fetch('/api/owner/scan/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sport:$('manual-scan-sport').value,bookmaker:$('manual-scan-platform').value})});
+  const data=await response.json();
+  if(!response.ok)throw Error(data.error||'Scan unavailable');
+  await loadScannerHistory();
+  status.textContent=data.fresh_offers+' fresh offers found · '+data.sport+' · '+data.bookmaker+'. No picks published.';
+ }catch(error){status.textContent='Scan could not complete: '+error.message;}
+ finally{button.disabled=false;button.textContent='Start Scan';}
+};
 let accuracyBusy=false;
 async function loadAccuracy(){
   try{
