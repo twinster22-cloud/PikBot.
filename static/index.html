@@ -197,7 +197,7 @@ async function loadPlatformPreviousPicks(){
   const response=await fetch('/api/pick-test?sport='+encodeURIComponent(sport),{credentials:'same-origin',cache:'no-store'});
   if(!response.ok)throw Error('HTTP '+response.status);
   const data=await response.json();
-  const picks=(data.picks||[]).filter(p=>(aliases[book]||[book]).includes(String(p.platform||'').toLowerCase().trim()));
+  const picks=(data.picks||[]).filter(p=>(aliases[book]||[book]).includes(String(p.platform||'').toLowerCase().trim())&&String(p.sport||'').toUpperCase()===sport.toUpperCase());
   status.textContent=(labels[book]||book)+' · '+(data.day||'Today')+' · '+sport+' · '+picks.length+' archived picks';
   if(!picks.length){target.textContent='No archived picks for this platform and sport today.';return;}
   const counts={};for(const p of picks)counts[p.result]=(counts[p.result]||0)+1;
