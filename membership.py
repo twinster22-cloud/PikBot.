@@ -450,6 +450,21 @@ def sign_in(email, password_version=0):
     return redirect('/')
 
 
+@membership.get('/signout')
+def signout_confirmation():
+    """Render a fresh server-issued logout form independent of dashboard JavaScript."""
+    if not account():
+        return redirect('/login')
+    token = escape(csrf_token(), quote=True)
+    return ('''<!doctype html><html lang="en"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sign out · PikBot</title><body style="font:16px system-ui;background:#07110e;color:white;padding:32px">
+<h1>Sign out of PikBot</h1><p>Confirm to securely end your member session.</p>
+<form action="/logout" method="post"><input type="hidden" name="csrf" value="''' + token + '''">
+<button type="submit" style="padding:15px 25px;font-size:17px">Confirm sign out</button></form>
+<p><a href="/" style="color:#a4ff52">Return to PikBot</a></p></body></html>''',
+            200, {'Cache-Control': 'no-store'})
+
+
 @membership.post('/logout')
 @membership.post('/owner/logout')
 def logout():
