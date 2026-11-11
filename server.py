@@ -163,6 +163,14 @@ def analyze(h,o,run_backtest, *, trial_live=False, live=False):
         return jsonify(result)
     except (ValueError,KeyError,TypeError) as e:return jsonify(error=str(e)),400
 
+@app.get('/about-pikbot')
+def about_pikbot_page():
+    """Standalone, accessible About page independent of dashboard JavaScript."""
+    from flask import Response
+    page = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>About PikBot</title><style>body{font-family:system-ui;background:#07140d;color:#e5f7e9;margin:0;padding:24px;line-height:1.6}main{max-width:740px;margin:auto}a{color:#a7ff7b}section{background:#12241a;padding:22px;border-radius:16px;margin:18px 0}h1,h2{color:#b3ff84}</style></head><body><main><a href="/">← Back to PikBot</a><h1>About PikBot</h1><section><h2>What is PikBot?</h2><p>PikBot is a sports research and pick-analysis platform. It helps users explore player statistics, matchups, player-prop lines, and data-driven MORE/LESS research selections across supported sports and platforms.</p><p>Members can use Hot and Cold historical pick labels and the Auto Pick tool to assemble a research ticket when reviewed selections are available. Plus and Owner dashboards have additional features.</p></section><section><h2>Important disclaimer</h2><p>PikBot is for information, education, and entertainment only. No pick, ticket, win rate, probability, or trend guarantees a win or profit. Data and lines may be delayed, inaccurate, or unavailable. Historical results do not predict future performance. PikBot does not place bets or act as a sportsbook, and does not provide financial advice.</p><p>Betting involves risk of financial loss. Check platform lines independently, follow applicable laws and age restrictions, and never wager money you cannot afford to lose. Seek local support if gambling becomes a problem.</p></section><a href="/">Return to PikBot</a></main></body></html>"""
+    return Response(page, mimetype='text/html')
+
+
 @app.get('/api/today')
 @premium_required
 def todays_sports():
