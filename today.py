@@ -130,14 +130,24 @@ def today_events(sport, now):
 
 @lru_cache(maxsize=100)
 def event_offers(sport, event_id, _window, bookmaker=DEFAULT_BOOK, expanded=False):
-    key, markets = SPORTS[sport]
-    if expanded and sport in {'NBA', 'COLLEGE BASKETBALL', 'WNBA'}:
-        markets = {**markets, **NBA_EXTRA}
+    key, base_markets = SPORTS[sport]
+    markets = ({**base_markets, **NBA_EXTRA}
+               if expanded and sport in {'NBA', 'COLLEGE BASKETBALL', 'WNBA'}
+               else base_markets)
+    params = dict(bookmakers=bookmaker, markets=','.join(markets), oddsFormat='decimal')
     try:
-        return get(f'/{key}/events/{event_id}/odds', timeout=2 if bookmaker == 'pinnacle' else None,
-                   bookmakers=bookmaker,
-                   markets=','.join(markets), oddsFormat='decimal')
+        payload = get(f'/{key}/events/{event_id}/odds', **params)
+        if expanded and not payload.get('bookmakers') and markets != base_markets:
+            return get(f'/{key}/events/{event_id}/odds', bookmakers=bookmaker,
+                       markets=','.join(base_markets), oddsFormat='decimal')
+        return payload
     except FeedError as exc:
+        if expanded and markets != base_markets:
+            try:
+                return get(f'/{key}/events/{event_id}/odds', bookmakers=bookmaker,
+                           markets=','.join(base_markets), oddsFormat='decimal')
+            except FeedError:
+                pass
         return {'error': str(exc)}
 
 
