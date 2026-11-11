@@ -39,3 +39,22 @@ The owner calculator requires explicit probabilities and the actual entry's tota
 ## Validation performed
 
 Tests use synthetic fixtures and mocked providers/database connections. They verify software correctness, PostgreSQL SQL parsing, permission boundaries, before-game recording, math and unavailable-data behavior. Passing these tests is not a betting win-rate result. Real performance must be measured on untouched, timestamped prospective predictions after games finish. Do not tune thresholds on the same results used to report accuracy.
+
+
+## Owner offline settled-pick diagnostic
+
+Run `python accuracy_audit.py settled_picks.csv` against an owner-exported,
+timestamped, prospective set of settled predictions. Required columns are
+`issued_at,event_id,sport,player,stat,line,side,actual,p_raw`.
+Optional grouping columns: `platform,model_version`.
+The script deduplicates repeated same-line selections, separates pushes,
+reports Brier score and compares observed hit rates with raw estimates by
+confidence bucket, sport and stat. It never alters the live prediction
+engine, subscriptions, or published boards.
+
+Before trusting results, verify that picks were logged before game start,
+that grading follows each platform's rules, and that the dataset contains
+all issued predictions rather than selected winners. Do not advertise a
+75% win rate without sufficient prospective evidence. A performance audit
+is a prerequisite to selecting and validating a candidate model, not itself
+a model upgrade.
