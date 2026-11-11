@@ -797,9 +797,52 @@ def pick_temperature():
             cold.append(entry)
     hot.sort(key=lambda x:(-x['win_rate'],-x['wins'],x['player']))
     cold.sort(key=lambda x:(x['win_rate'],-(x['wins']+x['losses']),x['player']))
-    return jsonify(hot=hot, cold=cold, minimum_graded=10, period_days=30,
+    # Attach current saved selections to the historical player/platform rates.
+    # Never present a historical pick as a current line.
+    with database() as conn:
+        current_rows = conn.execute(f"""WITH boards AS (
+            SELECT pick_day, payload FROM pikbot_trial_daily_board WHERE pick_day >= %s
+            UNION ALL
+            SELECT pick_day, payload FROM pikbot_member_pick_boards WHERE pick_day >= %s
+        ), candidates AS (
+            SELECT pick, pick_day, pick_order, {PICK_IDENTITY_SQL} AS identity,
+                   NULLIF(pick->>'starts_at','')::timestamptz AS starts_at
+            FROM boards CROSS JOIN LATERAL jsonb_array_elements(payload->'picks')
+                WITH ORDINALITY AS saved(pick, pick_order)
+        )
+        SELECT DISTINCT ON (identity) pick, starts_at FROM candidates
+        WHERE starts_at >= %s AND starts_at < %s
+        ORDER BY identity, (pick ? 'p_raw') DESC, pick_day, pick_order, pick
+        LIMIT 500""",
+        ((now - timedelta(days=1)).astimezone(pick_results.EASTERN).date(),
+         (now - timedelta(days=1)).astimezone(pick_results.EASTERN).date(),
+         now - timedelta(hours=6), now + timedelta(days=2))).fetchall()
+    ratings = {(x['player'].casefold(), x['platform']): (kind,x)
+               for kind,items in (('hot',hot),('cold',cold)) for x in items}
+    live = {'hot':[], 'cold':[]}
+    for row in current_rows:
+        pick = row['pick']
+        key = (str(pick.get('player') or '').strip().casefold(),
+               str(pick.get('bookmaker') or '').strip().lower())
+        match = ratings.get(key)
+        if not match:
+            continue
+        kind, rating = match
+        starts = row['starts_at']
+        if starts is None:
+            continue
+        live[kind].append({
+            'player':rating['player'], 'platform':rating['platform'],
+            'sport':pick.get('sport'), 'stat':pick.get('stat'),
+            'side':pick.get('side'), 'line':pick.get('line'),
+            'starts_at':starts.isoformat(),
+            'status':'LIVE' if starts <= now else 'UPCOMING',
+            'win_rate':rating['win_rate'], 'wins':rating['wins'],
+            'losses':rating['losses']
+        })
+    return jsonify(hot=live['hot'], cold=live['cold'], minimum_graded=10, period_days=30,
                    checked_at=now.isoformat(),
-                   note='Based on distinct saved picks graded WIN or LOSS in the past 30 days (latest 1,000 saved picks). Pushes, voids and pending picks excluded. Historical results do not predict future wins.')
+                   note='Live/upcoming saved picks matched to player-platform historical win rates from the past 30 days (latest 1,000 graded candidates). LIVE means the scheduled start passed, not that the game feed confirms play. Rates are historical, not predictions. Refresh for updates.')
 
 
 @app.get('/api/owner/pick-results')
