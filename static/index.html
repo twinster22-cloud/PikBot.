@@ -518,7 +518,7 @@ async function showMembership(){
       $('live-player-cards').onclick=null;
       await loadToday();
     }
-  } catch {status.textContent='Could not check your membership. Refresh to try again.'}
+  } catch (error) {status.textContent='Could not load membership or picks: '+(error?.message||'Unknown dashboard error')+'. Refresh to retry.';console.error('PikBot member initialization failed',error);}
 }
 let todaysSlate=[];
 let liveRequest=0;
