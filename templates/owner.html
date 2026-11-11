@@ -30,7 +30,7 @@
   <option value="today">Today</option>
 </select>
 <p id="pick-results-status" role="status"></p>
-<h3>Player name list</h3><div id="pick-results-players" class="scroll" aria-live="polite"></div><h3>Individual results</h3><div id="pick-results-table" class="scroll"></div>
+<h3>Jump to a player</h3><p>Select any player below to see only their picks across all result pages for the selected platform and day. This list is not limited to the currently visible page.</p><input id="pick-results-name-search" type="search" placeholder="Search names (e.g. Ajay Mitchell)" aria-label="Search player names"/><div id="pick-results-players" class="scroll" aria-live="polite"></div><h3>Individual results</h3><div id="pick-results-table" class="scroll"></div>
 <div class="pages"><button id="pick-results-newer" type="button">Newer picks</button><button id="pick-results-refresh">Refresh results</button><button id="pick-results-older" disabled>Older picks</button></div>
 </div></section>
 <section id="accuracy" hidden><div class="panel"><h2>Accuracy & specialist team</h2><p class="notice warning">Research mode. No 75% win-rate claim is validated. Specialist checks share historical data; agreement does not guarantee an outcome. Lineup/injury verification and live prediction modeling remain incomplete.</p><p>Data reviewer · Projection reviewer · Trend reviewer · Playing-time reviewer · Sport-specific availability reviewer · Market-pricing reviewer · Validation reviewer</p><p>New projections are recorded before game time with model version, source timestamp, history fingerprint, score, and review evidence. Repeated views count once. Old predictions remain in Previous Pick Results for 48 hours; this separate private audit starts with this release.</p><button id="accuracy-sync" class="primary">Check recorded predictions against final stats</button> <button id="accuracy-refresh">Refresh accuracy report</button><p id="accuracy-status" role="status"></p><div id="accuracy-summary" class="scroll"></div><h3>Raw score vs actual results</h3><div id="accuracy-bands" class="scroll"></div><h3>Results by sport</h3><div id="accuracy-sports" class="scroll"></div><h3>Results by model version</h3><div id="accuracy-versions" class="scroll"></div><p id="accuracy-note" class="muted"></p><h3>Entry EV calculator · research only</h3><p>Enter decimal probabilities and the exact total-return multipliers shown for your entry. Assumes independent picks, no pushes or voids, and correct probabilities. Correlated selections invalidate this calculation. A market estimate is not a verified probability.</p><label>Probabilities, separated by commas<input id="ev-probabilities" placeholder="0.5, 0.5"></label><label>Payout table as JSON (number correct: total return)<input id="ev-payouts" placeholder='{"2":3}'></label><button id="ev-calculate">Calculate hypothetical entry EV</button><p id="ev-result" role="status"></p></div></section>
@@ -156,9 +156,6 @@ async function loadPickResults(page, skipEmpty=false){
     resultsPage=page;
     resultsHaveMore=result.has_more;
     const labels={WIN:'Passed',LOSS:'Failed',PUSH:'Push',VOID:'Void'};
-    const names=[...new Set(result.picks.map(p=>p.player).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
-    const players=$('pick-results-players');players.replaceChildren();
-    if(!names.length){players.textContent='No player names for this selection.';}else{for(const name of names){const chip=document.createElement('span');chip.className='chip';chip.textContent=name;chip.style.margin='4px';players.append(chip);}}
     table('pick-results-table',['Player','Matchup','Start','Source','Pick','Model estimate','Final stat','Result'],result.picks,r=>[
       r.player+' · '+r.sport,r.matchup,when(r.starts_at),r.bookmaker||'PrizePicks',r.side+' '+r.line+' '+r.stat,
       Number.isFinite(r.p_raw)?Math.round(r.p_raw*100)+'%':'—',r.actual,labels[r.result]
@@ -176,29 +173,47 @@ async function loadPickResults(page, skipEmpty=false){
     $('pick-results-older').disabled=!resultsHaveMore;
   }
 }
+let allResultPlayerNames=[];
+function renderPlayerDirectory(){
+ const target=$('pick-results-players');target.replaceChildren();
+ const query=$('pick-results-name-search').value.trim().toLocaleLowerCase();
+ const names=allResultPlayerNames.filter(name=>name.toLocaleLowerCase().includes(query));
+ if(!names.length){target.textContent=allResultPlayerNames.length?'No matching player names.':'No players found for this platform and date.';return;}
+ const current=$('pick-results-player').value;
+ for(const name of names){
+  const btn=document.createElement('button');btn.type='button';btn.className='chip';btn.textContent=name;
+  btn.style.margin='4px';btn.style.cursor='pointer';btn.setAttribute('aria-pressed',String(current===name));
+  if(current===name){btn.style.outline='2px solid currentColor';}
+  btn.onclick=()=>{$('pick-results-player').value=name;renderPlayerDirectory();resetPickResults();$('pick-results-table').scrollIntoView({behavior:'smooth',block:'start'});};
+  target.append(btn);
+ }
+}
 async function refreshPlayerChoices(){
  const select=$('pick-results-player'),selected=select.value;
  select.disabled=true;
  try{
   const query=new URLSearchParams({platform:$('pick-results-platform').value,day:$('pick-results-day').value});
   const response=await api('/api/owner/pick-result-players?'+query);
+  allResultPlayerNames=response.players||[];
   select.replaceChildren();
   const all=document.createElement('option');all.value='';all.textContent='All players';select.append(all);
-  for(const name of response.players||[]){const option=document.createElement('option');option.value=name;option.textContent=name;select.append(option);}
-  select.value=(response.players||[]).includes(selected)?selected:'';
- }catch(e){$('pick-results-status').textContent='Player list unavailable: '+e.message;}
+  for(const name of allResultPlayerNames){const option=document.createElement('option');option.value=name;option.textContent=name;select.append(option);}
+  select.value=allResultPlayerNames.includes(selected)?selected:'';
+  renderPlayerDirectory();
+ }catch(e){allResultPlayerNames=[];renderPlayerDirectory();$('pick-results-status').textContent='Player list unavailable: '+e.message;}
  finally{select.disabled=false;}
 }
+$('pick-results-name-search').oninput=renderPlayerDirectory;
 function resetPickResults(){
   resultsPage=0;
   resultsHaveMore=false;
   $('pick-results-table').replaceChildren();
-  $('pick-results-players').replaceChildren();
+  renderPlayerDirectory();
   loadPickResults(0,true);
 }
 $('pick-results-day').onchange=()=>{refreshPlayerChoices().then(resetPickResults);};
 $('pick-results-platform').onchange=()=>{ $('pick-results-player').value='';refreshPlayerChoices().then(resetPickResults);};
-$('pick-results-player').onchange=resetPickResults;
+$('pick-results-player').onchange=()=>{renderPlayerDirectory();resetPickResults();};
 $('pick-results-refresh').onclick=()=>loadPickResults(resultsPage);
 function refreshVisiblePickResults(){
   if(activeTab==='pick-results'&&!document.hidden)loadPickResults(resultsPage);
