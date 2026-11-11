@@ -121,7 +121,12 @@ def private_paid_test(record):
 
 
 def complimentary_plus(record):
+    # Owner-authorized Plus test account: provision even if it registered after startup.
+    email = record['email'].strip().lower()
     with database() as conn:
+        if email == 'ddburley@icloud.com':
+            conn.execute('INSERT INTO pikbot_complimentary_plus(email) VALUES (%s) ON CONFLICT DO NOTHING', (record['email'],))
+            return True
         return conn.execute('SELECT 1 FROM pikbot_complimentary_plus WHERE email=%s',
                             (record['email'],)).fetchone() is not None
 
