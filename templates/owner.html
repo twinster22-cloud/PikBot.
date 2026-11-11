@@ -296,7 +296,7 @@ $('ev-calculate').onclick=()=>{
 function switchTab(tab){
   activeTab=tab;
   document.querySelectorAll('[data-tab]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.tab===tab)));
-  for(const id of ['overview','pick-results','accuracy','live-center',...Object.keys(pages)])$(id).hidden=id!==tab;
+  for(const id of ['overview','pick-results','scanner','accuracy','live-center',...Object.keys(pages)])$(id).hidden=id!==tab;
   if(tab in pages)list(tab);
   if(tab==='pick-results')loadPickResults(0,true);
   if(tab==='scanner')loadScannerHistory();
