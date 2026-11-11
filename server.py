@@ -731,6 +731,10 @@ def previous_pick_results():
     if day not in ('recent', 'today', 'yesterday'):
         return jsonify(error='Invalid results day.'), 400
 
+    platform = request.args.get('platform', 'all').lower().strip()
+    allowed = ('all','prizepicks','fanduel','underdog','pick6','draftkings','betmgm')
+    if platform not in allowed:
+        return jsonify(error='Invalid platform.'), 400
     now = datetime.now(timezone.utc)
     eastern = pick_results.EASTERN
     cutoff, end = now - timedelta(days=2), now
@@ -756,10 +760,11 @@ def previous_pick_results():
             ), unique_picks AS (
                 SELECT DISTINCT ON (identity) pick, identity, starts_at
                 FROM candidates WHERE starts_at >= %s AND starts_at < %s
+                    AND (%s = 'all' OR LOWER(COALESCE(pick->>'bookmaker','')) = %s)
                 ORDER BY identity, (pick ? 'p_raw') DESC, pick_day, pick_order, pick
             )
             SELECT pick FROM unique_picks ORDER BY starts_at DESC, identity
-            LIMIT %s OFFSET %s""", (first_day, first_day, cutoff, end,
+            LIMIT %s OFFSET %s""", (first_day, first_day, cutoff, end, platform, platform,
                                     pick_results.PAGE_SIZE + 1, page * pick_results.PAGE_SIZE)).fetchall()
     picks = [row['pick'] for row in rows[:pick_results.PAGE_SIZE]]
     finished = [pick for pick in pick_results.grade(picks, now)
