@@ -1083,6 +1083,38 @@ def scan_history():
         return jsonify(error='Scan history unavailable'),503
 
 
+
+@app.post('/api/owner/scan/run')
+@owner_required
+def owner_manual_scan():
+    """Owner-initiated read-only provider check; never publishes or wagers."""
+    data = request.get_json(silent=True) or {}
+    sport = str(data.get('sport', '')).upper()
+    bookmaker = str(data.get('bookmaker', '')).lower()
+    if sport not in ('NBA','NFL','MLB','NHL','WNBA') or bookmaker not in ('prizepicks','underdog','fanduel','draftkings','betmgm'):
+        return jsonify(error='Choose a supported sport and platform.'), 400
+    now = datetime.now(timezone.utc)
+    schedule = {'windows': ['manual owner scan']}
+    try:
+        offers = today.offers(sport, now, bookmaker=bookmaker)
+        eligible = []
+        for offer in offers:
+            start = today.timestamp(offer.get('starts_at'))
+            updated = today.timestamp(offer.get('line_updated_at'))
+            if not start or start - now <= timedelta(minutes=5) or not updated or updated > now + timedelta(minutes=2):
+                continue
+            max_age = 300 if bookmaker == 'prizepicks' else 900
+            if 0 <= (now-updated).total_seconds() <= max_age:
+                eligible.append(offer)
+        _record_scan_event('manual_scanned', schedule, sport, bookmaker, len(eligible))
+        return jsonify(status='scanned',sport=sport,bookmaker=bookmaker,
+                       fresh_offers=len(eligible),published=0,wagers_placed=0)
+    except (today.FeedError, ValueError, KeyError) as exc:
+        _record_scan_event('feed_unavailable',schedule,sport,bookmaker,0,'Provider data unavailable')
+        app.logger.warning('Manual scan unavailable: %s',exc)
+        return jsonify(error='Provider data unavailable. Check platform connection and try again.'),503
+
+
 @app.post('/api/scan/cron')
 def scan_cron_trigger():
     """Authenticated, read-only external scheduler trigger; no wagers or pick publishing."""
