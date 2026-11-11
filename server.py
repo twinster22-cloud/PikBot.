@@ -1039,7 +1039,7 @@ def additional_feed_check():
 @app.get('/api/scan/windows')
 @owner_required
 def scan_windows():
-    """Owner-visible ET scan schedule; informational until a worker is connected."""
+    """Eastern Time scan cadence and game-start lockout policy."""
     from zoneinfo import ZoneInfo
     now_et = datetime.now(ZoneInfo('America/New_York'))
     windows = [
@@ -1047,16 +1047,27 @@ def scan_windows():
          'sports':['NBA','NHL','COLLEGE BASKETBALL','COLLEGE FOOTBALL']},
         {'name':'Afternoon Injury Wave','start':'16:30','end':'18:30','days':'daily',
          'sports':['NBA','NHL']},
-        {'name':'Sunday Football','start':'11:30','end':'12:45','days':'sunday',
-         'sports':['NFL']},
+        {'name':'Pre-Game Final Check','start':'18:45','end':'19:15','days':'daily',
+         'sports':['NBA','NHL']},
+        {'name':'Weekend Football','start':'11:30','end':'12:45','days':'weekend',
+         'sports':['NFL','COLLEGE FOOTBALL']},
     ]
     minute = now_et.hour*60+now_et.minute
+    weekend = now_et.weekday() in (5,6)
     for window in windows:
-        start_h,start_m=map(int,window['start'].split(':'))
-        end_h,end_m=map(int,window['end'].split(':'))
-        window['active_now']=(window['days']!='sunday' or now_et.weekday()==6) and start_h*60+start_m<=minute<end_h*60+end_m
-    return jsonify(timezone='America/New_York',now=now_et.isoformat(),windows=windows,
-                   automated=False,note='Schedule is configured for display only. No unattended scanner or publishing job is active.')
+        sh,sm=map(int,window['start'].split(':'))
+        eh,em=map(int,window['end'].split(':'))
+        window['active_now']=(window['days']!='weekend' or weekend) and sh*60+sm<=minute<eh*60+em
+    injury_peak = 16*60+30 <= minute < 19*60+15
+    football_peak = weekend and 11*60+30 <= minute < 13*60
+    active = [w['name'] for w in windows if w['active_now']]
+    interval = 3 if injury_peak or football_peak else 5 if active else 20
+    return jsonify(timezone='America/New_York',now=now_et.isoformat(),
+                   windows=windows,active_windows=active,
+                   recommended_poll_minutes=interval,
+                   game_lockout_minutes=5,
+                   automated=False,
+                   note='Policy only: unattended polling, injury verification, and publishing are not yet enabled. Verify each live offer and its timestamp before use.')
 
 
 @app.get('/health')
