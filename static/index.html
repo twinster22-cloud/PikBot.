@@ -107,7 +107,15 @@ document.addEventListener('DOMContentLoaded',()=>{const manage=document.getEleme
  if(video&&dashboard) dashboard.before(video);
 });
 </script><script>document.getElementById('pikbot-app-refresh').addEventListener('click',function(){this.disabled=true;this.textContent='Refreshing…';window.location.reload();});</script><div class="shell"><a id="owner-dashboard-return" href="/owner" style="display:none;align-items:center;justify-content:center;min-height:48px;margin:14px 0;padding:12px 16px;background:#a5ff51;color:#09160d;border-radius:12px;font-weight:850;text-decoration:none;border:1px solid #d0ffab">← Owner Dashboard · Comments &amp; Pick Results</a><script>if(location.pathname==='/owner/picks')document.getElementById('owner-dashboard-return').style.display='flex';</script><header class="top"><div class="identity"><img src="/icon-192.png" alt="PikBot logo"><div><b>Pik<span>Bot</span></b><div class="eyebrow">SPORTS INTELLIGENCE</div></div></div><div class="status"><i></i>RESEARCH MODE</div></header><div id="pikbot-membership-controls" hidden><section class="panel" aria-label="Membership">
-<div id="paid-preview-notice" class="notice" hidden>PAID LAYOUT PREVIEW · Your account is still on its current plan. Trial limits apply. <a href="/" style="color:#b5ff5d">Exit preview</a></div><div id="paid-member-banner" hidden><span class="chip">PAID MEMBERSHIP</span><h2>PikBot Membership</h2><p>Regular membership · 50 picks/day planned · All supported sports · Player analysis</p></div><p id="membership-status" role="status">Checking membership…</p>
+<div id="paid-preview-notice" class="notice" hidden>PAID LAYOUT PREVIEW · Your account is still on its current plan. Trial limits apply. <a href="/" style="color:#b5ff5d">Exit preview</a></div><div id="paid-member-banner" hidden><span class="chip">PAID MEMBERSHIP</span><h2>PikBot Membership</h2><p>Regular membership · 50 picks/day planned · All supported sports · Player analysis</p></div><p id="membership-status" role="status">Checking membership…</p><div id="member-plan-menu" class="panel" style="margin:12px 0;padding:14px">
+<h3>Manage your membership</h3>
+<p id="member-current-plan">Checking your current plan…</p>
+<div style="display:flex;flex-wrap:wrap;gap:10px">
+<button type="button" class="btn primary" id="member-plan-upgrade">Compare / Upgrade Plans</button>
+<button type="button" class="btn" id="member-plan-manage">Manage Billing / Cancel</button>
+</div>
+<p id="member-plan-action-status" role="status" class="muted"></p>
+</div>
 <div style="display:flex;gap:8px;flex-wrap:wrap">
 <button type="button" class="btn primary" id="open-unlimited-picks" hidden>View Member Picks</button>
 <form method="post" action="/billing/checkout" id="subscribe" hidden><input type="hidden" name="csrf"><button class="btn primary">Subscribe for $15/month</button></form>
@@ -1347,5 +1355,45 @@ for(const role of ['member','owner']){
    if(status)status.textContent='Could not sign out: '+error.message+'. Please retry.';
   }
  });
+})();
+</script><script id="pikbot-member-plan-actions">
+(function(){
+ const upgrade=document.getElementById('member-plan-upgrade'),manage=document.getElementById('member-plan-manage');
+ const label=document.getElementById('member-current-plan'),status=document.getElementById('member-plan-action-status');
+ if(!upgrade||!manage)return;
+ let account=null;
+ async function refresh(){
+  try{
+   const response=await fetch('/api/account',{credentials:'same-origin',cache:'no-store'});
+   if(response.status===401){label.textContent='Sign in to view your membership.';return;}
+   if(!response.ok)throw Error('Membership information unavailable');
+   account=await response.json();
+   label.textContent='Current plan: '+(account.membership_tier==='plus'?'Plus':account.access==='trial'?'Free Trial':account.access==='subscriber'?'Regular':'Inactive')+'.';
+   manage.disabled=!account.has_customer;
+   manage.title=account.has_customer?'Manage your existing Stripe subscription':'No paid billing account is linked to this membership';
+  }catch(e){label.textContent='Could not load membership: '+e.message;}
+ }
+ upgrade.onclick=()=>{
+  const plans=document.getElementById('upgrade-plan');
+  if(!plans){status.textContent='Plan comparison is unavailable.';return;}
+  plans.hidden=false;plans.classList.remove('hidden');
+  plans.scrollIntoView({behavior:'smooth',block:'start'});
+  status.textContent='Review available plans. Checkout is only possible when billing is enabled.';
+ };
+ manage.onclick=async()=>{
+  if(!account?.has_customer){status.textContent='This account has no paid billing subscription to manage.';return;}
+  const form=document.getElementById('portal');
+  if(!form){status.textContent='Billing portal is not configured.';return;}
+  try{
+   const response=await fetch('/api/account',{credentials:'same-origin',cache:'no-store'});
+   if(!response.ok)throw Error('Unable to verify your session');
+   const current=await response.json();
+   if(!current.csrf)throw Error('Session security token unavailable');
+   form.elements.csrf.value=current.csrf;
+   form.submit();
+  }catch(e){status.textContent='Could not open billing: '+e.message;}
+ };
+ document.getElementById('manage-membership-toggle')?.addEventListener('click',()=>{refresh();},false);
+ refresh();
 })();
 </script></body></html>
