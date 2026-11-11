@@ -1236,26 +1236,28 @@ def auto_pick_ticket():
                   if p.get('team_review', {}).get('approved') is True
                   and p.get('player') and p.get('stat') and p.get('line') is not None
                   and p.get('side') and p.get('line_updated_at')]
-    # Do not put conflicting outcomes or multiple legs from one game on the same slip.
-    selected, seen_events, seen_players = [], set(), set()
+    # A platform-specific research board, not a 50-leg wager. Never invent missing lines.
+    selected, seen = [], set()
     for pick in candidates:
-        event = pick.get('event_id')
-        player = str(pick['player']).casefold()
-        if not event or event in seen_events or player in seen_players:
+        if str(pick.get('bookmaker', '')).lower() not in (bookmaker, str(today.BOOKMAKERS[bookmaker]).lower()):
             continue
-        selected.append({key:pick.get(key) for key in
+        key = (str(pick['player']).casefold(), str(pick['stat']).casefold(), str(pick.get('event_id')))
+        if key in seen:
+            continue
+        selected.append({field: pick.get(field) for field in
                          ('player','sport','stat','line','side','bookmaker','matchup',
-                          'starts_at','line_updated_at','reason')})
-        seen_events.add(event)
-        seen_players.add(player)
-        if len(selected) == 3:
+                          'event_id','starts_at','line_updated_at','reason')})
+        seen.add(key)
+        if len(selected) >= 50:
             break
-    if not selected:
-        return jsonify(ticket=[], status='no_approved_picks',
-                       note='No currently reviewed and approved selections meet the safeguards. No ticket was generated.'), 200
-    return jsonify(ticket=selected,status='research_only',placed=False,
-                   note='Auto Pick research slip only. Not a winning guarantee, not a placed wager. Confirm all lines directly with the platform before use.')
-
+    count = len(selected)
+    return jsonify(ticket=selected, count=count, requested=50, platform=bookmaker,
+                   status='research_only' if count else 'no_approved_picks', placed=False,
+                   note=(f'{count} of 50 reviewed {today.BOOKMAKERS[bookmaker]} research picks available. '
+                         'These are separate research selections, not a guaranteed winning or '
+                         'platform-accepted 50-leg ticket. Verify each current line in the platform.'
+                         if count else 'No current reviewed and approved picks for this platform. '
+                         'No ticket was generated.'))
 
 @app.post('/api/owner/scan/run')
 @owner_required
