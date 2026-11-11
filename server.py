@@ -750,6 +750,58 @@ def pick_result_players():
     return jsonify(players=[r['player'] for r in rows])
 
 
+@app.get('/api/picks/temperature')
+@premium_required
+def pick_temperature():
+    """Observed win rates for distinct saved player/platform picks; not future probabilities."""
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(days=30)
+    with database() as conn:
+        rows = conn.execute(f"""WITH boards AS (
+            SELECT pick_day, payload FROM pikbot_trial_daily_board WHERE pick_day >= %s
+            UNION ALL
+            SELECT pick_day, payload FROM pikbot_member_pick_boards WHERE pick_day >= %s
+        ), candidates AS (
+            SELECT pick, pick_day, pick_order, {PICK_IDENTITY_SQL} AS identity,
+                   NULLIF(pick->>'starts_at','')::timestamptz AS starts_at
+            FROM boards CROSS JOIN LATERAL jsonb_array_elements(payload->'picks')
+                WITH ORDINALITY AS saved(pick, pick_order)
+        ), unique_picks AS (
+            SELECT DISTINCT ON (identity) pick, starts_at, identity
+            FROM candidates WHERE starts_at >= %s AND starts_at < %s
+            ORDER BY identity, (pick ? 'p_raw') DESC, pick_day, pick_order, pick
+        )
+        SELECT pick FROM unique_picks ORDER BY starts_at DESC, identity LIMIT 1000""",
+        (since.astimezone(pick_results.EASTERN).date(), since.astimezone(pick_results.EASTERN).date(), since, now)).fetchall()
+    graded = pick_results.grade([dict(row['pick']) for row in rows], now)
+    grouped = {}
+    for pick in graded:
+        if pick.get('result') not in ('WIN', 'LOSS'):
+            continue
+        player = str(pick.get('player') or '').strip()
+        platform = str(pick.get('bookmaker') or '').strip().lower()
+        if not player or not platform:
+            continue
+        key = (player, platform)
+        entry = grouped.setdefault(key, {'player':player, 'platform':platform, 'wins':0, 'losses':0})
+        entry['wins' if pick['result'] == 'WIN' else 'losses'] += 1
+    hot, cold = [], []
+    for entry in grouped.values():
+        total = entry['wins'] + entry['losses']
+        if total < 10:
+            continue
+        entry['win_rate'] = round(100 * entry['wins'] / total, 1)
+        if entry['win_rate'] >= 75:
+            hot.append(entry)
+        elif entry['win_rate'] <= 30:
+            cold.append(entry)
+    hot.sort(key=lambda x:(-x['win_rate'],-x['wins'],x['player']))
+    cold.sort(key=lambda x:(x['win_rate'],-(x['wins']+x['losses']),x['player']))
+    return jsonify(hot=hot, cold=cold, minimum_graded=10, period_days=30,
+                   checked_at=now.isoformat(),
+                   note='Based on distinct saved picks graded WIN or LOSS in the past 30 days (latest 1,000 saved picks). Pushes, voids and pending picks excluded. Historical results do not predict future wins.')
+
+
 @app.get('/api/owner/pick-results')
 @owner_required
 def previous_pick_results():
