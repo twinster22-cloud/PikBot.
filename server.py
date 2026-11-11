@@ -721,6 +721,35 @@ def save_member_pick_board(picks, now, bookmaker=today.DEFAULT_BOOK):
                      (email, day, board_key, psycopg.types.json.Jsonb(payload)))
 
 
+
+@app.get('/api/owner/pick-result-players')
+@owner_required
+def pick_result_players():
+    platform=request.args.get('platform','all').lower().strip()
+    day=request.args.get('day','yesterday')
+    if platform not in ('all','prizepicks','fanduel','underdog','pick6','draftkings','betmgm') or day not in ('recent','today','yesterday'):
+        return jsonify(error='Invalid filter.'),400
+    now=datetime.now(timezone.utc)
+    cutoff,end=now-timedelta(days=2),now
+    if day!='recent':
+        eastern=pick_results.EASTERN
+        midnight=datetime.combine(now.astimezone(eastern).date(),datetime.min.time(),tzinfo=eastern)
+        cutoff,end=(midnight-timedelta(days=1),midnight) if day=='yesterday' else (midnight,now)
+    first_day=cutoff.astimezone(pick_results.EASTERN).date()
+    with database() as conn:
+        rows=conn.execute("""WITH boards AS (
+          SELECT payload FROM pikbot_trial_daily_board WHERE pick_day >= %s
+          UNION ALL SELECT payload FROM pikbot_member_pick_boards WHERE pick_day >= %s
+        ) SELECT DISTINCT pick->>'player' AS player FROM boards
+          CROSS JOIN LATERAL jsonb_array_elements(payload->'picks') AS pick
+          WHERE NULLIF(pick->>'starts_at','')::timestamptz >= %s
+            AND NULLIF(pick->>'starts_at','')::timestamptz < %s
+            AND (%s='all' OR LOWER(COALESCE(pick->>'bookmaker',''))=%s)
+            AND NULLIF(TRIM(pick->>'player'),'') IS NOT NULL
+          ORDER BY player LIMIT 2000""",(first_day,first_day,cutoff,end,platform,platform)).fetchall()
+    return jsonify(players=[r['player'] for r in rows])
+
+
 @app.get('/api/owner/pick-results')
 @owner_required
 def previous_pick_results():
@@ -735,6 +764,9 @@ def previous_pick_results():
     allowed = ('all','prizepicks','fanduel','underdog','pick6','draftkings','betmgm')
     if platform not in allowed:
         return jsonify(error='Invalid platform.'), 400
+    player = request.args.get('player', '').strip()
+    if len(player) > 120:
+        return jsonify(error='Invalid player name.'), 400
     now = datetime.now(timezone.utc)
     eastern = pick_results.EASTERN
     cutoff, end = now - timedelta(days=2), now
@@ -761,10 +793,11 @@ def previous_pick_results():
                 SELECT DISTINCT ON (identity) pick, identity, starts_at
                 FROM candidates WHERE starts_at >= %s AND starts_at < %s
                     AND (%s = 'all' OR LOWER(COALESCE(pick->>'bookmaker','')) = %s)
+                    AND (%s = '' OR LOWER(COALESCE(pick->>'player','')) = LOWER(%s))
                 ORDER BY identity, (pick ? 'p_raw') DESC, pick_day, pick_order, pick
             )
             SELECT pick FROM unique_picks ORDER BY starts_at DESC, identity
-            LIMIT %s OFFSET %s""", (first_day, first_day, cutoff, end, platform, platform,
+            LIMIT %s OFFSET %s""", (first_day, first_day, cutoff, end, platform, platform, player, player,
                                     pick_results.PAGE_SIZE + 1, page * pick_results.PAGE_SIZE)).fetchall()
     picks = [row['pick'] for row in rows[:pick_results.PAGE_SIZE]]
     finished = [pick for pick in pick_results.grade(picks, now)
