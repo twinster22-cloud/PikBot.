@@ -124,7 +124,7 @@ document.addEventListener('DOMContentLoaded',()=>{const manage=document.getEleme
     <li><button type="button" class="btn" data-bookmaker="draftkings" aria-pressed="false">DraftKings Sportsbook<span class="platform-check" aria-hidden="true"></span></button></li>
     <li><button type="button" class="btn" data-bookmaker="betmgm" aria-pressed="false">BetMGM<span class="platform-check" aria-hidden="true"></span></button></li>
   </ul>
-  <p id="current-line-source" class="muted" aria-live="polite">Line source · PrizePicks standard lines</p>
+  <p id="current-line-source" class="muted" aria-live="polite">Line source · PrizePicks standard lines</p><section id="platform-previous-picks" class="panel" style="margin-top:12px"><h4>Previous Picks · Selected Platform</h4><p id="platform-previous-status" role="status">Choose a platform to view its saved picks.</p><div id="platform-previous-results"></div></section>
 </section>
 <div class="analysis-controls"><div><label for="today-sport">Today's sports</label>
 <select id="today-sport" disabled><option value="">Choose a sport</option></select>
@@ -177,12 +177,34 @@ function showTab(id){
 }
 document.querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>{
   showTab(button.dataset.tab);
-  if(activeTab==='betting-sites')$('betting-sites').scrollIntoView({block:'start'});
+  if(activeTab==='betting-sites'){loadPlatformPreviousPicks();$('betting-sites').scrollIntoView({block:'start'});}
 });
 $('open-unlimited-picks').onclick=()=>{
   showTab('betting-sites');
   if(activeTab==='betting-sites')$('betting-sites').scrollIntoView({block:'start'});
 };
+async function loadPlatformPreviousPicks(){
+ const selectedButton=document.querySelector('#betting-site-options [data-bookmaker][aria-pressed="true"]');
+ const book=selectedButton?.dataset.bookmaker||'prizepicks';
+ const sport=document.getElementById('today-sport')?.value||'NBA';
+ const status=document.getElementById('platform-previous-status');
+ const target=document.getElementById('platform-previous-results');
+ if(!status||!target)return;
+ const labels={prizepicks:'PrizePicks',fanduel:'FanDuel',underdog:'Underdog Fantasy',pick6:'DraftKings Pick6',draftkings:'DraftKings Sportsbook',betmgm:'BetMGM'};
+ const aliases={prizepicks:['prizepicks'],fanduel:['fanduel'],underdog:['underdog','underdog fantasy'],pick6:['pick6','draftkings pick6'],draftkings:['draftkings','draftkings sportsbook'],betmgm:['betmgm']};
+ status.textContent='Loading '+(labels[book]||book)+' saved picks…';target.replaceChildren();
+ try{
+  const response=await fetch('/api/pick-test?sport='+encodeURIComponent(sport),{credentials:'same-origin',cache:'no-store'});
+  if(!response.ok)throw Error('HTTP '+response.status);
+  const data=await response.json();
+  const picks=(data.picks||[]).filter(p=>(aliases[book]||[book]).includes(String(p.platform||'').toLowerCase().trim()));
+  status.textContent=(labels[book]||book)+' · '+(data.day||'Today')+' · '+sport+' · '+picks.length+' archived picks';
+  if(!picks.length){target.textContent='No archived picks for this platform and sport today.';return;}
+  const counts={};for(const p of picks)counts[p.result]=(counts[p.result]||0)+1;
+  const summary=document.createElement('p');summary.textContent='Passed: '+(counts.WIN||0)+' · Failed: '+(counts.LOSS||0)+' · Pending: '+(counts.PENDING||0)+' · Push: '+(counts.PUSH||0)+' · Void: '+(counts.VOID||0);target.append(summary);
+  for(const p of picks.slice(0,100)){const row=document.createElement('p');row.textContent=[p.player,p.stat,p.side,p.line,p.result,p.actual==null?'':'Actual: '+p.actual].filter(v=>v!==null&&v!==undefined&&v!=='').join(' · ');target.append(row);}
+ }catch(error){status.textContent='Could not load '+(labels[book]||book)+' history: '+error.message;}
+}
 function selectSport(sport){
   selected=sport;
   document.querySelectorAll('[data-sport]').forEach(button=>button.classList.toggle('selected',button.dataset.sport===sport));
@@ -407,7 +429,7 @@ async function showMembership(){
     if(canUseGameCast&&!window.pikbotGamecastAutoStarted){window.pikbotGamecastAutoStarted=true;document.getElementById('live-center-day').value='today';browseMemberGames();}
     if(!canUseGameCast){$('live-center-browser-games').replaceChildren();$('live-center-browser-stats').replaceChildren();}
     if(ownerPicksPage&&!ownerMode){window.location.replace('/owner/login');return}
-    document.querySelectorAll('[data-owner-only]').forEach(element=>element.hidden=true);
+    document.querySelectorAll('[data-owner-only]').forEach(element=>element.hidden=!ownerMode);
     if(!ownerMode&&!$('data').classList.contains('hidden'))showTab('dashboard');
     clearTimeout(trialExpiryTimer);
     const wasBlocked=accessBlocked;
@@ -603,13 +625,14 @@ async function loadSportPicks(sport){
   $('today-status').textContent='No '+sport+' picks loaded. See the specific data-provider message below, or choose another matchup.';
 }
 $('today-sport').onchange=event=>{
-  if(event.target.value)loadSportPicks(event.target.value);
+  if(event.target.value){loadSportPicks(event.target.value);loadPlatformPreviousPicks();}
   else showMatchups('');
 };
 $('betting-site-options').onclick=event=>{
   const button=event.target.closest('[data-bookmaker]');
   if(!button||button===selectedBookmaker||trialOnly||accessBlocked)return;
   selectBookmaker(button);
+  loadPlatformPreviousPicks();
   const sport=requestedMatchup?.league||selected;
   const league=todaysSlate.find(item=>item.name===sport);
   const game=league?.matchups.find(item=>item.id===(requestedMatchup?.game||lastSportMatchup.get(sport))
