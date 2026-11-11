@@ -131,7 +131,7 @@ def today_events(sport, now):
 @lru_cache(maxsize=100)
 def event_offers(sport, event_id, _window, bookmaker=DEFAULT_BOOK, expanded=False):
     key, markets = SPORTS[sport]
-    if expanded and sport == 'NBA':
+    if expanded and sport in {'NBA', 'COLLEGE BASKETBALL', 'WNBA'}:
         markets = {**markets, **NBA_EXTRA}
     try:
         return get(f'/{key}/events/{event_id}/odds', timeout=2 if bookmaker == 'pinnacle' else None,
@@ -143,7 +143,7 @@ def event_offers(sport, event_id, _window, bookmaker=DEFAULT_BOOK, expanded=Fals
 
 def offers(sport, now, event_id=None, *, next_slate=False, bookmaker=DEFAULT_BOOK, expanded=False):
     _, markets = SPORTS[sport]
-    expanded = expanded and sport == 'NBA'
+    expanded = expanded and sport in {'NBA', 'COLLEGE BASKETBALL', 'WNBA'}
     if expanded:
         markets = {**markets, **NBA_EXTRA}
     result = {}
