@@ -1036,6 +1036,29 @@ def additional_feed_check():
     return jsonify(check_additional_history(sport, datetime.now(timezone.utc).date().isoformat()))
 
 
+@app.get('/api/scan/windows')
+@owner_required
+def scan_windows():
+    """Owner-visible ET scan schedule; informational until a worker is connected."""
+    from zoneinfo import ZoneInfo
+    now_et = datetime.now(ZoneInfo('America/New_York'))
+    windows = [
+        {'name':'Morning Sweep','start':'10:00','end':'11:30','days':'daily',
+         'sports':['NBA','NHL','COLLEGE BASKETBALL','COLLEGE FOOTBALL']},
+        {'name':'Afternoon Injury Wave','start':'16:30','end':'18:30','days':'daily',
+         'sports':['NBA','NHL']},
+        {'name':'Sunday Football','start':'11:30','end':'12:45','days':'sunday',
+         'sports':['NFL']},
+    ]
+    minute = now_et.hour*60+now_et.minute
+    for window in windows:
+        start_h,start_m=map(int,window['start'].split(':'))
+        end_h,end_m=map(int,window['end'].split(':'))
+        window['active_now']=(window['days']!='sunday' or now_et.weekday()==6) and start_h*60+start_m<=minute<end_h*60+end_m
+    return jsonify(timezone='America/New_York',now=now_et.isoformat(),windows=windows,
+                   automated=False,note='Schedule is configured for display only. No unattended scanner or publishing job is active.')
+
+
 @app.get('/health')
 def health():return jsonify(status='ok')
 @app.get('/api/sportsdata-test')
