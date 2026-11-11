@@ -1236,7 +1236,7 @@ def auto_pick_ticket():
                   if p.get('team_review', {}).get('approved') is True
                   and p.get('player') and p.get('stat') and p.get('line') is not None
                   and p.get('side') and p.get('line_updated_at')]
-    # A platform-specific research board, not a 50-leg wager. Never invent missing lines.
+    # A platform-specific research board, not a 15-leg wager. Never invent missing lines.
     selected, seen = [], set()
     for pick in candidates:
         if str(pick.get('bookmaker', '')).lower() not in (bookmaker, str(today.BOOKMAKERS[bookmaker]).lower()):
@@ -1248,12 +1248,12 @@ def auto_pick_ticket():
                          ('player','sport','stat','line','side','bookmaker','matchup',
                           'event_id','starts_at','line_updated_at','reason')})
         seen.add(key)
-        if len(selected) >= 50:
+        if len(selected) >= 15:
             break
     count = len(selected)
-    return jsonify(ticket=selected, count=count, requested=50, platform=bookmaker,
+    return jsonify(ticket=selected, count=count, requested=15, platform=bookmaker,
                    status='research_only' if count else 'no_approved_picks', placed=False,
-                   note=(f'{count} of 50 reviewed {today.BOOKMAKERS[bookmaker]} research picks available. '
+                   note=(f'{count} of 15 reviewed {today.BOOKMAKERS[bookmaker]} research picks available. '
                          'These are separate research selections, not a guaranteed winning or '
                          'platform-accepted 50-leg ticket. Verify each current line in the platform.'
                          if count else 'No current reviewed and approved picks for this platform. '
