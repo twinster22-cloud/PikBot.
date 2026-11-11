@@ -1115,8 +1115,18 @@ for(const role of ['member','owner']){
     const item=document.createElement('p');item.textContent=platform.toUpperCase()+': '+row.WIN+' passed / '+row.LOSS+' failed / '+row.PENDING+' pending';list.append(item);
    }
    if(!picks.length){const empty=document.createElement('p');empty.textContent='No archived pregame picks for this selection today.';list.append(empty);}
+   const grouped={};
    for(const p of picks.slice(0,100)){
-    const item=document.createElement('p');item.textContent=[p.platform,p.player,p.stat,p.side,p.line,p.result,p.actual==null?'':'Actual: '+p.actual].filter(v=>v!==null&&v!==undefined&&v!=='').join(' · ');list.append(item);
+    const platform=(p.platform||'Unspecified platform').trim();
+    (grouped[platform]||(grouped[platform]=[])).push(p);
+   }
+   for(const [platform,platformPicks] of Object.entries(grouped).sort((a,b)=>a[0].localeCompare(b[0]))){
+    const section=document.createElement('section');section.style.cssText='margin:16px 0;padding:12px;border:1px solid #315045;border-radius:12px';
+    const title=document.createElement('h4');title.textContent=platform.toUpperCase()+' · '+platformPicks.length+' previous picks';section.append(title);
+    for(const p of platformPicks){
+     const item=document.createElement('p');item.textContent=[p.player,p.stat,p.side,p.line,p.result,p.actual==null?'':'Actual: '+p.actual].filter(v=>v!==null&&v!==undefined&&v!=='').join(' · ');section.append(item);
+    }
+    list.append(section);
    }
    status.append(list);
   }catch(error){status.textContent='Results unavailable · '+error.message;}
