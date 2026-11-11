@@ -187,10 +187,12 @@ h1{font-size:1rem;margin:0 0 9px}h2{font-size:1rem;margin:0 0 9px}.stat{display:
 <section class="game-center" aria-label="Game details">
 <div class="panels" role="group" aria-label="Game detail views">
 <button type="button" data-panel="stats" class="active" aria-pressed="true">Game Stats</button>
+<button type="button" data-panel="players" aria-pressed="false">Player Stats</button>
 <button type="button" data-panel="plays" aria-pressed="false">Play-by-Play</button>
 <button type="button" data-panel="trends" aria-pressed="false">Game Trends</button>
 </div>
 <div class="details overview" id="stats"><section class="card"><h2>Team Stats</h2><div id="team-stats"></div></section><section class="card"><h2>Top Performers</h2><div id="leaders"></div></section></div>
+<div class="details" id="players" hidden><section class="card"><h2>Live Player Box Score</h2><p class="muted">Reported statistics may lag live play. No projected picks are shown here.</p><div id="player-stats">Select a matchup to load player statistics.</div></section></div>
 <div class="details" id="plays" hidden><h2>Latest Plays</h2><div id="play-list"></div></div>
 <div class="details" id="trends" hidden><h2>Scoring Plays</h2><div id="scoring-plays"></div></div>
 </section>
@@ -247,6 +249,7 @@ controls('data-angle', angle => $('scene').dataset.view = angle);
 }
 controls('data-panel', (id, buttons) => {
   for (const button of buttons) $(button.dataset.panel).hidden = button.dataset.panel !== id;
+  if (id === 'players') loadPlayerStats(true);
 });
 function node(tag, text, className) {
   const el = document.createElement(tag);
@@ -264,6 +267,30 @@ function photo(url) {
 }
 function fill(id, children, empty) {
   $(id).replaceChildren(...(children.length ? children : [node('p', empty, 'muted')]));
+}
+let playerStatsLastKey = '', playerStatsLastAt = 0;
+async function loadPlayerStats(force = false) {
+  const game = $('match').value;
+  if (!game || !['NBA','WNBA','NFL','MLB','NHL','COLLEGE BASKETBALL','COLLEGE FOOTBALL'].includes(sport)) return;
+  const key = sport + ':' + game;
+  if (!force && key === playerStatsLastKey && Date.now() - playerStatsLastAt < 20000) return;
+  playerStatsLastKey = key;
+  playerStatsLastAt = Date.now();
+  const host = $('player-stats');
+  if (!host) return;
+  try {
+    const data = await api('/api/live/game-stats', {sport, event_id:game});
+    if ($('match').value !== game) return;
+    const rows = (data.players || []).map(player => {
+      const row = node('div', null, 'leader');
+      const values = Object.entries(player.stats || {}).map(([stat,value]) => stat + ': ' + value).join('  ·  ');
+      row.append(node('strong', player.player), node('small', values));
+      return row;
+    });
+    fill('player-stats', rows, 'Player box-score statistics are not yet available for this game.');
+  } catch (error) {
+    if ($('match').value === game) host.textContent = 'Player stats unavailable: ' + error.message;
+  }
 }
 function statRow(values) {
   const row = node('div', null, 'stat');
@@ -687,6 +714,7 @@ async function update(refreshSchedule = false) {
     }
     if (selected) {
       render(await api('/api/live/gamecast', {sport, event_id:selected, day}));
+      if (!$('players').hidden) loadPlayerStats();
     } else {
       $('feed-note').textContent = $('match').disabled
         ? 'No ' + sport + ' games for this date. Choose another league or day.'
