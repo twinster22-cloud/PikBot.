@@ -987,8 +987,22 @@ def member_pick_test():
     for group in [totals, *by_platform.values()]:
         settled = group['passed'] + group['failed']
         group['win_rate'] = round(100 * group['passed'] / settled, 1) if settled else None
+    # Diagnose missed picks without attributing causes not supported by the record.
+    for pick in details:
+        if pick['result'] not in ('WIN', 'LOSS'):
+            pick['analysis'] = 'Awaiting a verified final result.' if pick['result'] == 'PENDING' else 'Excluded from win/loss accuracy.'
+        elif pick['result'] == 'WIN':
+            pick['analysis'] = 'Recorded direction cleared the original platform line.'
+        elif pick['actual'] is not None and isinstance(pick.get('line'), (int, float)):
+            margin = round(abs(pick['actual'] - pick['line']), 2)
+            pick['analysis'] = 'Missed original '+str(pick['platform'])+' line by '+str(margin)+' '+str(pick.get('stat') or 'units')+'. Root cause not established.'
+        else:
+            pick['analysis'] = 'Recorded pick lost. Original line or final stat requires verification.'
+    # Separate correlated predictions by platform; no fabricated market coverage.
+    platform_status = {name: ('graded' if values['passed'] + values['failed'] else 'ungraded')
+                       for name, values in by_platform.items()}
     return jsonify(day=day.isoformat(), timezone='America/New_York', totals=totals,
-                   platforms=by_platform, picks=details,
+                   platforms=by_platform, platform_status=platform_status, picks=details,
                    note='Only predictions saved before games and verified box-score results are counted. Pending results require settlement; unavailable platforms are not invented.')
 
 
