@@ -1036,6 +1036,48 @@ def additional_feed_check():
     return jsonify(check_additional_history(sport, datetime.now(timezone.utc).date().isoformat()))
 
 
+def _record_scan_event(status, schedule, sport=None, bookmaker=None, fresh_offers=0, detail=None):
+    """Persist bounded scanner telemetry; never persist credentials or wagers."""
+    try:
+        with database() as conn:
+            conn.execute('''CREATE TABLE IF NOT EXISTS pikbot_scan_events (
+                id BIGSERIAL PRIMARY KEY, scanned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                status TEXT NOT NULL, sport TEXT, bookmaker TEXT,
+                fresh_offers INTEGER NOT NULL DEFAULT 0, detail TEXT,
+                active_windows JSONB NOT NULL DEFAULT '[]'::jsonb)''')
+            conn.execute('''INSERT INTO pikbot_scan_events
+                (status,sport,bookmaker,fresh_offers,detail,active_windows)
+                VALUES (%s,%s,%s,%s,%s,%s::jsonb)''',
+                (status,sport,bookmaker,fresh_offers,detail,
+                 json.dumps(schedule.get('windows',[]))))
+            conn.execute('''DELETE FROM pikbot_scan_events WHERE scanned_at < NOW() - INTERVAL '14 days' ''')
+            conn.commit()
+    except Exception:
+        app.logger.exception('Scanner telemetry could not be persisted')
+
+
+@app.get('/api/scan/history')
+@owner_required
+def scan_history():
+    try:
+        with database() as conn:
+            conn.execute('''CREATE TABLE IF NOT EXISTS pikbot_scan_events (
+                id BIGSERIAL PRIMARY KEY, scanned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                status TEXT NOT NULL, sport TEXT, bookmaker TEXT,
+                fresh_offers INTEGER NOT NULL DEFAULT 0, detail TEXT,
+                active_windows JSONB NOT NULL DEFAULT '[]'::jsonb)''')
+            rows=conn.execute('''SELECT scanned_at,status,sport,bookmaker,fresh_offers,detail,active_windows
+                FROM pikbot_scan_events ORDER BY scanned_at DESC LIMIT 40''').fetchall()
+        return jsonify(events=[{'time':r['scanned_at'].isoformat(),
+            'status':r['status'],'sport':r['sport'],'bookmaker':r['bookmaker'],
+            'fresh_offers':r['fresh_offers'],'detail':r['detail'],
+            'active_windows':r['active_windows']} for r in rows],
+            note='Scanner telemetry only. Fresh offers are not verified +EV picks.')
+    except Exception:
+        app.logger.exception('Scan history unavailable')
+        return jsonify(error='Scan history unavailable'),503
+
+
 @app.post('/api/scan/cron')
 def scan_cron_trigger():
     """Authenticated, read-only external scheduler trigger; no wagers or pick publishing."""
@@ -1048,6 +1090,7 @@ def scan_cron_trigger():
     now = datetime.now(timezone.utc)
     schedule = policy(now)
     if not schedule['sports']:
+        _record_scan_event('idle', schedule)
         return jsonify(status='idle', schedule=schedule, scanned=0)
     # Rotate sport and provider to bound each HTTP request's API cost and latency.
     slot = int(now.timestamp() // 180)
@@ -1068,12 +1111,14 @@ def scan_cron_trigger():
             if not 0 <= (now - updated).total_seconds() <= max_age:
                 continue
             eligible.append(offer)
+        _record_scan_event('scanned', schedule, sport, bookmaker, len(eligible))
         app.logger.info('Cron research scan: sport=%s book=%s eligible=%s', sport, bookmaker, len(eligible))
         return jsonify(status='scanned', sport=sport, bookmaker=bookmaker,
                        fresh_offers=len(eligible), schedule=schedule,
                        published=0, wagers_placed=0,
                        note='Read-only scan. No verified +EV or approved picks claimed.')
     except (today.FeedError, ValueError, KeyError) as exc:
+        _record_scan_event('feed_unavailable', schedule, sport, bookmaker, 0, 'Provider data unavailable')
         app.logger.warning('Cron scan failed: sport=%s book=%s error=%s', sport, bookmaker, exc)
         return jsonify(status='feed_unavailable', sport=sport, bookmaker=bookmaker,
                        error='Provider data unavailable'), 503
