@@ -31,6 +31,10 @@ init_accounts(app)
 init_owner(app)
 prediction_audit.init_audit(app)
 
+# Start best-effort endpoint checks; alerts require Telegram secrets in Render.
+from pikbot_monitor import start_monitor
+start_monitor()
+
 
 
 
