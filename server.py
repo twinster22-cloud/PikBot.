@@ -31,12 +31,6 @@ init_accounts(app)
 init_owner(app)
 prediction_audit.init_audit(app)
 
-# One-time Telegram delivery smoke test on deployment (no secrets logged).
-if os.environ.get("TELEGRAM_SMOKE_TEST") == "1":
-    from telegram_alerts import notify
-    import logging
-    _telegram_test_ok = notify("🧪 PikBot Telegram test: notification delivery from Render is working.")
-    logging.getLogger(__name__).warning("PikBot Telegram smoke test delivered=%s", _telegram_test_ok)
 
 
 @app.get('/<asset>')
