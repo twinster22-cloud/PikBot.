@@ -31,10 +31,6 @@ init_accounts(app)
 init_owner(app)
 prediction_audit.init_audit(app)
 
-# Temporary simulated monitoring-alert delivery test; no real outage is claimed.
-if os.environ.get("TELEGRAM_MONITOR_TEST") == "1":
-    from telegram_alerts import critical_failure
-    critical_failure("TEST ONLY — simulated monitoring alert. PikBot has NOT been confirmed down.")
 
 
 
