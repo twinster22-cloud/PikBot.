@@ -572,7 +572,7 @@ async function loadToday(){
     picker.options.length=1;
     showMatchups('');
     for(const sport of data.sports) picker.add(new Option(sport.name+' ('+sport.events+' games)',sport.name));
-    if(!data.sports.some(s=>s.name==='NFL')) picker.add(new Option('NFL (feed unavailable — view market watch)','NFL'));
+    if(!data.sports.some(s=>s.name==='NFL')) picker.add(new Option('NFL','NFL'));
     picker.disabled=!data.sports.length;
     status.textContent=data.sports.length?'Choose a matchup to check available props.':'No covered sports are scheduled today.';
     if(userSportChoice&&!trialOnly)await loadSportPicks(selected);else await openInitialPick();
@@ -621,9 +621,9 @@ async function loadSportPicks(sport){
   const league=todaysSlate.find(item=>item.name===sport);
   const games=(league?.matchups||[]).filter(game=>!game.started&&Date.parse(game.starts_at)>Date.now());
   if(!games.length){
-    const message='No upcoming '+sport+' matchups with available picks are scheduled today.';
+    const message=sport==='NFL'?'No NFL picks available right now.':'No upcoming '+sport+' matchups with available picks are scheduled today.';
     $('today-status').textContent=message;
-    cards.innerHTML='<div class="top-pick-rail"><article class="top-pick-card" style="max-width:none"><span class="pick-rank">'+esc(sport)+' · '+esc(selectedBookmaker.textContent)+'</span><strong>No verified player picks available yet</strong><p class="muted">'+esc(message)+'</p><button type="button" class="btn" id="retry-sport-picks">Refresh picks</button></article></div>';
+    cards.innerHTML=sport==='NFL'?'<div class="top-pick-rail"><article class="top-pick-card" style="max-width:none"><span class="pick-rank">NFL · '+esc(selectedBookmaker.textContent)+'</span><strong>'+esc(message)+'</strong><button type="button" class="btn" id="retry-sport-picks">Refresh picks</button></article></div>':'<div class="top-pick-rail"><article class="top-pick-card" style="max-width:none"><span class="pick-rank">'+esc(sport)+' · '+esc(selectedBookmaker.textContent)+'</span><strong>No verified player picks available yet</strong><p class="muted">'+esc(message)+'</p><button type="button" class="btn" id="retry-sport-picks">Refresh picks</button></article></div>';
     $('retry-sport-picks').onclick=()=>loadToday();
     $('status').textContent=message;
     return;
