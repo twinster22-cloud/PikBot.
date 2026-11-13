@@ -90,6 +90,7 @@
     if (surface !== 'fight') host.append(ball);
     let previousAction;
     let frameId;
+    let replayTimer;
     let field3D;
     let loading3D = false;
     const sideFor = index => surface === 'baseball'
@@ -101,7 +102,8 @@
       field3D?.player(index,points[index],facing,pose,jump);
     };
 
-    return (data, paused) => {
+    const update = (data, paused) => {
+      clearTimeout(replayTimer);
       host.toggleAttribute('hidden', data.teams.length !== 2);
       if (host.hasAttribute('hidden')) return;
       const activeRound = surface === 'fight' && data.state === 'in';
@@ -192,8 +194,17 @@
           ball.toggleAttribute('hidden',!visible);
         }
         if (progress < 1) frameId = requestAnimationFrame(frame);
+        else if (!motionPreference.matches && !paused && data.state === 'in') {
+          // Loop the latest play visualization while waiting for new data.
+          // Replays do not represent live player-tracking coordinates.
+          replayTimer = setTimeout(() => {
+            previousAction = undefined;
+            update(data, paused);
+          }, 2200);
+        }
       };
       frameId = requestAnimationFrame(frame);
     };
+    return update;
   };
 })();
