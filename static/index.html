@@ -621,15 +621,14 @@ async function loadSportPicks(sport){
   const league=todaysSlate.find(item=>item.name===sport);
   const games=(league?.matchups||[]).filter(game=>!game.started&&Date.parse(game.starts_at)>Date.now());
   if(sport==='NFL' && !games.length){
-    const message='NFL game feed unavailable. Open NFL Market Watch for dated PrizePicks lines and independently sourced research picks (not PikBot engine predictions).';
+    const platform=selectedBookmaker?.textContent?.trim()||'selected platform';
+    const allGames=league?.matchups||[];
+    const message=allGames.length
+      ?'NFL games exist on the slate, but no unstarted games have verified '+platform+' player lines. Live and completed games cannot be presented as pregame picks.'
+      :'The NFL schedule feed returned no games. This does not mean there are no NFL games today. '+platform+' picks require a verified game and current platform-specific lines.';
     $('today-status').textContent=message;
-    const research=[['Jayden Daniels','Passing yards','202.5','MORE'],['Malik Nabers','Receiving yards','67.5','MORE'],['Isaiah Likely','Receiving yards','48.5','MORE']];
-    const platform=selectedBookmaker?.dataset?.bookmaker||'prizepicks';
-    const researchAllowed=platform==='prizepicks';
-    const today=easternDay();
-    const valid=today==='2026-11-12';
-    const table=valid&&researchAllowed?'<h3>NFL research selections — PrizePicks snapshot (not PikBot engine picks)</h3><div class="scroll"><table><thead><tr><th>Player</th><th>Prop</th><th>Line</th><th>Research lean</th></tr></thead><tbody>'+research.map(p=>'<tr>'+p.map(v=>'<td>'+esc(v)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>':'';
-    cards.innerHTML='<p>'+esc(valid?(researchAllowed?'The live NFL feed is unavailable; these are unverified external research leans, not algorithm-generated picks.':'NFL lines for '+selectedBookmaker.textContent+' are unavailable. PrizePicks research lines cannot be represented as '+selectedBookmaker.textContent+' picks.'):'The dated NFL research snapshot has expired. No current NFL picks are verified.')+'</p>'+table+'<p><a class="btn primary" href="/nfl/props">View NFL market research and sources</a></p>';
+    cards.innerHTML='<div class="top-pick-rail"><article class="top-pick-card" style="max-width:none;min-height:170px"><span class="pick-rank">NFL · '+esc(platform)+'</span><strong>Player props &amp; team winners</strong><p class="muted">'+esc(message)+'</p><p class="muted">No picks are fabricated or copied from another platform. Previously shared Underdog screenshots are examples, not a live odds feed.</p><button type="button" class="btn" id="retry-nfl-picks">Refresh NFL feed</button></article></div>';
+    $('retry-nfl-picks').onclick=()=>loadToday();
     $('status').textContent=message;
     return;
   }
