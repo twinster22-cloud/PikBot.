@@ -1029,7 +1029,7 @@ function recolorPhotoAtlas(source, color) {
 export function mountCourt(container, stage, teams, reducedMotion, onReady, field) {
   const colors = kitColors(teams);
   const renderer = new WebGLRenderer({antialias:true,alpha:false,powerPreference:'low-power'});
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1,field?.surface === 'football' ? 1.05 : 1.5));
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1,field?.surface === 'football' ? 1.6 : 1.5));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFShadowMap;
   renderer.shadowMap.autoUpdate = field?.surface !== 'football';
@@ -1161,8 +1161,8 @@ export function mountCourt(container, stage, teams, reducedMotion, onReady, fiel
       wide:[0, narrow ? 21.5 : 17.6, narrow ? 24.5 : 22.1, 0, 0, 0]
     };
     const fieldPresets = fieldSize && {
-      broadcast:[track*.72,fieldSize[0]*.45,fieldSize[0]*.59,track*.60,.55,0],
-      sideline:[track-3.5,fieldSize[0]*.23,fieldSize[0]*.43,track+.55,.72,bz*.18],
+      broadcast:[track*.72,fieldSize[0]*.34,fieldSize[0]*.46,track*.60,.72,bz*.14],
+      sideline:[track-3.1,fieldSize[0]*.19,fieldSize[0]*.36,track+.55,.82,bz*.18],
       aerial:[0,fieldSize[0]*(narrow?1.5:1.19),3.2,0,0,0],
       wide:[0,fieldSize[0]*(narrow?.83:.66),fieldSize[0]*(narrow?.88:.73),0,0,0]
     };
