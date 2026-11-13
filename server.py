@@ -189,18 +189,24 @@ def todays_sports():
     now = datetime.now(timezone.utc)
     try:
         sports = today.active_sports(today.bucket(30))
-        with ThreadPoolExecutor(max_workers=7) as pool:
-            slates = list(pool.map(lambda sport: today.today_events(sport, now), sports))
     except today.FeedError as exc:
-        return jsonify(error=str(exc)), 503
+        app.logger.warning('Sports catalog unavailable: %s', exc)
+        sports = list(today.SPORTS)
+    def load_slate(sport):
+        try:
+            return sport, today.today_events(sport, now)
+        except today.FeedError as exc:
+            app.logger.warning('Schedule unavailable for %s: %s', sport, exc)
+            return sport, []
+    with ThreadPoolExecutor(max_workers=7) as pool:
+        slates = list(pool.map(load_slate, sports))
     return jsonify(sports=[{
         'name': sport, 'events': len(games),
         'matchups': [{'id': game['id'], 'home': game.get('home_team'), 'away': game.get('away_team'),
                       'starts_at': game.get('commence_time'),
                       'started': today.timestamp(game['commence_time']) <= now}
                      for game in sorted(games, key=lambda game: game['commence_time'])],
-    } for sport, games in zip(sports, slates) if games])
-
+    } for sport, games in slates if games])
 
 @app.get('/api/today/predictions')
 @premium_required
