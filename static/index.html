@@ -623,7 +623,13 @@ async function loadSportPicks(sport){
   if(sport==='NFL' && !games.length){
     const message='NFL game feed unavailable. Open NFL Market Watch for dated PrizePicks lines and independently sourced research picks (not PikBot engine predictions).';
     $('today-status').textContent=message;
-    cards.innerHTML='<p>'+message+'</p><p><a class="btn primary" href="/nfl/props">View NFL lines and research picks</a></p>';
+    const research=[['Jayden Daniels','Passing yards','202.5','MORE'],['Malik Nabers','Receiving yards','67.5','MORE'],['Isaiah Likely','Receiving yards','48.5','MORE']];
+    const platform=selectedBookmaker?.dataset?.bookmaker||'prizepicks';
+    const researchAllowed=platform==='prizepicks';
+    const today=easternDay();
+    const valid=today==='2026-11-12';
+    const table=valid&&researchAllowed?'<h3>NFL research selections — PrizePicks snapshot (not PikBot engine picks)</h3><div class="scroll"><table><thead><tr><th>Player</th><th>Prop</th><th>Line</th><th>Research lean</th></tr></thead><tbody>'+research.map(p=>'<tr>'+p.map(v=>'<td>'+esc(v)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>':'';
+    cards.innerHTML='<p>'+esc(valid?(researchAllowed?'The live NFL feed is unavailable; these are unverified external research leans, not algorithm-generated picks.':'NFL lines for '+selectedBookmaker.textContent+' are unavailable. PrizePicks research lines cannot be represented as '+selectedBookmaker.textContent+' picks.'):'The dated NFL research snapshot has expired. No current NFL picks are verified.')+'</p>'+table+'<p><a class="btn primary" href="/nfl/props">View NFL market research and sources</a></p>';
     $('status').textContent=message;
     return;
   }
