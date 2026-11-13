@@ -227,7 +227,7 @@ function selectSport(sport){
 const sportTiles=document.querySelector('[data-sport]').parentElement;
 sportTiles.addEventListener('click',event=>{
   const tile=event.target.closest('[data-sport]');
-  if(tile){loadSportPicks(tile.dataset.sport);openSportCenter(tile.dataset.sport);}
+  if(tile){const panel=document.getElementById('sport-details');if(panel)panel.hidden=true;loadSportPicks(tile.dataset.sport);document.getElementById('live-player-picks')?.scrollIntoView({behavior:'smooth',block:'start'});}
 });
 function showUploadedSports(picks){
   const names=[...new Set(picks.map(pick=>String(pick.sport).toUpperCase()))];
