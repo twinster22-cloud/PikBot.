@@ -1467,6 +1467,22 @@ def scan_windows():
                    note='Policy only: unattended polling, injury verification, and publishing are not yet enabled. Verify each live offer and its timestamp before use.')
 
 
+@app.get('/nfl/props')
+@premium_required
+def nfl_market_reference():
+    """Dated, sourced market references; never pass these off as model picks."""
+    from flask import Response
+    from zoneinfo import ZoneInfo
+    from html import escape
+    date = datetime.now(ZoneInfo('America/New_York')).date().isoformat()
+    if date != '2026-11-12':
+        return Response('<h2>These NFL market references have expired.</h2><p>Open the live NFL tab for current verified lines.</p>', mimetype='text/html')
+    rows = [('Jayden Daniels','Passing yards','202.5'),('J.J. McCarthy','Passing yards','201.5'),('Cam Skattebo','Rushing yards','63.5'),('Rachaad White','Rushing yards','37.5'),('Malik Nabers','Receiving yards','67.5'),('Isaiah Likely','Receiving yards','48.5')]
+    items = ''.join('<tr><td>'+escape(p)+'</td><td>'+escape(m)+'</td><td>'+escape(v)+'</td></tr>' for p,m,v in rows)
+    html = '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>NFL Market Watch | PikBot</title><style>body{font:16px system-ui;background:#081510;color:#ecffef;padding:18px;max-width:720px;margin:auto}a{color:#a5f6aa}td,th{padding:12px;border-bottom:1px solid #456}table{width:100%;text-align:left}small{color:#b4c8b9}</style><h1>NFL Market Watch</h1><p><b>Commanders @ Giants — Nov 12, 2026, 8:15 PM ET</b></p><p>Published PrizePicks projections for reference only. Not PikBot model picks or guaranteed current offers. Verify each line inside PrizePicks before using it.</p><table><tr><th>Player</th><th>Stat</th><th>Line</th></tr>'+items+'</table><p><a href="https://www.prizepicks.com/sport/nfl?from=1&week=10">Source: PrizePicks NFL projections</a></p><small>Snapshot captured Nov 12, 2026. This page expires after today. No direction, probability, or model approval is implied.</small><p><a href="/">Back to PikBot</a></p>'
+    return Response(html, mimetype='text/html')
+
+
 @app.get('/health')
 def health():return jsonify(status='ok')
 @app.get('/api/sportsdata-test')
