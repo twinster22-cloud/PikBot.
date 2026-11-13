@@ -635,7 +635,9 @@ async function loadSportPicks(sport){
   }
   if(!games.length){
     const message='No upcoming '+sport+' matchups with available picks are scheduled today.';
-    $('today-status').textContent=message;cards.textContent=message;
+    $('today-status').textContent=message;
+    cards.innerHTML='<div class="top-pick-rail"><article class="top-pick-card" style="max-width:none;min-height:170px"><span class="pick-rank">'+esc(sport)+' · '+esc(selectedBookmaker.textContent)+'</span><strong>Player picks awaiting verified lines</strong><span class="muted">No verified upcoming matchup and player props are available from the selected feed. Picks will appear here in the same player-card format when data is available.</span><button type="button" class="btn" id="retry-sport-picks">Retry '+esc(sport)+' picks</button></article></div>';
+    $('retry-sport-picks').onclick=()=>loadToday();
     $('status').textContent=message;
     return;
   }
