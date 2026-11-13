@@ -572,6 +572,7 @@ async function loadToday(){
     picker.options.length=1;
     showMatchups('');
     for(const sport of data.sports) picker.add(new Option(sport.name+' ('+sport.events+' games)',sport.name));
+    if(!data.sports.some(s=>s.name==='NFL')) picker.add(new Option('NFL (feed unavailable — view market watch)','NFL'));
     picker.disabled=!data.sports.length;
     status.textContent=data.sports.length?'Choose a matchup to check available props.':'No covered sports are scheduled today.';
     if(userSportChoice&&!trialOnly)await loadSportPicks(selected);else await openInitialPick();
