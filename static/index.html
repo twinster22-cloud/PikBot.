@@ -620,6 +620,13 @@ async function loadSportPicks(sport){
   $('status').textContent='Checking current '+sport+' picks…';
   const league=todaysSlate.find(item=>item.name===sport);
   const games=(league?.matchups||[]).filter(game=>!game.started&&Date.parse(game.starts_at)>Date.now());
+  if(sport==='NFL' && !games.length){
+    const message='NFL game feed unavailable. Open NFL Market Watch for dated PrizePicks lines and independently sourced research picks (not PikBot engine predictions).';
+    $('today-status').textContent=message;
+    cards.innerHTML='<p>'+message+'</p><p><a class="btn primary" href="/nfl/props">View NFL lines and research picks</a></p>';
+    $('status').textContent=message;
+    return;
+  }
   if(!games.length){
     const message='No upcoming '+sport+' matchups with available picks are scheduled today.';
     $('today-status').textContent=message;cards.textContent=message;
