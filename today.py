@@ -167,7 +167,7 @@ def offers(sport, now, event_id=None, *, next_slate=False, bookmaker=DEFAULT_BOO
                       key=lambda event: timestamp(event['commence_time']))
     if event_id:
         upcoming = [event for event in upcoming if event['id'] == event_id]
-    for event in upcoming[:1]:
+    # Inspect every upcoming matchup, not just the first game in the slate.\n    # NFL Sundays can have a dozen concurrent matchups with different prop boards.\n    for event in upcoming[:16]:
         event_id = event['id']
         with LOCK:
             window = bucket(1 if prizepicks else 5)
