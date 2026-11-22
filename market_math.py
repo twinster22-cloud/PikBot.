@@ -2,7 +2,7 @@
 import math
 from today import timestamp
 
-DFS = {'PrizePicks','Underdog Fantasy','DraftKings Pick6'}
+DFS = {'PrizePicks','Underdog Fantasy','DraftKings Pick6','Betr Picks','Boom Fantasy','Kalshi'}
 
 
 def decimal_odds(value, fmt='decimal'):

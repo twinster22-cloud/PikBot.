@@ -287,13 +287,15 @@ def todays_predictions(_sport=None, _bookmaker=None):
     result['entries'] = []  # Unvalidated independence-based entries are research, not recommendations.
     result['team_version'] = prediction_team.MODEL_VERSION
     result['approved_count'] = sum(p['team_review']['approved'] for p in result['picks'])
-    if bookmaker == today.DEFAULT_BOOK:
+    if bookmaker == today.DEFAULT_BOOK or bookmaker in today.OPTIC_BOOKS:
+        max_age = (today.PRIZEPICKS_MAX_LINE_AGE if bookmaker == today.DEFAULT_BOOK
+                   else today.OPTIC_MAX_LINE_AGE)
         oldest = min((updated for pick in result['picks']
                       if (updated := today.timestamp(pick.get('line_updated_at')))), default=None)
         if oldest:
-            expires = oldest + today.PRIZEPICKS_MAX_LINE_AGE
+            expires = oldest + max_age
             if expires <= datetime.now(timezone.utc):
-                return jsonify(error='The PrizePicks feed needs a fresh update. Refresh the lines to check again.'), 404
+                return jsonify(error=f'The {book_label} feed needs a fresh update. Refresh the lines to check again.'), 404
             result['line_expires_at'] = expires.isoformat()
     try:
         prediction_audit.archive(result['picks'], datetime.now(timezone.utc))

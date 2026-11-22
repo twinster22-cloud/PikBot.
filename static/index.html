@@ -197,9 +197,6 @@ const externalPlatforms=new Map([
   ['kalshi','https://kalshi.com/category/sports/all-sports/all'],
   ['boom_fantasy','https://www.boomfantasy.com/'],
 ]);
-function externalFeedStatus(button){
-  return 'Live '+button.textContent+' lines are not connected yet.';
-}
 function selectBookmaker(button){
   selectedBookmaker=button;
   for(const choice of bookmakerButtons){
@@ -214,7 +211,7 @@ function selectBookmaker(button){
     link.href=url;
     link.textContent='Open '+button.textContent;
   }
-  $('current-line-source').textContent=url?externalFeedStatus(button):'Line source · '+button.textContent+
+  $('current-line-source').textContent='Line source · '+button.textContent+
     (button.dataset.bookmaker==='prizepicks'?' standard lines':'');
 }
 function showTab(id){
@@ -639,12 +636,6 @@ async function loadSportPicks(sport){
   $('status').textContent='Checking current '+sport+' picks…';
   const league=todaysSlate.find(item=>item.name===sport);
   const games=(league?.matchups||[]).filter(game=>!game.started&&Date.parse(game.starts_at)>Date.now());
-  if(externalPlatforms.has(selectedBookmaker.dataset.bookmaker)){
-    $('live-player-picks').hidden=true;
-    $('today-status').textContent=externalFeedStatus(selectedBookmaker);
-    $('status').textContent=externalFeedStatus(selectedBookmaker);
-    return;
-  }
   if(!games.length){
     const message=sport==='NFL'?'No NFL picks available right now.':'No upcoming '+sport+' matchups with available picks are scheduled today.';
     $('today-status').textContent=message;
@@ -677,9 +668,7 @@ $('betting-site-options').onclick=event=>{
   const league=todaysSlate.find(item=>item.name===sport);
   const game=league?.matchups.find(item=>item.id===(requestedMatchup?.game||lastSportMatchup.get(sport))
     &&!item.started&&Date.parse(item.starts_at)>Date.now());
-  if(externalPlatforms.has(button.dataset.bookmaker)){
-    loadSportPicks(sport);
-  }else if(game){
+  if(game){
     const generation=++autoPickGeneration;
     $('today-status').textContent='Checking '+button.textContent+' for this matchup…';
     openMatchup({dataset:{league:sport,game:game.id}},true).then(loaded=>{
@@ -717,13 +706,6 @@ async function openMatchup(button,automatic=false,refresh=false){
   retryButton.hidden=true;
   retryButton.onclick=()=>openMatchup(button,false,true);
   liveLineRequest?.abort();
-  if(!trialOnly&&externalPlatforms.has(selectedBookmaker.dataset.bookmaker)){
-    section.hidden=true;
-    picksExpire=0;
-    $('today-status').textContent=externalFeedStatus(selectedBookmaker);
-    $('status').textContent=externalFeedStatus(selectedBookmaker);
-    return null;
-  }
   const controller=new AbortController();
   liveLineRequest=controller;
   const timeout=setTimeout(()=>controller.abort(),18000);
