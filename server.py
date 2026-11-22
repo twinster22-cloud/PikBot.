@@ -395,10 +395,12 @@ def basketball_provider_status():
 
 GAMECAST_SPORTS = {
     'NBA': 'NBA', 'NFL': 'NFL', 'MLB': 'MLB', 'NHL': 'NHL',
-    'COLLEGE FOOTBALL': 'NCAAF', 'COLLEGE BASKETBALL': 'NCAAB', 'UFC': 'UFC', 'WNBA': 'WNBA',
+    'COLLEGE FOOTBALL': 'NCAAF', 'COLLEGE BASKETBALL': 'NCAAB',
+    'WOMENS COLLEGE BASKETBALL': 'Women’s NCAAB', 'UFC': 'UFC', 'WNBA': 'WNBA',
 }
 GAMECAST_LEAGUES = {sport: league for sport, (league, _) in pick_results.LEAGUES.items()}
-GAMECAST_LEAGUES['UFC'] = 'mma/ufc'
+GAMECAST_LEAGUES.update({'UFC': 'mma/ufc',
+                        'WOMENS COLLEGE BASKETBALL': 'basketball/womens-college-basketball'})
 
 
 def gamecast_schedule(sport, day):
@@ -440,6 +442,23 @@ def gamecast_official_page(links):
                  if str(link.get('href', '')).startswith('https://www.espn.com/')), None)
 
 
+def gamecast_free_broadcast(sport, state, competition, summary=None):
+    if state != 'in' or sport not in ('COLLEGE FOOTBALL', 'COLLEGE BASKETBALL',
+                                     'WOMENS COLLEGE BASKETBALL'):
+        return None
+    records = [*(competition.get('broadcasts') or []), *(competition.get('geoBroadcasts') or []),
+               *((summary or {}).get('broadcasts') or [])]
+    for record in records:
+        names = [
+            record.get('name'), (record.get('media') or {}).get('shortName'),
+            *(record.get('names') or []),
+        ]
+        if any(isinstance(name, str) and name.strip().casefold() == 'nec front row'
+               for name in names):
+            return {'name': 'NEC Front Row', 'url': 'https://necfrontrow.com/'}
+    return None
+
+
 @app.get('/api/live/games')
 @gamecast_plus_required
 def live_games_browser():
@@ -459,6 +478,7 @@ def live_games_browser():
                 'starts_at': competition.get('date') or event.get('date'),
                 'status': state.get('description', 'Scheduled'), 'state': state.get('state', 'pre'),
                 'official_recap': gamecast_official_page(event.get('links') or []),
+                'free_broadcast': gamecast_free_broadcast(sport, state.get('state'), competition),
             })
         return jsonify(sport=sport, day=day, games=games)
     except (requests.RequestException, ValueError, KeyError, TypeError, AttributeError):
@@ -587,7 +607,7 @@ def live_gamecast():
             all_drives = (drives.get('previous') or []) + [drives.get('current') or {}]
             raw = [play for drive in all_drives for play in drive.get('plays') or []]
         boxscore = summary.get('boxscore') or {}
-        basketball = sport in ('NBA', 'COLLEGE BASKETBALL', 'WNBA')
+        basketball = sport in ('NBA', 'COLLEGE BASKETBALL', 'WOMENS COLLEGE BASKETBALL', 'WNBA')
         roster, lineups, lineup_history = basketball_lineups(boxscore, raw, state.get('state') == 'pre') if basketball else ({}, {}, {})
         plays = []
         seen = set()
@@ -656,6 +676,7 @@ def live_gamecast():
             status=state.get('description', 'Unknown'), detail=state.get('shortDetail'),
             clock=status.get('displayClock'), period=status.get('period'),
             venue=venue.get('fullName'), broadcasts=[name for name in broadcasts if name],
+            free_broadcast=gamecast_free_broadcast(sport, state.get('state'), competition, summary),
             official_page=gamecast_official_page(links), drive=(drives.get('current') or {}).get('description'),
             team_stats=list(stats.values()), leaders=leaders, plays=plays, roster=roster, lineups=lineups,
             observed_at=observed_at,

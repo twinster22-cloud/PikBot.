@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PikBot LiveCast</title>
-{% if sport in ('NBA', 'COLLEGE BASKETBALL', 'WNBA') %}<link rel="preload" href="/livecast-roster.webp" as="image">{% endif %}
+{% if sport in ('NBA', 'COLLEGE BASKETBALL', 'WOMENS COLLEGE BASKETBALL', 'WNBA') %}<link rel="preload" href="/livecast-roster.webp" as="image">{% endif %}
 <style>
 :root{color-scheme:dark;--ink:#f6f0ff;--muted:#c1b3d1;--line:#463356;--panel:#0c0a17;--violet:#a746ff}
 *{box-sizing:border-box}
@@ -110,6 +110,10 @@ h1{font-size:1rem;margin:0 0 9px}h2{font-size:1rem;margin:0 0 9px}.stat{display:
 <button id="go-live" type="button" hidden>Switch to a live game</button>
 </div>
 <h1 id="match-title">{{ sports[sport] }} Live Games</h1>
+<div id="free-broadcast" class="controls" hidden>
+  <a id="free-broadcast-link" target="_blank" rel="noopener noreferrer"></a>
+  <a href="#broadcast-stage">Stay with animated GameCast</a>
+</div>
 <section class="stage" id="broadcast-stage" aria-label="GameCast scoreboard and animated arena">
 <div class="scene" id="scene" data-view="broadcast" data-surface="football" aria-hidden="true">
 <div class="crowd"></div>
@@ -120,7 +124,7 @@ h1{font-size:1rem;margin:0 0 9px}h2{font-size:1rem;margin:0 0 9px}.stat{display:
 <linearGradient id="court-edge" x2="0" y2="1"><stop stop-color="#2c2a35"/><stop offset="1" stop-color="#070810"/></linearGradient>
 <radialGradient id="basketball"><stop stop-color="#ffc47a"/><stop offset=".6" stop-color="#f77828"/><stop offset="1" stop-color="#8e2d0d"/></radialGradient>
 <pattern id="hardwood" width="127" height="12" patternUnits="userSpaceOnUse"><path d="M0 0h127M32 0v6m63 0v6M0 6h127" stroke="#542d16" stroke-opacity=".18"/><path d="M0 4h127M0 9h127" stroke="#fff4cb" stroke-opacity=".14"/></pattern>
-{% if sport in ('NBA', 'COLLEGE BASKETBALL', 'WNBA') %}
+{% if sport in ('NBA', 'COLLEGE BASKETBALL', 'WOMENS COLLEGE BASKETBALL', 'WNBA') %}
 {% for team in ('dark', 'light') %}
 {% for pose in ('ready', 'run', 'shot') %}
 <symbol id="hooper-{{ team }}-{{ pose }}" viewBox="0 0 128 224" overflow="hidden"><image href="/livecast-hoopers.webp" x="{{ -128 * loop.index0 }}" y="{{ 0 if team == 'dark' else -224 }}" width="384" height="448"/></symbol>
@@ -173,7 +177,7 @@ h1{font-size:1rem;margin:0 0 9px}h2{font-size:1rem;margin:0 0 9px}.stat{display:
 <button type="button" data-angle="aerial" aria-pressed="false">◇ Aerial</button>
 <button type="button" data-angle="wide" id="wide-angle" aria-pressed="false">▤ Wide</button>
 </div>
-{% if sport in ('NBA', 'COLLEGE BASKETBALL', 'WNBA') %}
+{% if sport in ('NBA', 'COLLEGE BASKETBALL', 'WOMENS COLLEGE BASKETBALL', 'WNBA') %}
 <div id="actor-overlay" class="actor-overlay" hidden></div>
 {% endif %}
 <div class="stage-play" id="stage-play" hidden></div>
@@ -181,7 +185,7 @@ h1{font-size:1rem;margin:0 0 9px}h2{font-size:1rem;margin:0 0 9px}.stat{display:
 </section>
 <p id="feed-note" class="feed-note" role="status">Connecting to the game feed…</p>
 <div class="ticker"><b>◈ Game Update</b> <span id="ticker">Select a matchup to follow the game.</span></div>
-{% if sport in ('NBA', 'COLLEGE BASKETBALL', 'WNBA') %}
+{% if sport in ('NBA', 'COLLEGE BASKETBALL', 'WOMENS COLLEGE BASKETBALL', 'WNBA') %}
 <details class="lineup-toggle"><summary>Who’s on the court</summary><div class="lineups" id="live-lineups" hidden></div></details>
 {% endif %}
 <section class="game-center" aria-label="Game details">
@@ -199,7 +203,7 @@ h1{font-size:1rem;margin:0 0 9px}h2{font-size:1rem;margin:0 0 9px}.stat{display:
 <p class="feed-note">Animated positions and movement are illustrative. {% if sport == 'UFC' %}Fighters follow the reported round status when available. Strike-by-strike replay requires a play feed. {% else %}Replay follows available play-by-play. {% endif %}Scoreboard updates may be delayed. <a id="official" hidden target="_blank" rel="noopener noreferrer">Official game page ↗</a></p>
 </main>
 </div>
-{% if sport not in ('NBA', 'COLLEGE BASKETBALL', 'WNBA') %}<script src="/livecast-field.js?v=photo-motion"></script>{% endif %}
+{% if sport not in ('NBA', 'COLLEGE BASKETBALL', 'WOMENS COLLEGE BASKETBALL', 'WNBA') %}<script src="/livecast-field.js?v=photo-motion"></script>{% endif %}
 <script>
 const sport = {{ sport|tojson }};
 const day = {{ day|tojson }};
@@ -210,7 +214,7 @@ const requested = ['away', 'home'].map(side => normalize(link.get(side)));
 const hasMatchupLink = requested.every(Boolean);
 const $ = id => document.getElementById(id);
 const football = ['NFL', 'COLLEGE FOOTBALL'].includes(sport);
-const basketball = ['NBA', 'COLLEGE BASKETBALL', 'WNBA'].includes(sport);
+const basketball = ['NBA', 'COLLEGE BASKETBALL', 'WOMENS COLLEGE BASKETBALL', 'WNBA'].includes(sport);
 $('scene').dataset.surface = football ? 'football' : ({MLB:'baseball', NHL:'hockey', UFC:'fight'}[sport] || 'court');
 if (football) $('wide-angle').textContent = '▤ All-22';
 function gameURL(nextDay, id) {
@@ -667,6 +671,15 @@ function render(data) {
     showPlay(data.plays[0],data.detail || data.status);
     fieldReplay?.(data, paused);
   }
+  const freeBroadcast = data.free_broadcast;
+  const freeLink = $('free-broadcast-link');
+  $('free-broadcast').hidden = !freeBroadcast;
+  if (freeBroadcast) {
+    freeLink.href = freeBroadcast.url;
+    freeLink.textContent = 'Find free live video on ' + freeBroadcast.name + ' ↗';
+  } else {
+    freeLink.removeAttribute('href');
+  }
   $('official').hidden = !data.official_page;
   if (data.official_page) $('official').href = data.official_page;
   const lastPlay = latestReported ? 'Last play ' + new Date(latestReported).toLocaleTimeString() : 'Play time unavailable';
@@ -702,7 +715,7 @@ async function update(refreshSchedule = false) {
           game.teams.some(side => side.home_away === ['away', 'home'][index] && normalize(side.name) === team)));
         if (matches.length === 1) selected = matches[0].id;
       } else if (!selected) {
-        selected = (games.find(game => game.state === 'in') || games[0])?.id || '';
+        selected = (games.find(game => game.free_broadcast) || activeGame || games[0])?.id || '';
       }
       const options = games.map(game => new Option((game.state === 'in' ? '● ' : '') + game.name + ' · ' + game.status, game.id));
       if (!selected && options.length) options.unshift(new Option('Choose a matchup', ''));
@@ -721,6 +734,7 @@ async function update(refreshSchedule = false) {
         : 'Choose the matchup from the scoreboard schedule above.';
     }
   } catch (error) {
+    $('free-broadcast').hidden = true;
     $('badge').dataset.live = 'false';
     $('badge').textContent = 'Feed retrying';
     $('feed-note').textContent = error.message + ' Choose another matchup or refresh to retry.';
