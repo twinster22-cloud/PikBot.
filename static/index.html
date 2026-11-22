@@ -155,11 +155,13 @@ document.addEventListener('DOMContentLoaded',()=>{const manage=document.getEleme
     <li><button type="button" class="btn primary" data-bookmaker="prizepicks" aria-pressed="true">PrizePicks<span class="platform-check" aria-hidden="true"></span></button></li>
     <li><button type="button" class="btn" data-bookmaker="fanduel" aria-pressed="false">FanDuel<span class="platform-check" aria-hidden="true"></span></button></li>
     <li><button type="button" class="btn" data-bookmaker="underdog" aria-pressed="false">Underdog Fantasy<span class="platform-check" aria-hidden="true"></span></button></li>
+    <li><button type="button" class="btn" data-bookmaker="betr_picks" aria-pressed="false">Betr Picks<span class="platform-check" aria-hidden="true"></span></button></li>
     <li><button type="button" class="btn" data-bookmaker="pick6" aria-pressed="false">DraftKings Pick6<span class="platform-check" aria-hidden="true"></span></button></li>
     <li><button type="button" class="btn" data-bookmaker="draftkings" aria-pressed="false">DraftKings Sportsbook<span class="platform-check" aria-hidden="true"></span></button></li>
     <li><button type="button" class="btn" data-bookmaker="betmgm" aria-pressed="false">BetMGM<span class="platform-check" aria-hidden="true"></span></button></li>
   </ul>
   <p id="current-line-source" class="muted" aria-live="polite">Line source · PrizePicks standard lines</p>
+  <a id="betr-picks-link" href="https://www.betr.app/picks" target="_blank" rel="noopener noreferrer" hidden>Open Betr Picks</a>
 </section>
 <div class="analysis-controls"><div><label for="today-sport">Today's sports</label>
 <select id="today-sport" disabled><option value="">Choose a sport</option></select>
@@ -188,6 +190,7 @@ if(ownerPicksPage)$('logout').action='/owner/logout';
 let activeTab='dashboard';
 const bookmakerButtons=[...document.querySelectorAll('[data-bookmaker]')];
 let selectedBookmaker=bookmakerButtons[0];
+const betrFeedStatus='Live Betr Picks lines are not connected yet.';
 function selectBookmaker(button){
   selectedBookmaker=button;
   for(const choice of bookmakerButtons){
@@ -195,7 +198,9 @@ function selectBookmaker(button){
     choice.classList.toggle('primary',active);
     choice.setAttribute('aria-pressed',String(active));
   }
-  $('current-line-source').textContent='Line source · '+button.textContent+
+  const betrSelected=button.dataset.bookmaker==='betr_picks';
+  $('betr-picks-link').hidden=!betrSelected;
+  $('current-line-source').textContent=betrSelected?betrFeedStatus:'Line source · '+button.textContent+
     (button.dataset.bookmaker==='prizepicks'?' standard lines':'');
 }
 function showTab(id){
@@ -620,6 +625,12 @@ async function loadSportPicks(sport){
   $('status').textContent='Checking current '+sport+' picks…';
   const league=todaysSlate.find(item=>item.name===sport);
   const games=(league?.matchups||[]).filter(game=>!game.started&&Date.parse(game.starts_at)>Date.now());
+  if(selectedBookmaker.dataset.bookmaker==='betr_picks'){
+    $('live-player-picks').hidden=true;
+    $('today-status').textContent=betrFeedStatus;
+    $('status').textContent=betrFeedStatus;
+    return;
+  }
   if(!games.length){
     const message=sport==='NFL'?'No NFL picks available right now.':'No upcoming '+sport+' matchups with available picks are scheduled today.';
     $('today-status').textContent=message;
@@ -652,7 +663,9 @@ $('betting-site-options').onclick=event=>{
   const league=todaysSlate.find(item=>item.name===sport);
   const game=league?.matchups.find(item=>item.id===(requestedMatchup?.game||lastSportMatchup.get(sport))
     &&!item.started&&Date.parse(item.starts_at)>Date.now());
-  if(game){
+  if(button.dataset.bookmaker==='betr_picks'){
+    loadSportPicks(sport);
+  }else if(game){
     const generation=++autoPickGeneration;
     $('today-status').textContent='Checking '+button.textContent+' for this matchup…';
     openMatchup({dataset:{league:sport,game:game.id}},true).then(loaded=>{
@@ -690,6 +703,13 @@ async function openMatchup(button,automatic=false,refresh=false){
   retryButton.hidden=true;
   retryButton.onclick=()=>openMatchup(button,false,true);
   liveLineRequest?.abort();
+  if(!trialOnly&&selectedBookmaker.dataset.bookmaker==='betr_picks'){
+    section.hidden=true;
+    picksExpire=0;
+    $('today-status').textContent=betrFeedStatus;
+    $('status').textContent=betrFeedStatus;
+    return null;
+  }
   const controller=new AbortController();
   liveLineRequest=controller;
   const timeout=setTimeout(()=>controller.abort(),18000);
