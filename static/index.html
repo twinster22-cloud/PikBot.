@@ -155,15 +155,24 @@ document.addEventListener('DOMContentLoaded',()=>{const manage=document.getEleme
     <li><button type="button" class="btn primary" data-bookmaker="prizepicks" aria-pressed="true">PrizePicks<span class="platform-check" aria-hidden="true"></span></button></li>
     <li><button type="button" class="btn" data-bookmaker="fanduel" aria-pressed="false">FanDuel<span class="platform-check" aria-hidden="true"></span></button></li>
     <li><button type="button" class="btn" data-bookmaker="underdog" aria-pressed="false">Underdog Fantasy<span class="platform-check" aria-hidden="true"></span></button></li>
-    <li><button type="button" class="btn" data-bookmaker="betr_picks" aria-pressed="false">Betr Picks<span class="platform-check" aria-hidden="true"></span></button></li>
     <li><button type="button" class="btn" data-bookmaker="kalshi" aria-pressed="false">Kalshi<span class="platform-check" aria-hidden="true"></span></button></li>
-    <li><button type="button" class="btn" data-bookmaker="boom_fantasy" aria-pressed="false">Boom Fantasy<span class="platform-check" aria-hidden="true"></span></button></li>
     <li><button type="button" class="btn" data-bookmaker="pick6" aria-pressed="false">DraftKings Pick6<span class="platform-check" aria-hidden="true"></span></button></li>
     <li><button type="button" class="btn" data-bookmaker="draftkings" aria-pressed="false">DraftKings Sportsbook<span class="platform-check" aria-hidden="true"></span></button></li>
     <li><button type="button" class="btn" data-bookmaker="betmgm" aria-pressed="false">BetMGM<span class="platform-check" aria-hidden="true"></span></button></li>
   </ul>
   <p id="current-line-source" class="muted" aria-live="polite">Line source · PrizePicks standard lines</p>
   <a id="external-platform-link" target="_blank" rel="noopener noreferrer" hidden></a>
+  <div id="kalshi-market-panel" hidden>
+    <label for="kalshi-market-series">Markets</label>
+    <select id="kalshi-market-series">
+      <option value="KXNBAPTS">NBA player points</option>
+      <option value="KXNBAGAME">NBA game winners</option>
+      <option value="KXNFLGAME">NFL game winners</option>
+    </select>
+    <button type="button" class="btn" id="kalshi-market-refresh">Refresh</button>
+    <p id="kalshi-market-status" role="status"></p>
+    <ul id="kalshi-market-results"></ul>
+  </div>
 </section>
 <div class="analysis-controls"><div><label for="today-sport">Today's sports</label>
 <select id="today-sport" disabled><option value="">Choose a sport</option></select>
@@ -193,10 +202,11 @@ let activeTab='dashboard';
 const bookmakerButtons=[...document.querySelectorAll('[data-bookmaker]')];
 let selectedBookmaker=bookmakerButtons[0];
 const externalPlatforms=new Map([
-  ['betr_picks','https://www.betr.app/picks'],
   ['kalshi','https://kalshi.com/category/sports/all-sports/all'],
-  ['boom_fantasy','https://www.boomfantasy.com/'],
 ]);
+function externalFeedStatus(button){
+  return button.textContent+' · Yes/No contract prices';
+}
 function selectBookmaker(button){
   selectedBookmaker=button;
   for(const choice of bookmakerButtons){
@@ -207,13 +217,42 @@ function selectBookmaker(button){
   const url=externalPlatforms.get(button.dataset.bookmaker);
   const link=$('external-platform-link');
   link.hidden=!url;
+  $('kalshi-market-panel').hidden=!url;
   if(url){
     link.href=url;
     link.textContent='Open '+button.textContent;
   }
-  $('current-line-source').textContent='Line source · '+button.textContent+
+  $('current-line-source').textContent=url?externalFeedStatus(button):'Line source · '+button.textContent+
     (button.dataset.bookmaker==='prizepicks'?' standard lines':'');
 }
+let kalshiMarketRequest;
+async function loadKalshiMarkets(){
+  kalshiMarketRequest?.abort();
+  const controller=new AbortController();
+  kalshiMarketRequest=controller;
+  const status=$('kalshi-market-status'), results=$('kalshi-market-results');
+  status.textContent='Loading Kalshi markets…';
+  results.replaceChildren();
+  try{
+    const query=new URLSearchParams({series:$('kalshi-market-series').value});
+    const response=await fetch('/api/kalshi/markets?'+query,{signal:controller.signal});
+    const data=await response.json();
+    if(controller.signal.aborted)return;
+    if(!response.ok)throw Error(data.error||'Kalshi markets are unavailable.');
+    const ask=value=>value===null?'—':value+'¢';
+    for(const market of data.markets){
+      const row=document.createElement('li');
+      const contract=market.contract&&market.contract!==market.title?' · '+market.contract:'';
+      row.textContent=market.title+contract+' · Yes ask '+ask(market.yes_ask_cents)+' · No ask '+ask(market.no_ask_cents);
+      results.append(row);
+    }
+    status.textContent=data.markets.length?'Current asking prices per contract.':'No open markets in this category.';
+  }catch(error){
+    if(!controller.signal.aborted)status.textContent=error.message;
+  }
+}
+$('kalshi-market-series').onchange=loadKalshiMarkets;
+$('kalshi-market-refresh').onclick=loadKalshiMarkets;
 function showTab(id){
   if((id==='data'&&!ownerMode)||(id==='betting-sites'&&(trialOnly||accessBlocked)))return;
   activeTab=id;
@@ -636,6 +675,12 @@ async function loadSportPicks(sport){
   $('status').textContent='Checking current '+sport+' picks…';
   const league=todaysSlate.find(item=>item.name===sport);
   const games=(league?.matchups||[]).filter(game=>!game.started&&Date.parse(game.starts_at)>Date.now());
+  if(externalPlatforms.has(selectedBookmaker.dataset.bookmaker)){
+    $('live-player-picks').hidden=true;
+    $('today-status').textContent=externalFeedStatus(selectedBookmaker);
+    $('status').textContent=externalFeedStatus(selectedBookmaker);
+    return;
+  }
   if(!games.length){
     const message=sport==='NFL'?'No NFL picks available right now.':'No upcoming '+sport+' matchups with available picks are scheduled today.';
     $('today-status').textContent=message;
@@ -668,7 +713,10 @@ $('betting-site-options').onclick=event=>{
   const league=todaysSlate.find(item=>item.name===sport);
   const game=league?.matchups.find(item=>item.id===(requestedMatchup?.game||lastSportMatchup.get(sport))
     &&!item.started&&Date.parse(item.starts_at)>Date.now());
-  if(game){
+  if(externalPlatforms.has(button.dataset.bookmaker)){
+    loadSportPicks(sport);
+    loadKalshiMarkets();
+  }else if(game){
     const generation=++autoPickGeneration;
     $('today-status').textContent='Checking '+button.textContent+' for this matchup…';
     openMatchup({dataset:{league:sport,game:game.id}},true).then(loaded=>{
@@ -706,6 +754,13 @@ async function openMatchup(button,automatic=false,refresh=false){
   retryButton.hidden=true;
   retryButton.onclick=()=>openMatchup(button,false,true);
   liveLineRequest?.abort();
+  if(!trialOnly&&externalPlatforms.has(selectedBookmaker.dataset.bookmaker)){
+    section.hidden=true;
+    picksExpire=0;
+    $('today-status').textContent=externalFeedStatus(selectedBookmaker);
+    $('status').textContent=externalFeedStatus(selectedBookmaker);
+    return null;
+  }
   const controller=new AbortController();
   liveLineRequest=controller;
   const timeout=setTimeout(()=>controller.abort(),18000);

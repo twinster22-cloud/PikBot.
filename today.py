@@ -1,8 +1,5 @@
 """Upcoming player prop offers from The Odds API."""
 import os
-import math
-import re
-import unicodedata
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from threading import Lock
@@ -13,24 +10,7 @@ import requests
 BASE = 'https://api.the-odds-api.com/v4/sports'
 DEFAULT_BOOK = 'prizepicks'
 PRIZEPICKS_MAX_LINE_AGE = timedelta(minutes=5)
-OPTIC_BOOKS = {
-    'betr_picks': 'Betr Picks',
-    'kalshi': 'Kalshi',
-    'boom_fantasy': 'Boom Fantasy',
-}
-OPTIC_MAX_LINE_AGE = timedelta(minutes=15)
-OPTIC_LEAGUES = {'COLLEGE BASKETBALL': 'ncaab', 'COLLEGE FOOTBALL': 'ncaaf'}
-OPTIC_MARKETS = {
-    'player_passing_yards': 'player_pass_yds',
-    'player_rushing_yards': 'player_rush_yds',
-    'player_receiving_yards': 'player_reception_yds',
-    'player_made_threes': 'player_threes',
-    'player_three_pointers_made': 'player_threes',
-    'player_hits': 'batter_hits',
-    'player_strikeouts': 'pitcher_strikeouts',
-}
 BOOKMAKERS = {
-    **OPTIC_BOOKS,
     DEFAULT_BOOK: 'PrizePicks',
     'underdog': 'Underdog Fantasy',
     'pick6': 'DraftKings Pick6',
@@ -171,121 +151,6 @@ def event_offers(sport, event_id, _window, bookmaker=DEFAULT_BOOK, expanded=Fals
         return {'error': str(exc)}
 
 
-def optic_get(path, **params):
-    key = os.getenv('OPTICODDS_API_KEY', '').strip()
-    if not key:
-        raise FeedError('The OpticOdds feed is awaiting configuration.')
-    try:
-        response = requests.get('https://api.opticodds.com/api/v3/' + path,
-                                headers={'X-Api-Key': key}, params=params, timeout=5)
-        if response.status_code in {401, 403}:
-            raise FeedError('OpticOdds access is not authorized for this feed.')
-        response.raise_for_status()
-        data = response.json()['data']
-        if not isinstance(data, list):
-            raise ValueError('Expected an array')
-        return data
-    except (requests.RequestException, ValueError, TypeError, KeyError):
-        raise FeedError('OpticOdds could not load the current platform lines.') from None
-
-
-@lru_cache(maxsize=32)
-def optic_fixtures(league, date, _window):
-    return optic_get('fixtures', league=league, start_date=date)
-
-
-@lru_cache(maxsize=128)
-def optic_lines(fixture_ids, bookmaker, _window):
-    return optic_get('fixtures/odds', fixture_id=fixture_ids,
-                     sportsbook=OPTIC_BOOKS[bookmaker], is_main='true', odds_format='DECIMAL')
-
-
-def optic_name(name):
-    plain = unicodedata.normalize('NFKD', str(name)).encode('ascii', 'ignore').decode()
-    return re.sub(r'[^a-z0-9]', '', plain.lower())
-
-
-def optic_fixture_matches(fixture, event):
-    start = timestamp(event.get('commence_time'))
-    provider_start = timestamp(fixture.get('start_date'))
-    if not start or not provider_start or abs(start - provider_start) > timedelta(minutes=30):
-        return False
-    for side in ('home', 'away'):
-        competitors = fixture.get(f'{side}_competitors') or []
-        if len(competitors) != 1:
-            return False
-        competitor = competitors[0]
-        name = optic_name(event.get(f'{side}_team', ''))
-        if not name or name not in {optic_name(competitor.get(field, ''))
-                                    for field in ('name', 'full_name', 'short_name')}:
-            return False
-    return True
-
-
-def optic_offers(sport, now, upcoming, bookmaker, markets):
-    if not upcoming:
-        return []
-    league = OPTIC_LEAGUES.get(sport, sport.lower())
-    eastern = ZoneInfo('America/New_York')
-    dates = {timestamp(event['commence_time']).astimezone(eastern).date().isoformat()
-             for event in upcoming}
-    fixtures = [fixture for date in sorted(dates) for fixture in optic_fixtures(league, date, bucket(5))]
-    matched = {}
-    ambiguous = set()
-    for event in upcoming:
-        matches = [fixture['id'] for fixture in fixtures
-                   if fixture.get('id') and optic_fixture_matches(fixture, event)]
-        if len(matches) == 1:
-            fixture_id = matches[0]
-            if fixture_id in matched:
-                ambiguous.add(fixture_id)
-            matched[fixture_id] = event
-    fixture_ids = sorted(matched.keys() - ambiguous)
-    offers = {}
-    for offset in range(0, len(fixture_ids), 5):
-        for fixture in optic_lines(tuple(fixture_ids[offset:offset+5]), bookmaker, bucket(1)):
-            event = matched.get(fixture.get('id'))
-            if not event or fixture.get('is_live'):
-                continue
-            for odd in fixture.get('odds', []):
-                if optic_name(odd.get('sportsbook', '')) != optic_name(OPTIC_BOOKS[bookmaker]):
-                    continue
-                market = odd.get('market_id')
-                stat = markets.get(OPTIC_MARKETS.get(market, market))
-                player = (odd.get('selection') or '').strip()
-                line = odd.get('points')
-                side = {'over': 'MORE', 'more': 'MORE', 'under': 'LESS', 'less': 'LESS'}.get(
-                    str(odd.get('selection_line', '')).casefold())
-                if not stat or not player or not side or odd.get('is_main') is not True:
-                    continue
-                if type(line) not in (float, int) or not 0 <= line < math.inf:
-                    continue
-                try:
-                    updated = datetime.fromtimestamp(float(odd['timestamp']), timezone.utc)
-                except (KeyError, TypeError, ValueError, OSError, OverflowError):
-                    continue
-                if not now - OPTIC_MAX_LINE_AGE <= updated <= now + timedelta(minutes=2):
-                    continue
-                offer_id = f"{event['id']}:{player}:{stat}:{line}"
-                group = (offer_id, odd.get('grouping_key'))
-                sides = offers.setdefault(group, {})
-                if side in sides and sides[side][0] >= updated:
-                    continue
-                sides[side] = (updated, odd.get('price'), {
-                    'sport': sport, 'player': player, 'stat': stat, 'line': line, 'as_of': now,
-                    'offer_id': offer_id, 'event_id': event['id'], 'starts_at': event['commence_time'],
-                })
-    result = {}
-    for sides in offers.values():
-        if sides.keys() != {'MORE', 'LESS'}:
-            continue
-        offer = sides['MORE'][2]
-        offer['line_updated_at'] = min(value[0] for value in sides.values()).isoformat()
-        offer['prices'] = {side: value[1] for side, value in sides.items()}
-        result.setdefault(offer['offer_id'], offer)
-    return list(result.values())
-
-
 def offers(sport, now, event_id=None, *, next_slate=False, bookmaker=DEFAULT_BOOK, expanded=False):
     _, markets = SPORTS[sport]
     expanded = expanded and sport in {'NBA', 'COLLEGE BASKETBALL', 'WNBA'}
@@ -302,8 +167,6 @@ def offers(sport, now, event_id=None, *, next_slate=False, bookmaker=DEFAULT_BOO
                       key=lambda event: timestamp(event['commence_time']))
     if event_id:
         upcoming = [event for event in upcoming if event['id'] == event_id]
-    if bookmaker in OPTIC_BOOKS:
-        return optic_offers(sport, now, upcoming[:16], bookmaker, markets)
     # Inspect upcoming matchups rather than only the first game.
     # NFL Sundays may have many simultaneous prop boards.
     for event in upcoming[:16]:
@@ -406,3 +269,36 @@ def benchmark_lines(sport, event_id, now, expanded=False):
                 row[label] = outcome.get('price')
     return {key:row for key,row in result.items() if not row.get('ambiguous')}
 
+
+
+KALSHI_SERIES = ('KXNBAPTS', 'KXNBAGAME', 'KXNFLGAME')
+
+
+@lru_cache(maxsize=12)
+def kalshi_markets(series, _window):
+    try:
+        response = requests.get('https://external-api.kalshi.com/trade-api/v2/markets',
+                                params={'series_ticker': series, 'status': 'open', 'limit': 30},
+                                timeout=4)
+        response.raise_for_status()
+        markets = response.json()['markets']
+        if not isinstance(markets, list):
+            raise ValueError('Invalid Kalshi response')
+    except (requests.RequestException, ValueError, KeyError, TypeError):
+        raise FeedError('Kalshi markets are temporarily unavailable.') from None
+
+    def ask(market, side):
+        try:
+            cents = float(market.get(f'{side}_ask_dollars')) * 100
+        except (TypeError, ValueError):
+            return None
+        return round(cents, 2) if 0 < cents < 100 else None
+
+    now = datetime.now(timezone.utc)
+    return [
+        {'title': market['title'], 'contract': market.get('yes_sub_title'),
+         'yes_ask_cents': ask(market, 'yes'), 'no_ask_cents': ask(market, 'no')}
+        for market in markets
+        if isinstance(market, dict) and market.get('status') == 'active'
+        and market.get('title') and (close := timestamp(market.get('close_time'))) and close > now
+    ]

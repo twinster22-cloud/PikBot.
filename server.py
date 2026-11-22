@@ -208,6 +208,18 @@ def todays_sports():
                      for game in sorted(games, key=lambda game: game['commence_time'])],
     } for sport, games in slates if games])
 
+@app.get('/api/kalshi/markets')
+@premium_required
+def kalshi_markets():
+    series = request.args.get('series', today.KALSHI_SERIES[0])
+    if series not in today.KALSHI_SERIES:
+        return jsonify(error='Choose a supported Kalshi market.'), 400
+    try:
+        return jsonify(markets=today.kalshi_markets(series, today.bucket(1)))
+    except today.FeedError as exc:
+        return jsonify(error=str(exc)), 503
+
+
 @app.get('/api/today/predictions')
 @premium_required
 def todays_predictions(_sport=None, _bookmaker=None):
@@ -287,15 +299,13 @@ def todays_predictions(_sport=None, _bookmaker=None):
     result['entries'] = []  # Unvalidated independence-based entries are research, not recommendations.
     result['team_version'] = prediction_team.MODEL_VERSION
     result['approved_count'] = sum(p['team_review']['approved'] for p in result['picks'])
-    if bookmaker == today.DEFAULT_BOOK or bookmaker in today.OPTIC_BOOKS:
-        max_age = (today.PRIZEPICKS_MAX_LINE_AGE if bookmaker == today.DEFAULT_BOOK
-                   else today.OPTIC_MAX_LINE_AGE)
+    if bookmaker == today.DEFAULT_BOOK:
         oldest = min((updated for pick in result['picks']
                       if (updated := today.timestamp(pick.get('line_updated_at')))), default=None)
         if oldest:
-            expires = oldest + max_age
+            expires = oldest + today.PRIZEPICKS_MAX_LINE_AGE
             if expires <= datetime.now(timezone.utc):
-                return jsonify(error=f'The {book_label} feed needs a fresh update. Refresh the lines to check again.'), 404
+                return jsonify(error='The PrizePicks feed needs a fresh update. Refresh the lines to check again.'), 404
             result['line_expires_at'] = expires.isoformat()
     try:
         prediction_audit.archive(result['picks'], datetime.now(timezone.utc))
