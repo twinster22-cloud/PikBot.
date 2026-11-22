@@ -156,12 +156,14 @@ document.addEventListener('DOMContentLoaded',()=>{const manage=document.getEleme
     <li><button type="button" class="btn" data-bookmaker="fanduel" aria-pressed="false">FanDuel<span class="platform-check" aria-hidden="true"></span></button></li>
     <li><button type="button" class="btn" data-bookmaker="underdog" aria-pressed="false">Underdog Fantasy<span class="platform-check" aria-hidden="true"></span></button></li>
     <li><button type="button" class="btn" data-bookmaker="betr_picks" aria-pressed="false">Betr Picks<span class="platform-check" aria-hidden="true"></span></button></li>
+    <li><button type="button" class="btn" data-bookmaker="kalshi" aria-pressed="false">Kalshi<span class="platform-check" aria-hidden="true"></span></button></li>
+    <li><button type="button" class="btn" data-bookmaker="boom_fantasy" aria-pressed="false">Boom Fantasy<span class="platform-check" aria-hidden="true"></span></button></li>
     <li><button type="button" class="btn" data-bookmaker="pick6" aria-pressed="false">DraftKings Pick6<span class="platform-check" aria-hidden="true"></span></button></li>
     <li><button type="button" class="btn" data-bookmaker="draftkings" aria-pressed="false">DraftKings Sportsbook<span class="platform-check" aria-hidden="true"></span></button></li>
     <li><button type="button" class="btn" data-bookmaker="betmgm" aria-pressed="false">BetMGM<span class="platform-check" aria-hidden="true"></span></button></li>
   </ul>
   <p id="current-line-source" class="muted" aria-live="polite">Line source · PrizePicks standard lines</p>
-  <a id="betr-picks-link" href="https://www.betr.app/picks" target="_blank" rel="noopener noreferrer" hidden>Open Betr Picks</a>
+  <a id="external-platform-link" target="_blank" rel="noopener noreferrer" hidden></a>
 </section>
 <div class="analysis-controls"><div><label for="today-sport">Today's sports</label>
 <select id="today-sport" disabled><option value="">Choose a sport</option></select>
@@ -190,7 +192,14 @@ if(ownerPicksPage)$('logout').action='/owner/logout';
 let activeTab='dashboard';
 const bookmakerButtons=[...document.querySelectorAll('[data-bookmaker]')];
 let selectedBookmaker=bookmakerButtons[0];
-const betrFeedStatus='Live Betr Picks lines are not connected yet.';
+const externalPlatforms=new Map([
+  ['betr_picks','https://www.betr.app/picks'],
+  ['kalshi','https://kalshi.com/category/sports/all-sports/all'],
+  ['boom_fantasy','https://www.boomfantasy.com/'],
+]);
+function externalFeedStatus(button){
+  return 'Live '+button.textContent+' lines are not connected yet.';
+}
 function selectBookmaker(button){
   selectedBookmaker=button;
   for(const choice of bookmakerButtons){
@@ -198,9 +207,14 @@ function selectBookmaker(button){
     choice.classList.toggle('primary',active);
     choice.setAttribute('aria-pressed',String(active));
   }
-  const betrSelected=button.dataset.bookmaker==='betr_picks';
-  $('betr-picks-link').hidden=!betrSelected;
-  $('current-line-source').textContent=betrSelected?betrFeedStatus:'Line source · '+button.textContent+
+  const url=externalPlatforms.get(button.dataset.bookmaker);
+  const link=$('external-platform-link');
+  link.hidden=!url;
+  if(url){
+    link.href=url;
+    link.textContent='Open '+button.textContent;
+  }
+  $('current-line-source').textContent=url?externalFeedStatus(button):'Line source · '+button.textContent+
     (button.dataset.bookmaker==='prizepicks'?' standard lines':'');
 }
 function showTab(id){
@@ -625,10 +639,10 @@ async function loadSportPicks(sport){
   $('status').textContent='Checking current '+sport+' picks…';
   const league=todaysSlate.find(item=>item.name===sport);
   const games=(league?.matchups||[]).filter(game=>!game.started&&Date.parse(game.starts_at)>Date.now());
-  if(selectedBookmaker.dataset.bookmaker==='betr_picks'){
+  if(externalPlatforms.has(selectedBookmaker.dataset.bookmaker)){
     $('live-player-picks').hidden=true;
-    $('today-status').textContent=betrFeedStatus;
-    $('status').textContent=betrFeedStatus;
+    $('today-status').textContent=externalFeedStatus(selectedBookmaker);
+    $('status').textContent=externalFeedStatus(selectedBookmaker);
     return;
   }
   if(!games.length){
@@ -663,7 +677,7 @@ $('betting-site-options').onclick=event=>{
   const league=todaysSlate.find(item=>item.name===sport);
   const game=league?.matchups.find(item=>item.id===(requestedMatchup?.game||lastSportMatchup.get(sport))
     &&!item.started&&Date.parse(item.starts_at)>Date.now());
-  if(button.dataset.bookmaker==='betr_picks'){
+  if(externalPlatforms.has(button.dataset.bookmaker)){
     loadSportPicks(sport);
   }else if(game){
     const generation=++autoPickGeneration;
@@ -703,11 +717,11 @@ async function openMatchup(button,automatic=false,refresh=false){
   retryButton.hidden=true;
   retryButton.onclick=()=>openMatchup(button,false,true);
   liveLineRequest?.abort();
-  if(!trialOnly&&selectedBookmaker.dataset.bookmaker==='betr_picks'){
+  if(!trialOnly&&externalPlatforms.has(selectedBookmaker.dataset.bookmaker)){
     section.hidden=true;
     picksExpire=0;
-    $('today-status').textContent=betrFeedStatus;
-    $('status').textContent=betrFeedStatus;
+    $('today-status').textContent=externalFeedStatus(selectedBookmaker);
+    $('status').textContent=externalFeedStatus(selectedBookmaker);
     return null;
   }
   const controller=new AbortController();
