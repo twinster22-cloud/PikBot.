@@ -28,6 +28,12 @@ main{min-width:0}
 .leagues a.active{background:linear-gradient(125deg,#32086a,#7c14db);border-color:#d28dff}
 .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 10px}
 .controls select{min-width:0}.controls #match{flex:1;max-width:100%}
+.watch-live-row{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;margin:0 0 12px}
+.watch-live-action{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:8px 16px;border:1px solid #b987ff;border-radius:12px;background:#6022a4;color:#fff;font-weight:800;text-decoration:none}
+.watch-live-action:disabled{background:#211a2e;color:#bdb2ca;border-color:#6b5380;cursor:default}
+.watch-live-status{margin:0;color:#c9bbd6;font-size:.85rem}
+.watch-live-action:focus-visible{outline:2px solid #f3dbff;outline-offset:3px}
+
 .stage{position:relative;overflow:hidden;min-height:290px;width:100%;aspect-ratio:2.24;background:#100a1a;border:1px solid #9066ac;border-radius:18px;isolation:isolate}
 .scene{position:absolute;inset:0;overflow:hidden;background:radial-gradient(ellipse at 50% 5%,#d4bcea 0,#554163 20%,#130c1d 63%);perspective:760px}
 .crowd{position:absolute;inset:7% 0 20%;background:radial-gradient(circle,#ead3fa90 0 1px,transparent 2.6px) 1px 1px/7px 5px,radial-gradient(circle,#934e8b 0 1px,transparent 2px) 4px 5px/9px 7px;mask-image:linear-gradient(#000,#000 20%,transparent 75%);transform:perspective(600px) rotateX(-16deg) scale(1.13);opacity:.7}
@@ -110,9 +116,10 @@ h1{font-size:1rem;margin:0 0 9px}h2{font-size:1rem;margin:0 0 9px}.stat{display:
 <button id="go-live" type="button" hidden>Switch to a live game</button>
 </div>
 <h1 id="match-title">{{ sports[sport] }} Live Games</h1>
-<div id="free-broadcast" class="controls" hidden>
-  <a id="free-broadcast-link" target="_blank" rel="noopener noreferrer"></a>
-  <a href="#broadcast-stage">Stay with animated GameCast</a>
+<div class="watch-live-row">
+  <a id="free-broadcast-link" class="watch-live-action" target="_blank" rel="noopener noreferrer" aria-describedby="watch-live-status" hidden>▶ Watch Live</a>
+  <button id="watch-live-unavailable" class="watch-live-action" type="button" disabled>▶ Watch Live</button>
+  <p id="watch-live-status" class="watch-live-status" role="status">Checking free broadcast availability…</p>
 </div>
 <section class="stage" id="broadcast-stage" aria-label="GameCast scoreboard and animated arena">
 <div class="scene" id="scene" data-view="broadcast" data-surface="football" aria-hidden="true">
@@ -671,20 +678,31 @@ function render(data) {
     showPlay(data.plays[0],data.detail || data.status);
     fieldReplay?.(data, paused);
   }
-  const freeBroadcast = data.free_broadcast;
-  const freeLink = $('free-broadcast-link');
-  $('free-broadcast').hidden = !freeBroadcast;
-  if (freeBroadcast) {
-    freeLink.href = freeBroadcast.url;
-    freeLink.textContent = 'Find free live video on ' + freeBroadcast.name + ' ↗';
-  } else {
-    freeLink.removeAttribute('href');
-  }
+  renderWatchLive(data.free_broadcast, data.state);
   $('official').hidden = !data.official_page;
   if (data.official_page) $('official').href = data.official_page;
   const lastPlay = latestReported ? 'Last play ' + new Date(latestReported).toLocaleTimeString() : 'Play time unavailable';
   $('feed-note').textContent = [data.venue, data.drive, data.broadcasts.join(', '), lastPlay,
     'Feed checked ' + new Date(data.observed_at).toLocaleTimeString()].filter(Boolean).join(' · ');
+}
+function renderWatchLive(broadcast, state) {
+  const link = $('free-broadcast-link');
+  const status = $('watch-live-status');
+  const available = Boolean(broadcast?.url) && state === 'in';
+  link.hidden = !available;
+  $('watch-live-unavailable').hidden = available;
+  if (available) {
+    link.href = broadcast.url;
+  } else {
+    link.removeAttribute('href');
+  }
+  const message = available ? 'Free on ' + broadcast.name + ' · Opens broadcaster'
+    : state === 'pre' ? 'Game hasn’t started. We’ll check for free video at game time.'
+    : state === 'post' ? 'Game ended. Follow the recap in GameCast.'
+    : state === 'error' ? 'Couldn’t check free video. GameCast will retry.'
+    : state === 'none' ? 'Choose a matchup to check for free video.'
+    : 'No verified free video. Follow the game in GameCast.';
+  if (status.textContent !== message) status.textContent = message;
 }
 let busy = false;
 let loadedSchedule = false;
@@ -729,12 +747,13 @@ async function update(refreshSchedule = false) {
       render(await api('/api/live/gamecast', {sport, event_id:selected, day}));
       if (!$('players').hidden) loadPlayerStats();
     } else {
+      renderWatchLive(null, 'none');
       $('feed-note').textContent = $('match').disabled
         ? 'No ' + sport + ' games for this date. Choose another league or day.'
         : 'Choose the matchup from the scoreboard schedule above.';
     }
   } catch (error) {
-    $('free-broadcast').hidden = true;
+    renderWatchLive(null, 'error');
     $('badge').dataset.live = 'false';
     $('badge').textContent = 'Feed retrying';
     $('feed-note').textContent = error.message + ' Choose another matchup or refresh to retry.';
