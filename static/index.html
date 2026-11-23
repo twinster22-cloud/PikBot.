@@ -190,6 +190,19 @@ document.addEventListener('DOMContentLoaded',()=>{const manage=document.getEleme
 <section id="player-sheet-chart" class="player-sheet-chart" aria-labelledby="player-chart-title" hidden>
 <h3 id="player-chart-title">Recent games</h3><div id="player-chart" aria-live="polite"></div>
 </section>
+<details id="custom-line-research" class="chartbox" hidden>
+  <summary>Check a different line</summary>
+  <p class="muted" id="custom-line-stat"></p>
+  <label for="custom-line-screenshot">Screenshot reference (optional)</label>
+  <input id="custom-line-screenshot" type="file" accept="image/png,image/jpeg,image/webp">
+  <img id="custom-line-preview" alt="Your prop screenshot" hidden style="display:block;max-width:100%;max-height:240px;object-fit:contain">
+  <form id="custom-line-form">
+    <label for="custom-line-value">Line shown on your platform</label>
+    <input id="custom-line-value" type="number" min="0" step="any" inputmode="decimal" required>
+    <button type="submit" class="btn primary">Check line</button>
+  </form>
+  <p id="custom-line-result" aria-live="polite"></p>
+</details>
 <div id="player-prop-options" role="group" aria-label="Choose a prop to analyze"></div>
 <button type="button" id="player-sheet-details" class="btn">View detailed analysis</button>
 </div>
@@ -391,6 +404,10 @@ function focusLivePick(data,index){
   $('player-props-source').textContent='Line source · '+(pick.bookmaker||selectedBookmaker.textContent)+
     (pick.line_updated_at?' · Feed updated '+gameTime(pick.line_updated_at):'');
   paintPlayerChart(pick);
+  $('custom-line-research').hidden=!pickHistoricalHitRate(pick);
+  $('custom-line-stat').textContent=pick.player+' · '+(propLabels[pick.stat]||pick.stat);
+  $('custom-line-form').reset();
+  $('custom-line-result').textContent='';
   options.querySelectorAll('[data-prop-index]').forEach(button=>{
     const expanded=Number(button.dataset.propIndex)===index;
     button.setAttribute('aria-expanded',String(expanded));
@@ -415,13 +432,65 @@ $('player-sheet-details').onclick=()=>{
   $('player-props').close();
   $('selected-prop-content').scrollIntoView({block:'start'});
 };
-function pickHistoricalHitRate(p){
- const values=(p?.recent_games||[]).map(g=>Number(g.value)).filter(v=>Number.isFinite(v)&&v>=0);
- const line=Number(p?.line);
+function pickHistoricalHitRate(p,limit=10){
+ const values=(p?.recent_games||[]).map(g=>g.value).filter(v=>Number.isFinite(v)&&v>=0).slice(-limit);
+ const line=p?.line;
  if(!Number.isFinite(line)||!values.length||!['MORE','LESS'].includes(p?.side))return null;
  const wins=values.filter(v=>p.side==='MORE'?v>line:v<line).length;
- return {wins,total:values.length,percentage:Math.round(wins/values.length*100)};
+ const ties=values.filter(v=>v===line).length;
+ return {wins,ties,total:values.length,percentage:Math.round(wins/values.length*100)};
 }
+function historyOnCard(p){
+ const last5=pickHistoricalHitRate(p,5);
+ const last10=pickHistoricalHitRate(p);
+ const rate=result=>result.wins+'/'+result.total+' hits ('+result.percentage+'%)'+(result.ties?' · '+result.ties+' at line':'');
+ const history=last10?'Last '+last5.total+': '+rate(last5)+(last10.total>last5.total?' · Last '+last10.total+': '+rate(last10):''):'Recent results unavailable';
+ const updated=Date.parse(p.line_updated_at);
+ const freshness=Number.isFinite(updated)?'Feed updated '+gameTime(p.line_updated_at):'Feed update time unavailable';
+ return '<span class="pick-estimate"><small>'+esc(history)+'</small></span>'+
+        '<span class="pick-projection">'+esc(freshness)+'</span>';
+}
+$('custom-line-form').onsubmit=event=>{
+ event.preventDefault();
+ if(trialOnly||accessBlocked||!focusedPick)return;
+ const line=$('custom-line-value').valueAsNumber;
+ if(!Number.isFinite(line)||line<0)return;
+ const more=pickHistoricalHitRate({...focusedPick,line,side:'MORE'});
+ const less=pickHistoricalHitRate({...focusedPick,line,side:'LESS'});
+ $('custom-line-result').textContent=more&&less
+   ?'Your line '+line+' · Last '+more.total+' completed games: More '+more.wins+'/'+more.total+
+     ' · Less '+less.wins+'/'+less.total+' · At the line '+more.ties+'/'+more.total+'.'
+   :'Recent game results are unavailable for this prop.';
+};
+const screenshotInput=$('custom-line-screenshot');
+const screenshotPreview=$('custom-line-preview');
+let screenshotReader;
+function clearScreenshot(){
+ if(screenshotReader?.readyState===FileReader.LOADING)screenshotReader.abort();
+ screenshotPreview.hidden=true;
+ screenshotPreview.removeAttribute('src');
+}
+screenshotInput.onchange=()=>{
+ clearScreenshot();
+ const file=screenshotInput.files[0];
+ if(!file)return;
+ if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>8*1024*1024){
+   screenshotInput.value='';
+   $('custom-line-result').textContent='Choose a PNG, JPEG or WebP screenshot under 8 MB.';
+   return;
+ }
+ screenshotReader=new FileReader();
+ screenshotReader.onload=()=>{
+   screenshotPreview.src=screenshotReader.result;
+   screenshotPreview.hidden=false;
+ };
+ screenshotReader.readAsDataURL(file);
+};
+$('player-props').addEventListener('close',()=>{
+ clearScreenshot();
+ screenshotInput.value='';
+ $('custom-line-research').open=false;
+});
 function pickType(p){
  const name=String(p?.bookmaker||'').toLowerCase();
  const type=String(p?.line_type||p?.pick_type||p?.tier||'').toLowerCase();
@@ -838,9 +907,9 @@ async function openMatchup(button,automatic=false,refresh=false){
         '<span class="pick-rank">TOP '+(rank+1)+'</span>'+portraitMarkup(p,'pick-avatar')+
         '<strong>'+esc(p.player)+'</strong><span class="pick-book">'+esc(p.bookmaker||book.textContent)+'</span>'+
         '<span class="pick-line '+(p.side==='LESS'?'pick-less':'')+'">'+(p.side==='LESS'?'↓':'↑')+' '+esc(p.side)+' '+esc(p.line)+' '+esc(propLabels[p.stat]||p.stat)+'</span>'+
-        '<span class="pick-estimate">'+(pickHistoricalHitRate(p)?pickHistoricalHitRate(p).percentage+'% <small>PAST GAMES · NOT WIN ODDS</small>':'Research <small>WIN ODDS UNVERIFIED</small>')+'</span>'+(pickType(p)?'<span class="tag">'+esc(pickType(p))+'</span>':'')+'<span class="pick-projection">'+count+' '+(count===1?'prop':'props')+' · View all</span></button>').join('')+'</div><p class="muted">'+esc(data.source)+' · Uncalibrated estimates</p>';
+        historyOnCard(p)+(pickType(p)?'<span class="tag">'+esc(pickType(p))+'</span>':'')+'<span class="pick-projection">'+count+' '+(count===1?'prop':'props')+' · View all</span></button>').join('')+'</div><p class="muted">'+esc(data.source)+' · Uncalibrated estimates</p>';
     if(data.daily_board){
-      cards.innerHTML='<div class="top-pick-rail">'+data.picks.map((p,i)=>'<article class="top-pick-card"><span class="pick-rank">DAILY PICK '+(i+1)+'</span><strong>'+esc(p.player)+'</strong><span class="pick-book">'+esc(p.bookmaker||book.textContent)+'</span><span class="pick-line '+(p.side==='LESS'?'pick-less':'')+'">'+esc(p.side)+' '+esc(p.line)+' '+esc(p.stat)+'</span><p class="muted">'+esc(p.sport)+' · '+esc(p.matchup)+' · '+esc(gameTime(p.starts_at))+'</p></article>').join('')+'</div>';
+      cards.innerHTML='<div class="top-pick-rail">'+data.picks.map((p,i)=>'<article class="top-pick-card"><span class="pick-rank">DAILY PICK '+(i+1)+'</span><strong>'+esc(p.player)+'</strong><span class="pick-book">'+esc(p.bookmaker||book.textContent)+'</span><span class="pick-line '+(p.side==='LESS'?'pick-less':'')+'">'+esc(p.side)+' '+esc(p.line)+' '+esc(p.stat)+'</span>'+historyOnCard(p)+'<p class="muted">'+esc(p.sport)+' · '+esc(p.matchup)+' · '+esc(gameTime(p.starts_at))+'</p></article>').join('')+'</div>';
       cards.onclick=null;
     }
     if(data.daily_board)cards.insertAdjacentHTML('afterbegin','<p class="notice">Your 3 daily PikBot selections · Selected '+esc(new Date(data.selected_at).toLocaleString())+'. Lines are captured at selection time. Next set: midnight Eastern.</p>');
