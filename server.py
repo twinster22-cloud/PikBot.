@@ -491,6 +491,10 @@ def watch_page():
     sport = request.args.get('sport', 'NFL').upper()
     event_id = request.args.get('event_id', '')
     day = request.args.get('day', 'today')
+    live_only = request.args.get('view') == 'live'
+    if live_only:
+        day = 'today'
+        event_id = ''
     if sport not in GAMECAST_LEAGUES or day not in ('today', 'yesterday'):
         return jsonify(error='Invalid game selection.'), 400
     if event_id and (not event_id.isascii() or not event_id.isdecimal() or len(event_id) > 20):
@@ -498,7 +502,7 @@ def watch_page():
         from urllib.parse import urlencode
         return redirect('/watch?' + urlencode({'sport': sport, 'day': day}))
     return render_template('watch.html', sport=sport, sports=GAMECAST_SPORTS, event_id=event_id, day=day,
-                           owner=private_paid_test(account()))
+                           owner=private_paid_test(account()), live_only=live_only)
 
 
 def basketball_lineups(boxscore, plays, pregame):

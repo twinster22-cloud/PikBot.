@@ -209,7 +209,12 @@ document.addEventListener('DOMContentLoaded',()=>{const manage=document.getEleme
 </dialog><script>
 const $=id=>document.getElementById(id);let dataset=null,selected='NBA';const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));const fmt=n=>Number.isFinite(Number(n))?Number(n).toFixed(1):'—';
 const ownerPicksPage=window.location.pathname==='/owner/picks';
-let openPicksOnLoad=ownerPicksPage||new URLSearchParams(window.location.search).get('view')==='picks';
+const picksQuery=new URLSearchParams(window.location.search);
+const requestedPicksSport=picksQuery.get('sport');
+const supportedPicksSports=['NBA','NFL','MLB','NHL','WNBA','COLLEGE FOOTBALL','COLLEGE BASKETBALL'];
+const initialPicksSport=supportedPicksSports.includes(requestedPicksSport)?requestedPicksSport:null;
+let openPicksOnLoad=ownerPicksPage||picksQuery.get('view')==='picks';
+if(openPicksOnLoad&&initialPicksSport)selected=initialPicksSport;
 if(ownerPicksPage)$('logout').action='/owner/logout';
 let activeTab='dashboard';
 const bookmakerButtons=[...document.querySelectorAll('[data-bookmaker]')];
@@ -658,7 +663,7 @@ let liveLineRequest;
 let slateDay='';
 let picksExpire=0;
 let autoPickGeneration=0;
-let userSportChoice=false;
+let userSportChoice=Boolean(openPicksOnLoad&&initialPicksSport);
 let trialOnly=false;
 let ownerMode=false;
 let pikbotCanWatch=false;
@@ -751,7 +756,9 @@ async function loadSportPicks(sport){
     return;
   }
   if(!games.length){
-    const message=sport==='NFL'?'No NFL picks available right now.':'No upcoming '+sport+' matchups with available picks are scheduled today.';
+    const message=league?.matchups.length
+      ?'Today’s '+sport+' games have started. Pregame picks close at kickoff or tipoff.'
+      :'No upcoming '+sport+' matchups are available in the picks schedule today.';
     $('today-status').textContent=message;
     cards.innerHTML=sport==='NFL'?'<div class="top-pick-rail"><article class="top-pick-card" style="max-width:none"><span class="pick-rank">NFL · '+esc(selectedBookmaker.textContent)+'</span><strong>'+esc(message)+'</strong><button type="button" class="btn" id="retry-sport-picks">Refresh picks</button></article></div>':'<div class="top-pick-rail"><article class="top-pick-card" style="max-width:none"><span class="pick-rank">'+esc(sport)+' · '+esc(selectedBookmaker.textContent)+'</span><strong>No verified player picks available yet</strong><p class="muted">'+esc(message)+'</p><button type="button" class="btn" id="retry-sport-picks">Refresh picks</button></article></div>';
     $('retry-sport-picks').onclick=()=>loadToday();

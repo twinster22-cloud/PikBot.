@@ -97,18 +97,29 @@ h1{font-size:1rem;margin:0 0 9px}h2{font-size:1rem;margin:0 0 9px}.stat{display:
 <a class="brand" href="{{ '/owner' if owner else '/' }}"><img src="/icon-192.png" alt=""><span><b>Pik</b>Bot</span></a>
 <nav aria-label="PikBot">
 <a href="/watch" class="active" aria-current="page"><span>◉</span>Live Games</a>
-<a href="{{ '/owner/picks' if owner else '/' }}#pick-timeline"><span>◎</span>PikBot Picks</a>
+{% set pick_sport = sport if sport in ('NBA','NFL','MLB','NHL','WNBA','COLLEGE FOOTBALL','COLLEGE BASKETBALL') else '' %}
+<a href="{{ url_for('owner_picks' if owner else 'index', view='picks', sport=pick_sport) }}#pick-timeline"><span>◎</span>{{ sports[sport] }} Picks</a>
 <a href="{{ '/owner/picks' if owner else '/' }}#entries"><span>◇</span>My Entries</a>
 {% if owner %}<a href="/owner"><span>▦</span>Owner Dashboard</a>{% endif %}
 </nav>
 </aside>
 <main>
 {% if owner %}<a class="owner-return" href="/owner" aria-label="Back to Owner Dashboard">← Back to Owner Dashboard</a>{% endif %}
+<nav class="leagues" aria-label="Watch views">
+  <a href="{{ url_for('watch_page', sport=sport, view='live') }}"{% if live_only %} class="active" aria-current="page"{% endif %}>Watch Live</a>
+  <a href="{{ url_for('watch_page', sport=sport, day=day, event_id=event_id or none) }}"{% if not live_only %} class="active" aria-current="page"{% endif %}>GameCast</a>
+</nav>
 <nav class="leagues" aria-label="Leagues">
 {% for key, label in sports.items() %}
-<a href="{{ url_for('watch_page', sport=key, day=day) }}"{% if key == sport %} class="active" aria-current="page"{% endif %}>{{ label }}</a>
+<a href="{{ url_for('watch_page', sport=key, day=day, view='live' if live_only else none) }}"{% if key == sport %} class="active" aria-current="page"{% endif %}>{{ label }}</a>
 {% endfor %}
 </nav>
+{% if live_only %}
+<h1>{{ sports[sport] }} · Watch Live</h1>
+<p id="free-live-status" class="feed-note" role="status">Checking for live games with free video…</p>
+<div id="free-live-games"></div>
+<a class="watch-live-action" href="{{ url_for('watch_page', sport=sport) }}">Open GameCast</a>
+{% else %}
 <div class="controls">
 <select id="day" aria-label="Game date"><option value="today">Today</option><option value="yesterday"{% if day == 'yesterday' %} selected{% endif %}>Yesterday</option></select>
 <select id="match" aria-label="Choose a matchup" disabled><option>Loading games…</option></select>
@@ -208,8 +219,51 @@ h1{font-size:1rem;margin:0 0 9px}h2{font-size:1rem;margin:0 0 9px}.stat{display:
 <div class="details" id="trends" hidden><h2>Scoring Plays</h2><div id="scoring-plays"></div></div>
 </section>
 <p class="feed-note">Animated positions and movement are illustrative. {% if sport == 'UFC' %}Fighters follow the reported round status when available. Strike-by-strike replay requires a play feed. {% else %}Replay follows available play-by-play. {% endif %}Scoreboard updates may be delayed. <a id="official" hidden target="_blank" rel="noopener noreferrer">Official game page ↗</a></p>
+{% endif %}
 </main>
 </div>
+{% if live_only %}
+<script>
+const league = {{ sport|tojson }};
+const list = document.getElementById('free-live-games');
+const status = document.getElementById('free-live-status');
+let loading = false;
+async function refreshFreeGames() {
+  if (loading || document.hidden) return;
+  loading = true;
+  try {
+    const query = new URLSearchParams({sport:league,day:'today'});
+    const response = await fetch('/api/live/games?'+query,{cache:'no-store',signal:AbortSignal.timeout(10000)});
+    if (!response.ok) throw Error('Schedule unavailable');
+    const {games} = await response.json();
+    const watchable = games.filter(game => game.state === 'in' && game.free_broadcast?.url);
+    list.replaceChildren(...watchable.map(game => {
+      const card = document.createElement('article');
+      card.className = 'watch-live-row';
+      const name = document.createElement('strong');
+      name.textContent = game.name;
+      const link = document.createElement('a');
+      link.className = 'watch-live-action';
+      link.textContent = 'Watch on '+game.free_broadcast.name+' ↗';
+      link.href = game.free_broadcast.url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      card.append(name, link);
+      return card;
+    }));
+    status.textContent = watchable.length ? '' : 'No live games with verified free video right now.';
+  } catch {
+    list.replaceChildren();
+    status.textContent = 'Couldn’t check free live video. Try again shortly or open GameCast.';
+  } finally {
+    loading = false;
+  }
+}
+refreshFreeGames();
+setInterval(refreshFreeGames, 20000);
+document.addEventListener('visibilitychange', refreshFreeGames);
+</script>
+{% else %}
 {% if sport not in ('NBA', 'COLLEGE BASKETBALL', 'WOMENS COLLEGE BASKETBALL', 'WNBA') %}<script src="/livecast-field.js?v=photo-motion"></script>{% endif %}
 <script>
 const sport = {{ sport|tojson }};
@@ -775,5 +829,6 @@ document.addEventListener('visibilitychange', () => {
 });
 update();
 </script>
+{% endif %}
 </body>
 </html>
