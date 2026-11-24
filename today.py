@@ -17,6 +17,8 @@ BOOKMAKERS = {
     'draftkings': 'DraftKings Sportsbook',
     'fanduel': 'FanDuel',
     'betmgm': 'BetMGM',
+    'bovada': 'Bovada',
+    'betrivers': 'BetRivers',
 }
 BASKETBALL = {'player_points': 'PTS', 'player_rebounds': 'REB', 'player_assists': 'AST'}
 NBA_EXTRA = {
@@ -128,6 +130,15 @@ def today_events(sport, now):
             and start.astimezone(eastern).date() == date]
 
 
+def browse_events(sport, now):
+    eastern = ZoneInfo('America/New_York')
+    first_day = now.astimezone(eastern).date()
+    end_day = first_day + timedelta(days=7)
+    return [event for event in events(sport, bucket(30))
+            if (start := timestamp(event.get('commence_time')))
+            and first_day <= start.astimezone(eastern).date() < end_day]
+
+
 @lru_cache(maxsize=100)
 def event_offers(sport, event_id, _window, bookmaker=DEFAULT_BOOK, expanded=False):
     key, base_markets = SPORTS[sport]
@@ -151,7 +162,7 @@ def event_offers(sport, event_id, _window, bookmaker=DEFAULT_BOOK, expanded=Fals
         return {'error': str(exc)}
 
 
-def offers(sport, now, event_id=None, *, next_slate=False, bookmaker=DEFAULT_BOOK, expanded=False):
+def offers(sport, now, event_id=None, *, next_slate=False, bookmaker=DEFAULT_BOOK, expanded=False, browse=False):
     _, markets = SPORTS[sport]
     expanded = expanded and sport in {'NBA', 'COLLEGE BASKETBALL', 'WNBA'}
     if expanded:
@@ -161,7 +172,10 @@ def offers(sport, now, event_id=None, *, next_slate=False, bookmaker=DEFAULT_BOO
     latest_snapshot = {}
     prizepicks = bookmaker == DEFAULT_BOOK
     max_age = PRIZEPICKS_MAX_LINE_AGE if prizepicks else timedelta(minutes=60)
-    slate = events(sport, bucket(30)) if next_slate else today_events(sport, now)
+    if browse:
+        slate = browse_events(sport, now)
+    else:
+        slate = events(sport, bucket(30)) if next_slate else today_events(sport, now)
     upcoming = sorted((event for event in slate
                        if (start := timestamp(event.get('commence_time'))) and start > now),
                       key=lambda event: timestamp(event['commence_time']))

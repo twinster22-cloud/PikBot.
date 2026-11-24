@@ -186,15 +186,17 @@ def about_pikbot_page():
 @app.get('/api/today')
 @premium_required
 def todays_sports():
+    browse = request.args.get('upcoming') == '1' and g.membership_access == 'subscriber'
     now = datetime.now(timezone.utc)
-    try:
-        sports = today.active_sports(today.bucket(30))
-    except today.FeedError as exc:
-        app.logger.warning('Sports catalog unavailable: %s', exc)
-        sports = list(today.SPORTS)
+    sports = list(today.SPORTS)
+    if not browse:
+        try:
+            sports = today.active_sports(today.bucket(30))
+        except today.FeedError as exc:
+            app.logger.warning('Sports catalog unavailable: %s', exc)
     def load_slate(sport):
         try:
-            return sport, today.today_events(sport, now)
+            return sport, (today.browse_events if browse else today.today_events)(sport, now)
         except today.FeedError as exc:
             app.logger.warning('Schedule unavailable for %s: %s', sport, exc)
             return sport, []
@@ -206,7 +208,7 @@ def todays_sports():
                       'starts_at': game.get('commence_time'),
                       'started': today.timestamp(game['commence_time']) <= now}
                      for game in sorted(games, key=lambda game: game['commence_time'])],
-    } for sport, games in slates if games])
+    } for sport, games in slates if games or browse])
 
 @app.get('/api/kalshi/markets')
 @premium_required
@@ -235,13 +237,15 @@ def todays_predictions(_sport=None, _bookmaker=None):
     if bookmaker not in today.BOOKMAKERS:
         return jsonify(error='Choose a supported line source.'), 400
     book_label = today.BOOKMAKERS[bookmaker]
+    browse = request.args.get('upcoming') == '1' and g.membership_access == 'subscriber'
     directory = os.getenv('PIKBOT_LIVE_HISTORY_DIR')
     key, _ = today.SPORTS[sport]
     path = Path(directory) / (key + '.csv') if directory else None
     try:
         now = datetime.now(timezone.utc)
         available = today.offers(sport, now, event_id=request.args.get('event_id'), bookmaker=bookmaker,
-                                 expanded=g.membership_access != 'trial')
+                                 expanded=g.membership_access != 'trial',
+                                 **({'browse': True} if browse else {}))
         if not available:
             return jsonify(error=f'No fresh {book_label} lines are available for the covered game.'), 404
         offers = pd.DataFrame(available)
@@ -276,7 +280,7 @@ def todays_predictions(_sport=None, _bookmaker=None):
     for pick in result['picks']:
         if not pick.get('photo_url'):
             pick['photo_url'] = history.attrs.get('photos', {}).get(pick['player'])
-    matchups = {game['id']: game for game in today.today_events(sport, now)}
+    matchups = {game['id']: game for game in (today.browse_events if browse else today.today_events)(sport, now)}
     history_digest = sha256(history.to_csv(index=False).encode()).hexdigest()
     benchmarks = today.benchmark_lines(sport,result['picks'][0]['event_id'],now,
                                       expanded=g.membership_access != 'trial')

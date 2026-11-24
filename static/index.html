@@ -159,6 +159,8 @@ document.addEventListener('DOMContentLoaded',()=>{const manage=document.getEleme
     <li><button type="button" class="btn" data-bookmaker="pick6" aria-pressed="false">DraftKings Pick6<span class="platform-check" aria-hidden="true"></span></button></li>
     <li><button type="button" class="btn" data-bookmaker="draftkings" aria-pressed="false">DraftKings Sportsbook<span class="platform-check" aria-hidden="true"></span></button></li>
     <li><button type="button" class="btn" data-bookmaker="betmgm" aria-pressed="false">BetMGM<span class="platform-check" aria-hidden="true"></span></button></li>
+    <li><button type="button" class="btn" data-bookmaker="bovada" aria-pressed="false">Bovada<span class="platform-check" aria-hidden="true"></span></button></li>
+    <li><button type="button" class="btn" data-bookmaker="betrivers" aria-pressed="false">BetRivers<span class="platform-check" aria-hidden="true"></span></button></li>
   </ul>
   <p id="current-line-source" class="muted" aria-live="polite">Line source · PrizePicks standard lines</p>
   <a id="external-platform-link" target="_blank" rel="noopener noreferrer" hidden></a>
@@ -174,7 +176,7 @@ document.addEventListener('DOMContentLoaded',()=>{const manage=document.getEleme
     <ul id="kalshi-market-results"></ul>
   </div>
 </section>
-<div class="analysis-controls"><div><label for="today-sport">Today's sports</label>
+<div class="analysis-controls"><div><label for="today-sport">Sport</label>
 <select id="today-sport" disabled><option value="">Choose a sport</option></select>
 <p id="today-status" role="status"></p>
 <div id="today-matchups"></div><section id="live-performance" class="chartbox" hidden><h3>Game performance tracker</h3><p id="performance-status" role="status"></p><button type="button" class="btn" id="performance-refresh">Refresh observed stats</button><div id="performance-table" class="scroll"></div></section></div>
@@ -565,7 +567,7 @@ async function showMembership(){
     const ownerSection=document.getElementById('data');if(ownerSection)ownerSection.hidden=!ownerMode;
     const canUseGameCast=info.broadcast_access===true;
     pikbotCanWatch=canUseGameCast;
-    document.querySelectorAll(".watch-game-button").forEach(b=>{b.hidden=!pikbotCanWatch;});
+    document.querySelectorAll(".watch-game-button").forEach(b=>{b.hidden=!pikbotCanWatch||b.dataset.gameDay!==easternDay();});
     $('member-broadcast-monitor').hidden=!(canUseGameCast&&!ownerMode&&info.membership_tier==='plus');
     $('live-center-browser').hidden=!canUseGameCast;
     if(canUseGameCast&&!window.pikbotGamecastAutoStarted){window.pikbotGamecastAutoStarted=true;document.getElementById('live-center-day').value='today';browseMemberGames();}
@@ -673,11 +675,16 @@ let trialExpiryTimer;
 const livePickCache=new Map();
 const lastSportMatchup=new Map();
 let requestedMatchup;
-function easternDay(){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}
+function easternDay(date=new Date()){return new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit',day:'2-digit'}).format(date);}
 function gameTime(value){
   if(!value)return '—';
   const start=new Date(value);
   return Number.isNaN(start.getTime())?'—':start.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',timeZone:'America/New_York'})+' ET';
+}
+function matchupDateTime(startsAt){
+  const date=new Date(startsAt);
+  if(!Number.isFinite(date.getTime()))return 'Time unavailable';
+  return date.toLocaleDateString('en-US',{timeZone:'America/New_York',weekday:'short',month:'short',day:'numeric'})+' · '+gameTime(startsAt);
 }
 function watchMatchup(sport,game){
   return '/watch?'+new URLSearchParams({sport,away:game.away,home:game.home});
@@ -687,23 +694,23 @@ function showMatchups(sport){
   $('today-matchups').innerHTML=leagues.map(league=>
     '<h3>'+esc(league.name)+'</h3><ul>'+league.matchups.map(game=>
       '<li><button type="button" class="btn matchup-button" data-league="'+esc(league.name)+'" data-game="'+esc(game.id)+'" '+(game.started?'data-performance="true"':'')+'>'+
-      esc(game.away||'Away team')+' at '+esc(game.home||'Home team')+' · '+esc(gameTime(game.starts_at))+
-      (game.started?' · View observed performance':' · View research props')+'</button> <a class="btn watch-game-button" href="'+esc(watchMatchup(league.name,game))+'" '+(pikbotCanWatch?'':'hidden')+'>▶ Watch</a></li>').join('')+'</ul>').join('');
+      esc(game.away||'Away team')+' at '+esc(game.home||'Home team')+' · '+esc(trialOnly?gameTime(game.starts_at):matchupDateTime(game.starts_at))+
+      (game.started?' · View observed performance':' · View research props')+'</button> <a class="btn watch-game-button" data-game-day="'+esc(easternDay(new Date(game.starts_at)))+'" href="'+esc(watchMatchup(league.name,game))+'" '+(pikbotCanWatch&&easternDay(new Date(game.starts_at))===easternDay()?'':'hidden')+'>▶ Watch</a></li>').join('')+'</ul>').join('');
 }
 async function loadToday(){
   if(accessBlocked)return;
   const status=$('today-status'), picker=$('today-sport');
   try {
-    const response=await fetch('/api/today'), data=await response.json();
+    const response=await fetch(trialOnly?'/api/today':'/api/today?upcoming=1'), data=await response.json();
     if(!response.ok)throw Error(data.error);
     slateDay=easternDay();
     todaysSlate=data.sports;
     picker.options.length=1;
     showMatchups('');
-    for(const sport of data.sports) picker.add(new Option(sport.name+' ('+sport.events+' games)',sport.name));
-    if(!data.sports.some(s=>s.name==='NFL')) picker.add(new Option('NFL','NFL'));
-    picker.disabled=!data.sports.length;
-    status.textContent=data.sports.length?'Choose a matchup to check available props.':'No covered sports are scheduled today.';
+    const leagues=trialOnly?data.sports.map(sport=>sport.name):supportedPicksSports;
+    for(const league of leagues) picker.add(new Option(league,league));
+    picker.disabled=!leagues.length;
+    status.textContent=data.sports.some(sport=>sport.events)?'Choose a matchup to check available props.':'No covered matchups are available in the picks schedule.';
     if(userSportChoice&&!trialOnly)await loadSportPicks(selected);else await openInitialPick();
   } catch(error) {status.textContent=error.message||'Today’s schedule is unavailable.'}
 }
@@ -757,8 +764,8 @@ async function loadSportPicks(sport){
   }
   if(!games.length){
     const message=league?.matchups.length
-      ?'Today’s '+sport+' games have started. Pregame picks close at kickoff or tipoff.'
-      :'No upcoming '+sport+' matchups are available in the picks schedule today.';
+      ?'The listed '+sport+' games have started. Pregame picks close at game time.'
+      :'No upcoming '+sport+' matchups are available from the picks feed.';
     $('today-status').textContent=message;
     cards.innerHTML=sport==='NFL'?'<div class="top-pick-rail"><article class="top-pick-card" style="max-width:none"><span class="pick-rank">NFL · '+esc(selectedBookmaker.textContent)+'</span><strong>'+esc(message)+'</strong><button type="button" class="btn" id="retry-sport-picks">Refresh picks</button></article></div>':'<div class="top-pick-rail"><article class="top-pick-card" style="max-width:none"><span class="pick-rank">'+esc(sport)+' · '+esc(selectedBookmaker.textContent)+'</span><strong>No verified player picks available yet</strong><p class="muted">'+esc(message)+'</p><button type="button" class="btn" id="retry-sport-picks">Refresh picks</button></article></div>';
     $('retry-sport-picks').onclick=()=>loadToday();
@@ -851,6 +858,7 @@ async function openMatchup(button,automatic=false,refresh=false){
   if(!automatic||activeTab!=='betting-sites')section.scrollIntoView({block:'nearest'});
   try{
     const query=new URLSearchParams({sport:button.dataset.league,event_id:button.dataset.game,bookmaker});
+    if(!trialOnly)query.set('upcoming','1');
     const cacheKey=button.dataset.league+'|'+button.dataset.game+'|'+bookmaker;
     if(refresh)livePickCache.delete(cacheKey);
     const cached=livePickCache.get(cacheKey);
@@ -881,7 +889,7 @@ async function openMatchup(button,automatic=false,refresh=false){
     if(response.status===404||(response.ok&&!data?.picks?.length)){
       cards.textContent=data?.error||'No '+book.textContent+' picks are available for this matchup.';
       $('today-status').textContent=book.textContent+' picks are unavailable for this matchup.';
-      retryButton.hidden=!prizepicks;
+      retryButton.hidden=false;
       return false;
     }
     if(!response.ok)throw Error(data.error||'Picks are unavailable.');
@@ -909,7 +917,7 @@ async function openMatchup(button,automatic=false,refresh=false){
       const button=event.target.closest('[data-pick-index]');
       if(button)openPlayerProps(data,Number(button.dataset.pickIndex));
     };
-    cards.innerHTML='<p class="muted pick-game">'+esc(data.picks[0].matchup)+' · '+esc(gameTime(data.picks[0].starts_at))+'</p><div class="top-pick-rail">'+
+    cards.innerHTML='<p class="muted pick-game">'+esc(data.picks[0].matchup)+' · '+esc(matchupDateTime(data.picks[0].starts_at))+'</p><div class="top-pick-rail">'+
       [...players.values()].map(({pick:p,index,count},rank)=>'<button type="button" class="top-pick-card" data-pick-index="'+index+'" aria-pressed="false" aria-controls="player-props" aria-haspopup="dialog">'+
         '<span class="pick-rank">TOP '+(rank+1)+'</span>'+portraitMarkup(p,'pick-avatar')+
         '<strong>'+esc(p.player)+'</strong><span class="pick-book">'+esc(p.bookmaker||book.textContent)+'</span>'+
